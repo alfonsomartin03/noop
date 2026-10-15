@@ -526,7 +526,7 @@ struct SleepView: View {
     @ViewBuilder
     private var emptyState: some View {
         if repo.loaded {
-            ComingSoon(what: "No nights here yet. Import your WHOOP export in Data Sources to see every night, your sleep stages and trends straight away. Or open Intelligence to see last night computed from the strap after you wear it to bed.")
+            ComingSoon(what: "No nights here yet. Import your WHOOP export under Import & Export to see every night, your sleep stages and trends straight away..")
         } else {
             ComingSoon(what: "Loading your sleep history…")
         }

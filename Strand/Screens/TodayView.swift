@@ -17,41 +17,23 @@ struct TodayView: View {
     // 14-day sparkline series, keyed by metric key. Loaded once in .task.
     @State private var sparks: [String: [Double]] = [:]
     @State private var workouts: [WorkoutRow] = []
-    @State private var appleDays: [AppleDaily] = []
-    @State private var showingSupport = false
-    @State private var sourcesOpen = false
 
     var body: some View {
         ScreenScaffold(title: greetingWord, subtitle: dateLine) {
             VStack(alignment: .leading, spacing: NoopMetrics.sectionGap) {
                 ConnectionStrip()
-                HealthAlertBanner()
                 if repo.today?.recovery == nil {
                     StrandNotice(
                         symbol: "sparkles",
                         title: "Your scores are building",
-                        message: "Live heart rate works from the strap right away. Recovery, strain and sleep build over your next few nights of wear. To see your history now, import your WHOOP export in Data Sources."
+                        message: "Live heart rate works from the strap right away. Recovery, strain and sleep build over your next few nights of wear. To see your history now, import your WHOOP export under Import & Export."
                     )
                 }
                 dashboard
                 activitySection
-                sourcesSection
             }
         }
         .task(id: repo.today?.day) { await loadAll() }
-        .toolbar {
-            ToolbarItem {
-                Button { showingSupport = true } label: {
-                    Image(systemName: "heart.fill").foregroundStyle(StrandPalette.metricRose)
-                }
-                .help("Support NOOP — donate or get in touch")
-                .accessibilityLabel("Support NOOP — donate or get in touch")
-            }
-        }
-        .overlay {
-            if showingSupport { SupportModalOverlay(isPresented: $showingSupport) }
-        }
-        .animation(.easeOut(duration: 0.18), value: showingSupport)
     }
 
     // MARK: Widgets
@@ -59,7 +41,6 @@ struct TodayView: View {
     @ViewBuilder
     private var dashboard: some View {
         let d = repo.today
-        let a = appleDays.last
         WidgetGrid(minColumn: 190) {
             recoveryWidget(d)
             sleepWidget(d)
@@ -100,12 +81,6 @@ struct TodayView: View {
 
             BatteryWidget { navigate(.live) }
 
-            metricWidget("Steps", "figure.walk", StrandPalette.metricCyan,
-                         value: a?.steps.map { intString(Double($0)) } ?? latestOptional("steps", decimals: 0),
-                         unit: nil, series: sparks["steps"], to: .appleHealth)
-            metricWidget("Active energy", "bolt.fill", StrandPalette.metricAmber,
-                         value: a?.activeKcal.map { intString($0) } ?? latestOptional("active_kcal", decimals: 0),
-                         unit: "kcal", series: sparks["active_kcal"], to: .appleHealth)
         }
         .redacted(reason: repo.loaded ? [] : .placeholder)
     }
@@ -202,8 +177,7 @@ struct TodayView: View {
 
     @ViewBuilder
     private var activitySection: some View {
-        let weight = appleDays.last?.weightKg.map { String(format: "%.1f", $0) } ?? latestOptional("weight", decimals: 1)
-        if !workouts.isEmpty || weight != nil {
+        if !workouts.isEmpty {
             VStack(alignment: .leading, spacing: NoopMetrics.gap) {
                 SectionHeader("Activity", trailing: workouts.isEmpty ? nil : "\(workouts.count) workouts")
                 WidgetGrid(minColumn: 190) {
@@ -218,41 +192,8 @@ struct TodayView: View {
                             }
                         }
                     }
-                    if let weight {
-                        metricWidget("Weight", "scalemass.fill", StrandPalette.accent,
-                                     value: weight, unit: "kg", series: sparks["weight"], to: .appleHealth)
-                    }
                 }
             }
-        }
-    }
-
-    // MARK: Data sources (secondary → disclosure)
-
-    private var sourcesSection: some View {
-        DisclosureGroup(isExpanded: $sourcesOpen) {
-            VStack(alignment: .leading, spacing: 12) {
-                sourceRow(badge: "WHOOP", tint: StrandPalette.accent, present: !repo.days.isEmpty,
-                          detail: "\(repo.days.count) days · \(repo.sleeps.count) sleeps")
-                sourceRow(badge: "Apple Health", tint: StrandPalette.metricCyan, present: !appleDays.isEmpty,
-                          detail: "\(appleDays.count) days · \(workouts.filter { $0.source == "apple-health" }.count) workouts")
-            }
-            .padding(.top, 10)
-        } label: {
-            Text("Data sources").font(.system(size: 15, weight: .semibold)).foregroundStyle(StrandPalette.textPrimary)
-        }
-        .padding(NoopMetrics.cardPadding)
-        .strandSurface()
-    }
-
-    @ViewBuilder
-    private func sourceRow(badge: String, tint: Color, present: Bool, detail: String) -> some View {
-        HStack(spacing: 10) {
-            SourceBadge(badge, tint: present ? tint : StrandPalette.textTertiary)
-            Spacer()
-            Text(present ? detail : "Not connected")
-                .font(.system(size: 12).monospacedDigit())
-                .foregroundStyle(present ? StrandPalette.textSecondary : StrandPalette.textTertiary)
         }
     }
 
@@ -273,14 +214,9 @@ struct TodayView: View {
         sparks["rhr"]             = await sparkValues("rhr", source: "my-whoop", window: 14)
         sparks["spo2"]            = await sparkValues("spo2", source: "my-whoop", window: 14)
 
-        // 14-day sparklines — Apple Health.
-        sparks["resp_rate"]   = await sparkValues("resp_rate", source: "apple-health", window: 14)
-        sparks["steps"]       = await sparkValues("steps", source: "apple-health", window: 14)
-        sparks["weight"]      = await sparkValues("weight", source: "apple-health", window: 90)
-        sparks["active_kcal"] = await sparkValues("active_kcal", source: "apple-health", window: 14)
+        sparks["resp_rate"] = await sparkValues("resp_rate", source: "my-whoop", window: 14)
 
         workouts = await repo.workoutRows()
-        appleDays = await repo.appleDailyRows()
     }
 
     /// Trailing-window values for a metric, with the sparse-data fallback:
@@ -379,11 +315,6 @@ struct TodayView: View {
         return "\(h)h \(mm)m"
     }
 
-    /// Active calories (Apple) for the latest day, falling back to the sparkline tail.
-    private func caloriesValue(_ a: AppleDaily?) -> String {
-        if let kcal = a?.activeKcal { return intString(kcal) }
-        return latestString("active_kcal", decimals: 0)
-    }
 
     private func workoutDuration(_ w: WorkoutRow) -> String {
         let secs = w.durationS ?? Double(max(w.endTs - w.startTs, 0))

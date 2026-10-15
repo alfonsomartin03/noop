@@ -95,11 +95,6 @@ struct LiveView: View {
             }
             .buttonStyle(.borderedProminent).tint(StrandPalette.accent)
 
-            Button { model.buzz() } label: { Label("Buzz strap", systemImage: "waveform.path") }
-                .buttonStyle(.bordered)
-                .disabled(!live.bonded)
-                .help("Fire a test haptic buzz on the strap (requires a bonded connection)")
-
             Button(role: .destructive) { model.disconnect() } label: { Label("Disconnect", systemImage: "xmark.circle") }
                 .buttonStyle(.bordered)
                 .disabled(!live.connected)

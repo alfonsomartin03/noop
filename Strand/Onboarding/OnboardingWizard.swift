@@ -16,7 +16,7 @@ import WhoopStore
 //  5 Scan              — radar sweep; Scan calls model.scan(); reassurance sub-state
 //  6 Bonding           — celebration when live.bonded (a RecoveryRing blooms in)
 //  7 Profile           — age / sex / weight / height bound to ProfileStore
-//  8 Import (optional)  — pointer to Data Sources for Whoop / Apple Health
+//  8 Import (optional)  — pointer to Import & Export for the WHOOP export
 //  9 Done              — "Your thread starts here." → onFinished()
 //
 // Presentation is wired centrally; this view only calls onFinished() when complete.
@@ -654,13 +654,13 @@ private struct ImportStep: View {
                     icon: "clock.arrow.circlepath",
                     tint: StrandPalette.accent,
                     title: "Import past data later",
-                    message: "Already have months of history? Export it from WHOOP or pull it from Apple Health, then load it under Data Sources — your ring and trends fill in instantly."
+                    message: "Already have months of history? Request your data export from WHOOP, then load it under Import & Export — your ring and trends fill in instantly."
                 )
 
                 HStack(spacing: 8) {
                     Image(systemName: "sidebar.left")
                         .foregroundStyle(StrandPalette.textTertiary)
-                    Text("Find it in the sidebar under Data Sources.")
+                    Text("Find it in the sidebar under Import & Export.")
                         .font(StrandFont.subhead)
                         .foregroundStyle(StrandPalette.textSecondary)
                 }

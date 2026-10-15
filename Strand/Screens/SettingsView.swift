@@ -9,24 +9,12 @@ struct SettingsView: View {
     @EnvironmentObject var live: LiveState
     @EnvironmentObject var profile: ProfileStore
 
-    /// Backup & restore UI state.
-    @State private var backupBusy = false
-    @State private var backupAlertTitle = ""
-    @State private var backupAlertMessage = ""
-    @State private var showBackupAlert = false
-
     var body: some View {
         ScreenScaffold(title: "Settings",
                        subtitle: "Your numbers, your strap, and how NOOP works. All on this Mac.") {
             profileCard
             strapCard
-            backupCard
             aboutCard
-        }
-        .alert(backupAlertTitle, isPresented: $showBackupAlert) {
-            Button("OK", role: .cancel) { }
-        } message: {
-            Text(backupAlertMessage)
         }
     }
 
@@ -36,7 +24,7 @@ struct SettingsView: View {
         SettingsSection(
             icon: "person.fill",
             title: "Profile",
-            blurb: "These power your heart-rate zones, calorie estimates and recovery baselines. Keep them accurate."
+            blurb: "These power heart-rate zones, calorie estimates and recovery baselines."
         ) {
             VStack(spacing: 0) {
                 FormRow(label: "Age") {
@@ -202,91 +190,6 @@ struct SettingsView: View {
         if pct <= 15 { return .critical }
         if pct <= 30 { return .warning }
         return .positive
-    }
-
-    // MARK: - Backup & restore
-
-    private var backupCard: some View {
-        SettingsSection(
-            icon: "externaldrive.fill",
-            title: "Backup & restore",
-            blurb: "Move all your NOOP data to another machine. Export saves everything — history, sleeps, workouts, settings — to a single file you can copy across; import replaces this Mac's data with a backup."
-        ) {
-            VStack(alignment: .leading, spacing: 16) {
-                HStack(spacing: 12) {
-                    Button {
-                        runExport()
-                    } label: {
-                        Label("Export…", systemImage: "square.and.arrow.up")
-                            .padding(.horizontal, 6)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(StrandPalette.accent)
-                    .disabled(backupBusy)
-
-                    Button {
-                        runImport()
-                    } label: {
-                        Label("Import…", systemImage: "square.and.arrow.down")
-                            .padding(.horizontal, 6)
-                    }
-                    .buttonStyle(.bordered)
-                    .tint(StrandPalette.accent)
-                    .disabled(backupBusy)
-
-                    if backupBusy { ProgressView().controlSize(.small) }
-                    Spacer(minLength: 0)
-                }
-
-                HStack(alignment: .top, spacing: 10) {
-                    Image(systemName: "info.circle.fill")
-                        .foregroundStyle(StrandPalette.textTertiary)
-                        .font(.system(size: 13))
-                        .accessibilityHidden(true)
-                    Text("Importing overwrites everything currently on this Mac. Your old data is kept in a side file just in case. NOOP needs a relaunch for an import to take effect.")
-                        .font(StrandFont.footnote)
-                        .foregroundStyle(StrandPalette.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-        }
-    }
-
-    private func runExport() {
-        backupBusy = true
-        Task {
-            let result = await DataBackup.runExport(checkpoint: { await model.repo.checkpointForBackup() })
-            handleBackup(result)
-        }
-    }
-
-    private func runImport() {
-        backupBusy = true
-        Task {
-            let result = await DataBackup.runImport()
-            handleBackup(result)
-        }
-    }
-
-    @MainActor
-    private func handleBackup(_ result: DataBackup.BackupResult) {
-        backupBusy = false
-        switch result {
-        case .cancelled:
-            return
-        case .exported(let url):
-            backupAlertTitle = "Backup exported"
-            backupAlertMessage = "Saved to \(url.lastPathComponent). Copy this file to your other Mac and use Import there to restore everything."
-            showBackupAlert = true
-        case .imported:
-            backupAlertTitle = "Backup imported"
-            backupAlertMessage = "Your data has been restored. Quit and reopen NOOP for it to take effect."
-            showBackupAlert = true
-        case .failure(let message):
-            backupAlertTitle = "Backup problem"
-            backupAlertMessage = message
-            showBackupAlert = true
-        }
     }
 
     // MARK: - About

@@ -3,58 +3,34 @@ import StrandDesign
 
 enum NavItem: String, CaseIterable, Identifiable, Hashable {
     case today = "Today"
-    case intelligence = "Intelligence"
-    case coach = "Coach"
     case live = "Live"
-    case breathe = "Breathe"
-    case intervals = "Intervals"
-    case explore = "Explore"
-    case compare = "Compare"
-    case insights = "Insights"
     case sleep = "Sleep"
-    case trends = "Trends"
     case workouts = "Workouts"
-    case health = "Health"
-    case stress = "Stress"
-    case appleHealth = "Apple Health"
-    case dataSources = "Data Sources"
-    case notifications = "Notifications"
-    case automation = "Automations"
+    case health = "Vitals"
+    case trends = "Trends"
+    case explore = "Data Explorer"
+    case dataSources = "Import & Export"
     case settings = "Settings"
-    case support = "Support"
 
     var id: String { rawValue }
     var icon: String {
         switch self {
         case .today: return "square.grid.2x2.fill"
-        case .intelligence: return "brain.head.profile"
-        case .coach: return "sparkles"
         case .live: return "waveform.path.ecg"
-        case .breathe: return "lungs.fill"
-        case .intervals: return "timer"
-        case .explore: return "magnifyingglass"
-        case .compare: return "chart.line.uptrend.xyaxis"
-        case .insights: return "lightbulb.fill"
         case .sleep: return "bed.double.fill"
-        case .trends: return "chart.xyaxis.line"
         case .workouts: return "figure.run"
         case .health: return "heart.text.square.fill"
-        case .stress: return "gauge.with.dots.needle.50percent"
-        case .appleHealth: return "heart.fill"
-        case .dataSources: return "square.and.arrow.down.fill"
-        case .notifications: return "bell.badge.fill"
-        case .automation: return "wand.and.stars"
+        case .trends: return "chart.xyaxis.line"
+        case .explore: return "tablecells"
+        case .dataSources: return "externaldrive.fill"
         case .settings: return "gearshape.fill"
-        case .support: return "lifepreserver.fill"
         }
     }
 
-    // Sidebar organisation: a short primary list, then collapsible groups for everything else.
-    static let primary: [NavItem] = [.today, .sleep, .workouts, .trends, .health, .live]
-    static let insightsGroup: [NavItem] = [.intelligence, .insights, .stress, .compare, .explore, .coach]
-    static let toolsGroup: [NavItem] = [.breathe, .intervals, .automation]
-    static let dataGroup: [NavItem] = [.appleHealth, .dataSources, .notifications]
-    static let footer: [NavItem] = [.settings, .support]
+    // Sidebar organisation: what the strap records, then the stored data itself, then settings.
+    static let collected: [NavItem] = [.today, .live, .sleep, .workouts, .health, .trends]
+    static let data: [NavItem] = [.explore, .dataSources]
+    static let footer: [NavItem] = [.settings]
 }
 
 /// Lets any screen jump to another destination (e.g. a widget opening its detail view).
@@ -73,31 +49,14 @@ struct RootView: View {
     // status row is isolated into SidebarStatus so HR/frame ticks don't re-render the whole shell.
     @EnvironmentObject var repo: Repository
     @State private var selection: NavItem? = .today
-    @State private var insightsOpen = false
-    @State private var toolsOpen = false
-    @State private var dataOpen = false
 
     var body: some View {
         NavigationSplitView {
             VStack(spacing: 0) {
                 List(selection: $selection) {
-                    ForEach(NavItem.primary) { row($0) }
-
-                    DisclosureGroup(isExpanded: expansion($insightsOpen, NavItem.insightsGroup)) {
-                        ForEach(NavItem.insightsGroup) { row($0) }
-                    } label: { groupLabel("Insights", "sparkle.magnifyingglass") }
-
-                    DisclosureGroup(isExpanded: expansion($toolsOpen, NavItem.toolsGroup)) {
-                        ForEach(NavItem.toolsGroup) { row($0) }
-                    } label: { groupLabel("Tools", "slider.horizontal.3") }
-
-                    DisclosureGroup(isExpanded: expansion($dataOpen, NavItem.dataGroup)) {
-                        ForEach(NavItem.dataGroup) { row($0) }
-                    } label: { groupLabel("Data", "externaldrive.fill") }
-
-                    Section {
-                        ForEach(NavItem.footer) { row($0) }
-                    }
+                    Section("Collected") { ForEach(NavItem.collected) { row($0) } }
+                    Section("Your data") { ForEach(NavItem.data) { row($0) } }
+                    Section { ForEach(NavItem.footer) { row($0) } }
                 }
                 .listStyle(.sidebar)
 
@@ -119,40 +78,17 @@ struct RootView: View {
             .tag(item)
     }
 
-    private func groupLabel(_ title: String, _ symbol: String) -> some View {
-        Label(title, systemImage: symbol)
-            .font(.system(size: 13))
-            .foregroundStyle(StrandPalette.textSecondary)
-    }
-
-    /// A group is open when toggled, or whenever the current selection lives inside it.
-    private func expansion(_ flag: Binding<Bool>, _ items: [NavItem]) -> Binding<Bool> {
-        Binding(get: { flag.wrappedValue || (selection.map(items.contains) ?? false) },
-                set: { flag.wrappedValue = $0 })
-    }
-
     @ViewBuilder private var detail: some View {
         switch selection ?? .today {
         case .today: TodayView()
-        case .intelligence: IntelligenceView()
-        case .coach: CoachView()
         case .live: LiveView()
-        case .breathe: BreathingView()
-        case .intervals: IntervalTimerView()
-        case .explore: MetricExplorerView()
-        case .compare: CompareView()
-        case .insights: InsightsView()
         case .sleep: SleepView()
-        case .trends: TrendsView()
         case .workouts: WorkoutsView()
         case .health: HealthView()
-        case .stress: StressView()
-        case .appleHealth: AppleHealthView()
+        case .trends: TrendsView()
+        case .explore: MetricExplorerView()
         case .dataSources: DataSourcesView()
-        case .notifications: NotificationSettingsView()
-        case .automation: AutomationsView()
         case .settings: SettingsView()
-        case .support: SupportView()
         }
     }
 }

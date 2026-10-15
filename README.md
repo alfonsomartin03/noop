@@ -17,7 +17,6 @@
   <a href="#download">⬇&nbsp;Download</a> ·
   <a href="#features">Features</a> ·
   <a href="docs/PROTOCOL.md">Protocol</a> ·
-  <a href="docs/DONATIONS.md">♥&nbsp;Support</a> ·
   <a href="mailto:thenoopapp@gmail.com">Contact</a>
 </p>
 
@@ -68,7 +67,7 @@ from **their own device**, on a machine **they** control.
 - [How your data flows](#how-your-data-flows)
 - [Privacy](#privacy)
 - [Attribution](#attribution)
-- [Support (optional)](#support-optional)
+- [Contact](#contact)
 - [Disclaimer](#disclaimer)
 - [Docs](#docs)
 
@@ -122,7 +121,6 @@ The macOS reference app organizes everything behind a single sidebar
 | **Notifications** | Configure local notifications and thresholds (`Strand/Data/NotificationSettingsStore.swift`). |
 | **Automations** | Turn the strap's physical inputs and live biometrics into Mac actions — all on-device (see below). |
 | **Settings** | Profile, preferences, and app configuration. |
-| **Support** | Attribution + **optional** crypto donations. Never a paywall — the whole app works without it. |
 
 There is also a **menu-bar extra** (`Strand/MenuBar/MenuBarContent.swift`) with a
 glanceable live HR readout and a compact popover, and a first-run **onboarding
@@ -347,13 +345,7 @@ no DRM circumvention. Full detail in [`ATTRIBUTION.md`](ATTRIBUTION.md).
 
 ---
 
-## Support (optional)
-
-NOOP is free and always will be — there is no paywall and the app never gates a
-feature behind payment. If it saved you a subscription and you want to chip in,
-optional crypto donation addresses are shown on the in-app **Support** screen and
-listed in [`docs/DONATIONS.md`](docs/DONATIONS.md). Donations are 100% optional and
-the app never asks twice.
+## Contact
 
 **Contact:** questions, feedback, and bug reports → [thenoopapp@gmail.com](mailto:thenoopapp@gmail.com)
 
@@ -381,5 +373,4 @@ use it at your own risk. Read the full notice in [`DISCLAIMER.md`](DISCLAIMER.md
 
 - [`DISCLAIMER.md`](DISCLAIMER.md) — trademark, interoperability, and medical/legal notice.
 - [`ATTRIBUTION.md`](ATTRIBUTION.md) — full credits and licensing notes.
-- [`docs/DONATIONS.md`](docs/DONATIONS.md) — optional donation addresses (also in-app under **Support**).
 - [`project.yml`](project.yml) — XcodeGen project definition (source of `Strand.xcodeproj`).
