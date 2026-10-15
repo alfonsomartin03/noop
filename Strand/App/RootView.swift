@@ -60,7 +60,7 @@ struct RootView: View {
                 }
                 .listStyle(.sidebar)
 
-                SidebarStatus().padding(.horizontal, 12).padding(.vertical, 12)
+                SidebarStatus { selection = .settings }.padding(.horizontal, 12).padding(.vertical, 12)
             }
             .navigationSplitViewColumnWidth(min: 200, ideal: 222, max: 260)
         } detail: {
@@ -97,7 +97,15 @@ struct RootView: View {
 /// re-render on the ~1 Hz HR / frame stream.
 private struct SidebarStatus: View {
     @EnvironmentObject var live: LiveState
+    let open: () -> Void
     var body: some View {
+        Button(action: open) { content }
+            .buttonStyle(.plain)
+            .help("Open strap connection settings")
+            .accessibilityLabel("WHOOP strap, \(subtitle). Open connection settings")
+    }
+
+    private var content: some View {
         HStack(spacing: 10) {
             Image(systemName: "applewatch.side.right")
                 .font(.system(size: 15, weight: .medium))
@@ -114,6 +122,7 @@ private struct SidebarStatus: View {
         .background(StrandPalette.surfaceRaised, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
             .strokeBorder(StrandPalette.hairline, lineWidth: 0.5))
+        .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
     private var statusColor: Color {
