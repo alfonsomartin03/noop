@@ -133,6 +133,10 @@ public struct TrendChart: View {
             }
         }
         .chartYScale(domain: valueRange)
+        // Marks outside the value domain (out-of-range points, catmull-rom overshoot) would otherwise
+        // draw past the plot area and across the page. Inset, then clip to the plot frame.
+        .chartPlotStyle { $0.padding(.vertical, 5).padding(.horizontal, 6).clipped() }
+        .clipped()
         .chartXAxis {
             AxisMarks(values: .automatic(desiredCount: 5)) { _ in
                 AxisGridLine().foregroundStyle(StrandPalette.hairline.opacity(0.4))

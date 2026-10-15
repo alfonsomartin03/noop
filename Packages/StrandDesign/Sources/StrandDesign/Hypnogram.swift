@@ -144,6 +144,7 @@ public struct Hypnogram: View {
                         )
                     }
                 }
+                .clipped()
                 .animation(StrandMotion.fade, value: hoverIndex)
                 .contentShape(Rectangle())
                 .onContinuousHover(coordinateSpace: .local) { phase in
@@ -203,8 +204,8 @@ public struct Hypnogram: View {
     }
 
     private func bandRect(for interval: SleepInterval, in size: CGSize) -> CGRect {
-        let x0 = CGFloat((interval.start - origin) / span) * size.width
-        let x1 = CGFloat((interval.end - origin) / span) * size.width
+        let x0 = min(size.width, max(0, CGFloat((interval.start - origin) / span) * size.width))
+        let x1 = min(size.width, max(0, CGFloat((interval.end - origin) / span) * size.width))
         let thickness: CGFloat = 10
         let y = rowY(interval.stage.bandRank, in: size.height)
         return CGRect(x: x0, y: y - thickness / 2, width: max(2, x1 - x0), height: thickness)

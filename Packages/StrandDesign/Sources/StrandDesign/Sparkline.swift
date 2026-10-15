@@ -114,6 +114,7 @@ public struct Sparkline: View {
                     )
                 }
             }
+            .clipped()
             .animation(StrandMotion.fade, value: hoverX)
             .contentShape(Rectangle())
             .onContinuousHover(coordinateSpace: .local) { phase in
@@ -138,9 +139,12 @@ public struct Sparkline: View {
         let span = max(hi - lo, 0.0001)
         let n = values.count
         return values.enumerated().map { i, v in
-            let x = n > 1 ? CGFloat(i) / CGFloat(n - 1) * size.width : size.width / 2
-            let norm = (v - lo) / span
-            let y = size.height - CGFloat(norm) * size.height
+            // Inset so the stroke and head dot stay inside the frame; clamp out-of-range samples.
+            let inset = lineWidth * 1.6
+            let w = max(0, size.width - 2 * inset), h = max(0, size.height - 2 * inset)
+            let x = n > 1 ? inset + CGFloat(i) / CGFloat(n - 1) * w : size.width / 2
+            let norm = min(1, max(0, (v - lo) / span))
+            let y = inset + h - CGFloat(norm) * h
             return CGPoint(x: x, y: y)
         }
     }
