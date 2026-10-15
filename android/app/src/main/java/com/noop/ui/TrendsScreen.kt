@@ -139,6 +139,8 @@ fun TrendsScreen(vm: AppViewModel) {
 
         // --- Recovery history strip (stands in for the macOS YearHeatStrip) ---
         RecoveryHistoryCard(days = days, range = range)
+
+        RecentCyclesCard(vm)
     }
 }
 

@@ -78,7 +78,7 @@ struct SettingsView: View {
                              : "Auto · \(profile.hrMax) bpm (Tanaka)")
                             .font(StrandFont.footnote)
                             .foregroundStyle(profile.hrMaxOverride > 0
-                                             ? StrandPalette.accent
+                                             ? StrandPalette.accentInk
                                              : StrandPalette.textTertiary)
                     }
                 }
@@ -149,8 +149,7 @@ struct SettingsView: View {
                         Label("Re-scan", systemImage: "arrow.clockwise")
                             .padding(.horizontal, 6)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .tint(StrandPalette.accent)
+                    .buttonStyle(.strandPrimary)
 
                     Button {
                         model.disconnect()
@@ -158,8 +157,7 @@ struct SettingsView: View {
                         Label("Disconnect", systemImage: "xmark.circle")
                             .padding(.horizontal, 6)
                     }
-                    .buttonStyle(.bordered)
-                    .tint(StrandPalette.statusCritical)
+                    .buttonStyle(.strandSecondary)
                     .disabled(!live.connected && !live.bonded)
                 }
             }
@@ -239,7 +237,7 @@ struct SettingsView: View {
                 // Medical disclaimer
                 HStack(alignment: .top, spacing: 10) {
                     Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundStyle(StrandPalette.statusWarning)
+                        .foregroundStyle(StrandPalette.statusWarningInk)
                         .font(.system(size: 13))
                         .accessibilityHidden(true)
                     Text("NOOP is not a medical device. It is for informational and personal-insight purposes only and is not intended to diagnose, treat, cure or prevent any condition. Talk to a clinician for medical advice.")
@@ -250,9 +248,9 @@ struct SettingsView: View {
                 .padding(12)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(StrandPalette.surfaceInset,
-                            in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                            in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
                         .stroke(StrandPalette.statusWarning.opacity(0.25), lineWidth: 1)
                 )
 
@@ -275,7 +273,7 @@ struct SettingsView: View {
         HStack(spacing: 8) {
             Image(systemName: "chevron.right")
                 .font(.system(size: 9, weight: .semibold))
-                .foregroundStyle(StrandPalette.accent)
+                .foregroundStyle(StrandPalette.accentInk)
                 .accessibilityHidden(true)
             Text(repo)
                 .font(StrandFont.mono(12))
@@ -311,7 +309,7 @@ private struct SettingsSection<Content: View>: View {
             VStack(alignment: .leading, spacing: 16) {
                 HStack(spacing: 10) {
                     Image(systemName: icon)
-                        .foregroundStyle(StrandPalette.accent)
+                        .foregroundStyle(StrandPalette.accentInk)
                         .accessibilityHidden(true)
                     Text(title)
                         .font(StrandFont.headline)

@@ -43,6 +43,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.PermissionController
+import com.noop.analytics.EstimateAccuracy
 import com.noop.data.DataBackup
 import com.noop.data.ImportSummary
 import com.noop.ingest.AppleHealthImporter
@@ -89,7 +90,10 @@ fun DataSourcesScreen(vm: AppViewModel) {
     var appleDays by remember { mutableStateOf<Int?>(null) }
     var appleWorkouts by remember { mutableStateOf<Int?>(null) }
 
+    var accuracy by remember { mutableStateOf<Map<String, EstimateAccuracy.Result>>(emptyMap()) }
+
     LaunchedEffect(Unit) {
+        accuracy = vm.estimateAccuracy()
         val now = System.currentTimeMillis() / 1000
         whoopDays = vm.repo.days("my-whoop").size
         whoopWorkouts = vm.repo.workouts("my-whoop", 0L, now).size
@@ -156,6 +160,8 @@ fun DataSourcesScreen(vm: AppViewModel) {
             val summary = withContext(Dispatchers.IO) {
                 runCatching { block() }.getOrElse { ImportSummary.failure("Import", it.message ?: "failed") }
             }
+            vm.analyzeNow()
+            accuracy = vm.estimateAccuracy()
             refreshCounts()
             busy = false
             Toast.makeText(context, summary.message, Toast.LENGTH_LONG).show()
@@ -227,6 +233,28 @@ fun DataSourcesScreen(vm: AppViewModel) {
                 enabled = !busy,
                 modifier = Modifier.fillMaxWidth(),
             ) { whoopImportLauncher.launch(arrayOf("*/*")) }
+        }
+
+        // --- NOOP vs WHOOP (only when both exist for the same days) ---
+        if (accuracy.isNotEmpty()) {
+            SourceCard(
+                title = "NOOP vs WHOOP",
+                icon = Icons.Filled.MonitorHeart,
+                subtitle = "How far NOOP's own estimate is from the score WHOOP reported, on days " +
+                    "you have both. NOOP's numbers are estimates, not WHOOP's.",
+            ) {
+                val units = mapOf("Recovery" to "points", "Strain" to "of 21", "Sleep" to "min")
+                accuracy.forEach { (name, r) ->
+                    CountLine(
+                        primary = name,
+                        secondary = if (r.isReliable)
+                            "off by %.1f %s on average · %d days".format(r.meanAbsError, units[name], r.days)
+                        else "needs ${EstimateAccuracy.MIN_DAYS} days · have ${r.days}",
+                    )
+                }
+                Text("Formulas ${EstimateAccuracy.MODEL_VERSION}", style = NoopType.footnote,
+                    color = Palette.textTertiary)
+            }
         }
 
         // --- Apple Health ---

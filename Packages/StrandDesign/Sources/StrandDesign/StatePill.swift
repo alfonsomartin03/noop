@@ -23,6 +23,17 @@ public enum StrandTone: Sendable {
         case .critical: return StrandPalette.statusCritical
         }
     }
+
+    /// Text/icon-safe version of the tone (the pastel `color` is for fills and dots).
+    public var ink: Color {
+        switch self {
+        case .neutral:  return StrandPalette.textSecondary
+        case .accent:   return StrandPalette.accentInk
+        case .positive: return StrandPalette.statusPositiveInk
+        case .warning:  return StrandPalette.statusWarningInk
+        case .critical: return StrandPalette.statusCriticalInk
+        }
+    }
 }
 
 public struct StatePill: View {
@@ -48,17 +59,17 @@ public struct StatePill: View {
             Text(title)
                 .font(StrandFont.overline)
                 .tracking(0.4)
-                .foregroundStyle(tone.color)
+                .foregroundStyle(tone.ink)
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 5)
         .background(
             Capsule(style: .continuous)
-                .fill(tone.color.opacity(0.12))
+                .fill(tone.color.opacity(0.28))
         )
         .overlay(
             Capsule(style: .continuous)
-                .stroke(tone.color.opacity(0.28), lineWidth: 1)
+                .stroke(tone.color.opacity(0.55), lineWidth: 0.5)
         )
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(title)

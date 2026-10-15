@@ -167,7 +167,7 @@ private struct MetricRow: View {
     var body: some View {
         HStack(spacing: 14) {
             ZStack {
-                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .fill(StrandPalette.surfaceInset)
                 Image(systemName: metric.icon)
                     .font(.system(size: 15, weight: .medium))
@@ -358,7 +358,7 @@ struct MetricDetailView: View {
             }
             Text(caption)
                 .font(StrandFont.footnote)
-                .foregroundStyle(windowFellBack ? StrandPalette.statusWarning : StrandPalette.textTertiary)
+                .foregroundStyle(windowFellBack ? StrandPalette.statusWarningInk : StrandPalette.textTertiary)
                 .accessibilityLabel(caption)
         }
     }
@@ -430,7 +430,7 @@ struct MetricDetailView: View {
                 return StrandPalette.textTertiary
             }
             return ((cmp.direction > 0) == better)
-                ? StrandPalette.statusPositive : StrandPalette.statusCritical
+                ? StrandPalette.statusPositiveInk : StrandPalette.statusCriticalInk
         }()
         let deltaCaption = hasDelta ? "vs prev \(effectiveRange.name)"
             : (effectiveRange == .all ? "all history" : "no prior \(effectiveRange.name)")

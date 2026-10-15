@@ -180,6 +180,7 @@ struct TrendsView: View {
                     heroRecovery(recovery: recovery)
                     smallMultiples(hrv: hrv, rhr: rhr, strain: strain)
                     yearStrip
+                    RecentCyclesCard()
                 }
             }
         }

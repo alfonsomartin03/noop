@@ -147,10 +147,14 @@ public struct StrandWidget<Content: View>: View {
     }
 
     private var card: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 6) {
-                Image(systemName: symbol).font(.system(size: 12, weight: .semibold))
-                Text(title).font(.system(size: 13, weight: .semibold))
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                Image(systemName: symbol)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(StrandPalette.ink(tint))
+                    .frame(width: 24, height: 24)
+                    .background(tint.opacity(0.30), in: Circle())
+                Text(title).font(.system(size: 13, weight: .semibold)).foregroundStyle(StrandPalette.textSecondary)
                 Spacer(minLength: 4)
                 if let trailing {
                     Text(trailing).font(.system(size: 12)).foregroundStyle(StrandPalette.textTertiary)
@@ -160,7 +164,6 @@ public struct StrandWidget<Content: View>: View {
                         .foregroundStyle(StrandPalette.textTertiary)
                 }
             }
-            .foregroundStyle(tint)
             content()
         }
         .padding(NoopMetrics.cardPadding)
@@ -171,11 +174,15 @@ public struct StrandWidget<Content: View>: View {
 }
 
 private struct WidgetPressStyle: ButtonStyle {
+    @State private var hovering = false
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .opacity(configuration.isPressed ? 0.78 : 1)
             .scaleEffect(configuration.isPressed ? 0.985 : 1)
-            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+            .offset(y: hovering && !configuration.isPressed ? -1 : 0)
+            .shadow(color: StrandPalette.shadow.opacity(hovering ? 1 : 0), radius: 12, y: 6)
+            .animation(StrandMotion.respecting(.easeOut(duration: 0.18)), value: configuration.isPressed)
+            .animation(StrandMotion.respecting(.easeOut(duration: 0.18)), value: hovering)
+            .onHover { hovering = $0 }
     }
 }
 
@@ -219,7 +226,7 @@ public struct WidgetSpark: View {
     public init(_ values: [Double], tint: Color) { self.values = values; self.tint = tint }
     public var body: some View {
         if values.count > 1 {
-            Sparkline(values: values, gradient: Gradient(colors: [tint, tint]),
+            Sparkline(values: values, gradient: Gradient(colors: [StrandPalette.ink(tint), StrandPalette.ink(tint)]),
                       lineWidth: 2, showsArea: true, showsHead: false, showsHover: false)
         } else {
             Capsule().fill(StrandPalette.hairline).frame(height: 2).frame(maxHeight: .infinity, alignment: .bottom)
@@ -242,7 +249,7 @@ public struct ProgressRing<Center: View>: View {
 
     public var body: some View {
         ZStack {
-            Circle().stroke(tint.opacity(0.16), lineWidth: lineWidth)
+            Circle().stroke(tint.opacity(0.22), lineWidth: lineWidth)
             Circle()
                 .trim(from: 0, to: max(0.001, min(1, shown)))
                 .stroke(tint, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
@@ -250,8 +257,8 @@ public struct ProgressRing<Center: View>: View {
             center()
         }
         .padding(lineWidth / 2)
-        .onAppear { withAnimation(StrandMotion.hero) { shown = fraction } }
-        .onChange(of: fraction) { new in withAnimation(StrandMotion.gentle) { shown = new } }
+        .onAppear { withAnimation(StrandMotion.respecting(StrandMotion.hero)) { shown = fraction } }
+        .onChange(of: fraction) { new in withAnimation(StrandMotion.respecting(StrandMotion.gentle)) { shown = new } }
     }
 }
 
@@ -302,7 +309,7 @@ public struct StrandNotice: View {
     }
     public var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            Image(systemName: symbol).font(.system(size: 16, weight: .semibold)).foregroundStyle(tint)
+            Image(systemName: symbol).font(.system(size: 16, weight: .semibold)).foregroundStyle(StrandPalette.ink(tint))
                 .frame(width: 24)
             VStack(alignment: .leading, spacing: 3) {
                 Text(title).font(.system(size: 14, weight: .semibold)).foregroundStyle(StrandPalette.textPrimary)
@@ -315,6 +322,6 @@ public struct StrandNotice: View {
         }
         .padding(NoopMetrics.cardPadding)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(tint.opacity(0.10), in: RoundedRectangle(cornerRadius: NoopMetrics.cardRadius, style: .continuous))
+        .background(tint.opacity(0.22), in: RoundedRectangle(cornerRadius: NoopMetrics.cardRadius, style: .continuous))
     }
 }

@@ -3,6 +3,7 @@ package com.noop.ui
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.noop.analytics.EstimateAccuracy
 import com.noop.analytics.IllnessWatch
 import com.noop.analytics.IntelligenceEngine
 import com.noop.analytics.UserProfile
@@ -17,6 +18,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -78,6 +80,38 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     val recentDays: StateFlow<List<DailyMetric>> =
         repository.daysMergedFlow(deviceId)
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** Days whose shown scores are official WHOOP values (imported); other days are NOOP estimates. */
+    val officialDays: StateFlow<Set<String>> =
+        repository.daysFlow(deviceId).map { rows -> rows.map { it.day }.toSet() }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
+
+    /** Re-run the on-device estimates now (used right after an import so they can be compared). */
+    suspend fun analyzeNow() {
+        runCatching {
+            IntelligenceEngine.analyzeRecent(
+                repo = repository,
+                profile = currentProfile(),
+                importedDeviceId = deviceId,
+                maxHROverride = profileStore.hrMaxOverride.takeIf { it > 0 }?.toDouble(),
+            )
+        }
+    }
+
+    /** NOOP-vs-WHOOP comparison per metric over days that have both. */
+    suspend fun estimateAccuracy(): Map<String, EstimateAccuracy.Result> {
+        val official = repository.days(deviceId).associateBy { it.day }
+        val est = repository.days(repository.computedDeviceId(deviceId)).associateBy { it.day }
+        fun cmp(pick: (DailyMetric) -> Double?): EstimateAccuracy.Result? = EstimateAccuracy.compare(
+            official.mapNotNull { (k, v) -> pick(v)?.let { k to it } }.toMap(),
+            est.mapNotNull { (k, v) -> pick(v)?.let { k to it } }.toMap(),
+        )
+        return listOfNotNull(
+            cmp { it.recovery }?.let { "Recovery" to it },
+            cmp { it.strain }?.let { "Strain" to it },
+            cmp { it.totalSleepMin }?.let { "Sleep" to it },
+        ).toMap()
+    }
 
     init {
         // Smooth HR from each LiveState emission.

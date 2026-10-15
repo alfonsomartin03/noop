@@ -49,6 +49,7 @@ struct SleepView: View {
                 if let resolved {
                     VStack(alignment: .leading, spacing: NoopMetrics.sectionGap) {
                         hero(resolved)
+                        SleepNeedCard()
                         metricGrid(resolved)
                         stagesVsTypical(resolved)
                         durationTrend(resolved)
@@ -278,7 +279,7 @@ struct SleepView: View {
                 if !deltaText.isEmpty {
                     Text(deltaText)
                         .font(StrandFont.footnote)
-                        .foregroundStyle(last >= (typical ?? last) ? StrandPalette.statusPositive : StrandPalette.statusWarning)
+                        .foregroundStyle(last >= (typical ?? last) ? StrandPalette.statusPositiveInk : StrandPalette.statusWarningInk)
                 }
             }
             GeometryReader { geo in

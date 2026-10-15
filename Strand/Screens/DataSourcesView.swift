@@ -1,6 +1,7 @@
 import SwiftUI
 import UniformTypeIdentifiers
 import StrandDesign
+import StrandAnalytics
 
 /// Import & Export — the data-ownership screen. Bring in your full WHOOP export, see what NOOP
 /// has stored, and take a complete copy of the database out.
@@ -19,6 +20,7 @@ struct DataSourcesView: View {
                        subtitle: "Everything WHOOP collects, stored on this Mac. Bring your history in, take a copy out.") {
             storedCard
             whoopCard
+            accuracyCard
             backupCard
         }
         .fileImporter(isPresented: $picking,
@@ -55,13 +57,42 @@ struct DataSourcesView: View {
                     Label(model.importing ? "Importing…" : "Choose export…", systemImage: "tray.and.arrow.down")
                         .padding(.horizontal, 6)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(StrandPalette.accent)
+                .buttonStyle(.strandPrimary)
                 .disabled(model.importing)
                 if model.importing { ProgressView().controlSize(.small) }
             }
             if let s = model.importSummary {
-                Text(s).font(StrandFont.subhead).foregroundStyle(StrandPalette.statusPositive)
+                Text(s).font(StrandFont.subhead).foregroundStyle(StrandPalette.statusPositiveInk)
+            }
+        }
+    }
+
+    /// Official WHOOP scores vs NOOP's own estimates, over days that have both. Hidden until there
+    /// is an overlap (needs a WHOOP import plus nights NOOP scored itself).
+    @ViewBuilder
+    private var accuracyCard: some View {
+        let rows: [(String, String, EstimateAccuracy.Result?)] = [
+            ("Recovery", "points", repo.accuracy { $0.recovery }),
+            ("Strain", "of 21", repo.accuracy { $0.strain }),
+            ("Sleep", "min", repo.accuracy { $0.totalSleepMin }),
+        ]
+        if rows.contains(where: { $0.2 != nil }) {
+            card(title: "NOOP vs WHOOP", icon: "scalemass.fill",
+                 subtitle: "How far NOOP's own estimate is from the score WHOOP reported, on days you have both. NOOP's numbers are estimates, not WHOOP's.") {
+                ForEach(rows, id: \.0) { name, unit, r in
+                    if let r {
+                        HStack {
+                            Text(name).font(StrandFont.subhead).foregroundStyle(StrandPalette.textPrimary)
+                            Spacer()
+                            Text(r.isReliable
+                                 ? "off by \(String(format: "%.1f", r.meanAbsError)) \(unit) on average · \(r.days) days"
+                                 : "needs \(EstimateAccuracy.minDays) days · have \(r.days)")
+                                .font(StrandFont.subhead).foregroundStyle(StrandPalette.textSecondary)
+                        }
+                    }
+                }
+                Text("Formulas \(EstimateAccuracy.modelVersion)").font(StrandFont.subhead)
+                    .foregroundStyle(StrandPalette.textTertiary)
             }
         }
     }
@@ -73,13 +104,13 @@ struct DataSourcesView: View {
                 Button { runExport() } label: {
                     Label("Export…", systemImage: "square.and.arrow.up").padding(.horizontal, 6)
                 }
-                .buttonStyle(.borderedProminent).tint(StrandPalette.accent)
+                .buttonStyle(.strandPrimary)
                 .disabled(backupBusy)
 
                 Button { runImport() } label: {
                     Label("Restore backup…", systemImage: "square.and.arrow.down").padding(.horizontal, 6)
                 }
-                .buttonStyle(.bordered).tint(StrandPalette.accent)
+                .buttonStyle(.strandSecondary)
                 .disabled(backupBusy)
 
                 if backupBusy { ProgressView().controlSize(.small) }
@@ -124,15 +155,14 @@ struct DataSourcesView: View {
                               @ViewBuilder content: () -> C) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 10) {
-                Image(systemName: icon).foregroundStyle(StrandPalette.accent)
+                Image(systemName: icon).foregroundStyle(StrandPalette.accentInk)
                 Text(title).font(StrandFont.headline).foregroundStyle(StrandPalette.textPrimary)
             }
             Text(subtitle).font(StrandFont.subhead).foregroundStyle(StrandPalette.textSecondary)
             content()
         }
-        .padding(18)
+        .padding(NoopMetrics.cardPadding)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(StrandPalette.surfaceRaised, in: RoundedRectangle(cornerRadius: 14))
-        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(StrandPalette.hairline))
+        .strandSurface()
     }
 }

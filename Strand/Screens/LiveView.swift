@@ -93,10 +93,10 @@ struct LiveView: View {
             Button { model.scan() } label: {
                 Label(live.connected ? "Re-scan" : "Connect", systemImage: "antenna.radiowaves.left.and.right")
             }
-            .buttonStyle(.borderedProminent).tint(StrandPalette.accent)
+            .buttonStyle(.strandPrimary)
 
             Button(role: .destructive) { model.disconnect() } label: { Label("Disconnect", systemImage: "xmark.circle") }
-                .buttonStyle(.bordered)
+                .buttonStyle(.strandSecondary)
                 .disabled(!live.connected)
             Spacer()
         }

@@ -13,7 +13,7 @@ struct PairingResetNotice: View {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 10) {
                     Image(systemName: "link.badge.plus")
-                        .foregroundStyle(StrandPalette.statusWarning)
+                        .foregroundStyle(StrandPalette.statusWarningInk)
                     Text("Pairing needs a reset")
                         .font(StrandFont.headline).foregroundStyle(StrandPalette.textPrimary)
                 }
@@ -24,11 +24,11 @@ struct PairingResetNotice: View {
                     Button { model.openBluetoothSettings() } label: {
                         Label("Open Bluetooth Settings", systemImage: "gearshape").padding(.horizontal, 6)
                     }
-                    .buttonStyle(.borderedProminent).tint(StrandPalette.accent)
+                    .buttonStyle(.strandPrimary)
                     Button { model.restartPairing() } label: {
                         Label("Start pairing again", systemImage: "arrow.clockwise").padding(.horizontal, 6)
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.strandSecondary)
                 }
             }
             .padding(NoopMetrics.cardPadding)

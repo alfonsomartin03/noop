@@ -106,6 +106,7 @@ final class AppModel: ObservableObject {
                 }
                 let summary = try await WhoopImporter.importExport(url: url, into: store, deviceId: deviceId)
                 await repo.refresh()
+                await intelligence.analyzeRecent()   // refresh NOOP estimates so they can be compared with the import
                 let span: String
                 if let a = summary.earliest, let b = summary.latest {
                     let f = DateFormatter(); f.dateFormat = "MMM yyyy"

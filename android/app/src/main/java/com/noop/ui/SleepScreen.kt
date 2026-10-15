@@ -92,6 +92,8 @@ fun SleepScreen(vm: AppViewModel) {
         } else {
             Hero(model)
             Spacer(Modifier.height(Metrics.sectionGap - 20.dp))
+            SleepNeedCard(vm)
+            Spacer(Modifier.height(Metrics.sectionGap - 20.dp))
             MetricGrid(model)
             Spacer(Modifier.height(Metrics.sectionGap - 20.dp))
             StagesVsTypical(model)

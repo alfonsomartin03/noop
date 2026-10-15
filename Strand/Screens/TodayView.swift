@@ -116,9 +116,15 @@ struct TodayView: View {
                 }
                 Spacer(minLength: 0)
                 WidgetSpark(sparks["recovery"] ?? [], tint: tint).frame(height: 44)
-                Text("Last 14 days").font(.system(size: 11)).foregroundStyle(StrandPalette.textTertiary)
+                Text(scoreSourceLine(d)).font(.system(size: 11)).foregroundStyle(StrandPalette.textTertiary)
             }
         }
+    }
+
+    /// One plain line saying where today's scores come from.
+    private func scoreSourceLine(_ d: DailyMetric?) -> String {
+        guard let d else { return "Last 14 days" }
+        return repo.isOfficial(d.day) ? "WHOOP score · last 14 days" : "NOOP estimate · last 14 days"
     }
 
     private func sleepWidget(_ d: DailyMetric?) -> some View {
@@ -370,7 +376,7 @@ private struct ConnectionStrip: View {
                         .font(.system(size: 12)).foregroundStyle(StrandPalette.textSecondary)
                 }
                 Spacer()
-                Button("Connect") { model.scan() }.buttonStyle(.borderedProminent).tint(StrandPalette.accent)
+                Button("Connect") { model.scan() }.buttonStyle(.strandPrimary)
             }
             .padding(NoopMetrics.cardPadding)
             .strandSurface()

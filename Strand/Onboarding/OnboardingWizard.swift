@@ -368,7 +368,7 @@ private struct BluetoothStep: View {
                         .frame(width: 86, height: 86)
                     Image(systemName: "wave.3.right")
                         .font(.system(size: 34, weight: .semibold))
-                        .foregroundStyle(StrandPalette.accent)
+                        .foregroundStyle(StrandPalette.accentInk)
                 }
                 .frame(height: 130)
 
@@ -487,7 +487,7 @@ private struct ScanStep: View {
             VStack(alignment: .leading, spacing: 14) {
                 HStack(spacing: 10) {
                     Image(systemName: "info.circle.fill")
-                        .foregroundStyle(StrandPalette.statusWarning)
+                        .foregroundStyle(StrandPalette.statusWarningInk)
                     Text("Don't see it? That's normal.")
                         .font(StrandFont.headline)
                         .foregroundStyle(StrandPalette.textPrimary)
@@ -545,7 +545,7 @@ private struct BondedStep: View {
                         .opacity(bloom ? 1 : 0)
                     Image(systemName: "checkmark")
                         .font(.system(size: 44, weight: .bold))
-                        .foregroundStyle(StrandPalette.statusPositive)
+                        .foregroundStyle(StrandPalette.statusPositiveInk)
                         .scaleEffect(bloom ? 1 : 0.4)
                         .opacity(bloom ? 1 : 0)
                 }
@@ -624,7 +624,7 @@ private struct ProfileStep: View {
 
                 HStack(spacing: 8) {
                     Image(systemName: "bolt.heart")
-                        .foregroundStyle(StrandPalette.accent)
+                        .foregroundStyle(StrandPalette.accentInk)
                     Text("Estimated max heart rate · \(profile.hrMax) bpm")
                         .font(StrandFont.footnote)
                         .foregroundStyle(StrandPalette.textTertiary)
@@ -647,7 +647,7 @@ private struct ImportStep: View {
                         .frame(width: 96, height: 96)
                     Image(systemName: "square.and.arrow.down")
                         .font(.system(size: 40, weight: .regular))
-                        .foregroundStyle(StrandPalette.accent)
+                        .foregroundStyle(StrandPalette.accentInk)
                 }
 
                 InfoCard(
@@ -898,7 +898,7 @@ private struct Checkline: View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: "checkmark.circle.fill")
                 .font(.system(size: 14))
-                .foregroundStyle(StrandPalette.statusPositive)
+                .foregroundStyle(StrandPalette.statusPositiveInk)
                 .padding(.top, 1)
             Text(text)
                 .font(StrandFont.subhead)
@@ -956,7 +956,7 @@ private struct DisclosureToggle: View {
                 Text(label)
             }
             .font(StrandFont.subhead)
-            .foregroundStyle(StrandPalette.accent)
+            .foregroundStyle(StrandPalette.accentInk)
         }
         .buttonStyle(.plain)
     }
@@ -985,14 +985,14 @@ private struct PrimaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .frame(maxWidth: .infinity)
-            .foregroundStyle(Color.white)
+            .foregroundStyle(StrandPalette.onAccent)
             .padding(.vertical, 14)
             .padding(.horizontal, 20)
             .background(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .fill(configuration.isPressed ? StrandPalette.accentHover : StrandPalette.accent)
             )
-            .shadow(color: StrandPalette.accent.opacity(0.4), radius: 12, y: 4)
+            .shadow(color: StrandPalette.accent.opacity(0.35), radius: 10, y: 3)
             .scaleEffect(configuration.isPressed ? 0.985 : 1)
             .animation(StrandMotion.interactive, value: configuration.isPressed)
     }

@@ -53,29 +53,40 @@ struct RootView: View {
     var body: some View {
         NavigationSplitView {
             VStack(spacing: 0) {
-                List(selection: $selection) {
-                    Section("Collected") { ForEach(NavItem.collected) { row($0) } }
-                    Section("Your data") { ForEach(NavItem.data) { row($0) } }
-                    Section { ForEach(NavItem.footer) { row($0) } }
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 4) {
+                        sectionLabel("Collected")
+                        ForEach(NavItem.collected) { SidebarRow(item: $0, selection: $selection) }
+                        sectionLabel("Your data").padding(.top, 14)
+                        ForEach(NavItem.data) { SidebarRow(item: $0, selection: $selection) }
+                        sectionLabel("App").padding(.top, 14)
+                        ForEach(NavItem.footer) { SidebarRow(item: $0, selection: $selection) }
+                    }
+                    .padding(.horizontal, 10).padding(.top, 14)
                 }
-                .listStyle(.sidebar)
 
                 SidebarStatus { selection = .settings }.padding(.horizontal, 12).padding(.vertical, 12)
             }
+            .background(StrandPalette.surfaceInset.opacity(0.6))
             .navigationSplitViewColumnWidth(min: 200, ideal: 222, max: 260)
         } detail: {
             detail
+                .id(selection)
+                .transition(.opacity)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(StrandPalette.surfaceBase.ignoresSafeArea())
+                .animation(StrandMotion.respecting(.easeOut(duration: 0.2)), value: selection)
         }
+        .tint(StrandPalette.accentInk)
         .environment(\.navigate) { selection = $0 }
         .task { await repo.refresh() }
     }
 
-    private func row(_ item: NavItem) -> some View {
-        Label(item.rawValue, systemImage: item.icon)
-            .font(.system(size: 13))
-            .tag(item)
+    private func sectionLabel(_ title: String) -> some View {
+        Text(title)
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(StrandPalette.textTertiary)
+            .padding(.horizontal, 10).padding(.bottom, 2)
     }
 
     @ViewBuilder private var detail: some View {
@@ -90,6 +101,40 @@ struct RootView: View {
         case .dataSources: DataSourcesView()
         case .settings: SettingsView()
         }
+    }
+}
+
+/// One sidebar destination: icon + label, pastel capsule when selected, soft hover.
+private struct SidebarRow: View {
+    let item: NavItem
+    @Binding var selection: NavItem?
+    @State private var hovering = false
+    private var selected: Bool { (selection ?? .today) == item }
+
+    var body: some View {
+        Button { selection = item } label: {
+            HStack(spacing: 10) {
+                Image(systemName: item.icon)
+                    .font(.system(size: 13, weight: .medium))
+                    .frame(width: 20)
+                    .foregroundStyle(selected ? StrandPalette.accentInk : StrandPalette.textSecondary)
+                Text(item.rawValue)
+                    .font(.system(size: 13, weight: selected ? .semibold : .regular))
+                    .foregroundStyle(selected ? StrandPalette.textPrimary : StrandPalette.textSecondary)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 10).padding(.vertical, 7)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(selected ? StrandPalette.accentMuted : (hovering ? StrandPalette.hairline : Color.clear))
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .animation(StrandMotion.respecting(.easeOut(duration: 0.15)), value: selected)
+        .animation(StrandMotion.respecting(.easeOut(duration: 0.15)), value: hovering)
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
 
@@ -109,7 +154,7 @@ private struct SidebarStatus: View {
         HStack(spacing: 10) {
             Image(systemName: "applewatch.side.right")
                 .font(.system(size: 15, weight: .medium))
-                .foregroundStyle(statusColor)
+                .foregroundStyle(StrandPalette.ink(statusColor))
                 .frame(width: 22)
             VStack(alignment: .leading, spacing: 1) {
                 Text("WHOOP").font(.system(size: 12, weight: .semibold)).foregroundStyle(StrandPalette.textPrimary)
@@ -119,10 +164,10 @@ private struct SidebarStatus: View {
             Circle().fill(statusColor).frame(width: 7, height: 7)
         }
         .padding(.horizontal, 12).padding(.vertical, 10)
-        .background(StrandPalette.surfaceRaised, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
+        .background(StrandPalette.surfaceRaised, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
             .strokeBorder(StrandPalette.hairline, lineWidth: 0.5))
-        .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
     private var statusColor: Color {

@@ -50,7 +50,7 @@ struct LiveStatusCard: View {
                 HStack(spacing: 10) {
                     if phase.isBusy { ProgressView().controlSize(.small) }
                     else { Image(systemName: phase == .live ? "checkmark.circle.fill" : "circle.dashed")
-                        .foregroundStyle(phase == .live ? StrandPalette.statusPositive : StrandPalette.textTertiary) }
+                        .foregroundStyle(phase == .live ? StrandPalette.statusPositiveInk : StrandPalette.textTertiary) }
                     Text(phase.title).font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(StrandPalette.textPrimary)
                     Spacer()
@@ -83,7 +83,7 @@ struct LiveStatusCard: View {
         HStack(spacing: 10) {
             Group {
                 switch state {
-                case .done:   Image(systemName: "checkmark.circle.fill").foregroundStyle(StrandPalette.statusPositive)
+                case .done:   Image(systemName: "checkmark.circle.fill").foregroundStyle(StrandPalette.statusPositiveInk)
                 case .active: ProgressView().controlSize(.mini)
                 case .pending: Image(systemName: "circle").foregroundStyle(StrandPalette.textTertiary)
                 }
@@ -126,7 +126,7 @@ struct StrapHistoryCard: View {
         if live.family == "whoop5" {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 8) {
-                    Image(systemName: "externaldrive.badge.timemachine").foregroundStyle(StrandPalette.metricPurple)
+                    Image(systemName: "externaldrive.badge.timemachine").foregroundStyle(StrandPalette.lavenderInk)
                     Text("Stored data on your strap").font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(StrandPalette.textPrimary)
                     Spacer()
@@ -148,7 +148,7 @@ struct StrapHistoryCard: View {
                         Button(role: .cancel) { model.ble.cancelWhoop5History() } label: { Label("Stop", systemImage: "stop.fill") }
                     } else {
                         Button { model.ble.pullWhoop5History() } label: { Label("Pull stored data (safe mode)", systemImage: "arrow.down.circle") }
-                            .buttonStyle(.borderedProminent).tint(StrandPalette.accent)
+                            .buttonStyle(.strandPrimary)
                             .disabled(!live.bonded)
                     }
                     Spacer()

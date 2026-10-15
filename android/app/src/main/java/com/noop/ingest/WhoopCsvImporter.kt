@@ -5,6 +5,7 @@ import android.net.Uri
 import com.noop.data.DailyMetric
 import com.noop.data.ImportSummary
 import com.noop.data.JournalEntry
+import com.noop.data.MetricSeriesRow
 import com.noop.data.SleepSession
 import com.noop.data.WhoopRepository
 import com.noop.data.WorkoutRow
@@ -102,6 +103,9 @@ object WhoopCsvImporter {
         if (sleepSessions.isNotEmpty()) repo.upsertSleepSessions(sleepSessions)
         if (workouts.isNotEmpty()) repo.upsertWorkouts(workouts)
         if (journal.isNotEmpty()) repo.upsertJournal(journal)
+        // Sleep need/debt and cycle boundaries live in the generic metric store (same keys as macOS).
+        val cycleSeries = csvData[CYCLES_NAME]?.let { parseCycleSeries(CsvTable.fromData(it), deviceId) } ?: emptyList()
+        if (cycleSeries.isNotEmpty()) repo.upsertMetricSeries(cycleSeries)
 
         val counts = LinkedHashMap<String, Int>()
         if (daily.isNotEmpty()) counts["dailyMetric"] = daily.size
@@ -284,6 +288,27 @@ object WhoopCsvImporter {
                     respRateBpm = resp,
                 )
             )
+        }
+        return out
+    }
+
+    /**
+     * physiological_cycles.csv -> generic metric points: WHOOP-reported sleep need / debt plus the
+     * cycle's start, end and recorded timezone (cycles are not calendar days). Keys match macOS.
+     */
+    private fun parseCycleSeries(table: CsvTable, deviceId: String): List<MetricSeriesRow> {
+        val out = ArrayList<MetricSeriesRow>()
+        for (row in table.rows) {
+            val tz = WhoopTime.tzOffsetMinutes(row["cycle_timezone"])
+            val start = WhoopTime.parseEpochSeconds(row.cell("cycle_start_time"), tz) ?: continue
+            val end = WhoopTime.parseEpochSeconds(row.cell("cycle_end_time"), tz)
+            val day = epochSecondsToDay(start, tz)
+            fun add(key: String, v: Double?) { if (v != null) out.add(MetricSeriesRow(deviceId, day, key, v)) }
+            add("sleep_need_min", row.double("sleep_need_min"))
+            add("sleep_debt_min", row.double("sleep_debt_min"))
+            add("cycle_start_ts", start.toDouble())
+            add("cycle_end_ts", end?.toDouble())
+            add("cycle_tz_min", tz.toDouble())
         }
         return out
     }

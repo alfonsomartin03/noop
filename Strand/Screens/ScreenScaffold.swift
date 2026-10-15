@@ -13,7 +13,7 @@ struct ScreenScaffold<Content: View>: View {
             VStack(alignment: .leading, spacing: NoopMetrics.sectionGap) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(title)
-                        .font(.system(size: 32, weight: .bold))
+                        .font(.system(size: 30, weight: .bold)).tracking(-0.4)
                         .foregroundStyle(StrandPalette.textPrimary)
                     if let subtitle {
                         Text(subtitle)

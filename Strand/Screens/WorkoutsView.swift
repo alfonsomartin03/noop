@@ -77,7 +77,7 @@ struct WorkoutsView: View {
             }
             Text(caption)
                 .font(StrandFont.footnote)
-                .foregroundStyle(fellBack ? StrandPalette.statusWarning : StrandPalette.textTertiary)
+                .foregroundStyle(fellBack ? StrandPalette.statusWarningInk : StrandPalette.textTertiary)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .accessibilityLabel(caption)
         }
@@ -181,7 +181,7 @@ struct WorkoutsView: View {
                 HStack(spacing: 10) {
                     Image(systemName: sportIcon(g.sport))
                         .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(StrandPalette.accent)
+                        .foregroundStyle(StrandPalette.accentInk)
                         .frame(width: 22, alignment: .center)
                     Text(g.sport)
                         .font(StrandFont.headline)

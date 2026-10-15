@@ -1,4 +1,7 @@
 import SwiftUI
+#if canImport(AppKit)
+import AppKit
+#endif
 
 // MARK: - Strand Motion (§9.6)
 //
@@ -7,17 +10,32 @@ import SwiftUI
 
 public enum StrandMotion {
 
+    /// True when the user asked macOS to reduce motion. Continuous/looping effects check this.
+    public static var reduceMotion: Bool {
+        #if canImport(AppKit)
+        NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        #else
+        false
+        #endif
+    }
+
+    /// Returns `animation`, or nil (no animation) when Reduce Motion is on.
+    public static func respecting(_ animation: Animation) -> Animation? {
+        reduceMotion ? nil : animation
+    }
+
+
     // MARK: Spring presets
 
     /// Interactive spring — snappy, for direct manipulation (hover, press, sidebar slide).
-    public static let interactive = Animation.interactiveSpring(response: 0.28, dampingFraction: 0.82, blendDuration: 0.1)
+    public static let interactive = Animation.easeOut(duration: 0.18)
 
     /// Gentle spring — the house style for value changes (ring draw-in, gauges).
     /// spring(response: 0.5, damping: 0.8) per the brief.
-    public static let gentle = Animation.spring(response: 0.5, dampingFraction: 0.8)
+    public static let gentle = Animation.easeOut(duration: 0.3)
 
     /// A slower, more deliberate spring for hero transitions (e.g. first ring materialize).
-    public static let hero = Animation.spring(response: 0.85, dampingFraction: 0.85)
+    public static let hero = Animation.easeOut(duration: 0.6)
 
     // MARK: Durations
 
@@ -40,7 +58,7 @@ public enum StrandMotion {
 
     /// Looping breathe animation for ambient glow/pulse.
     public static var breathe: Animation {
-        .easeInOut(duration: breathPeriod).repeatForever(autoreverses: true)
+        reduceMotion ? .linear(duration: 0) : .easeInOut(duration: breathPeriod).repeatForever(autoreverses: true)
     }
 
     /// A single heartbeat ripple pulse.

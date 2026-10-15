@@ -2,6 +2,7 @@ import Foundation
 import Combine
 import WhoopStore
 import WhoopProtocol
+import StrandAnalytics
 
 /// Read model over the on-device WhoopStore. Opens its own handle (WAL + busy-timeout makes the
 /// two-handle BLEManager+Repository pattern safe) and publishes the dashboard caches the screens bind to.
@@ -19,6 +20,12 @@ final class Repository: ObservableObject {
     /// Cached sleep sessions over the recent window, oldest→newest.
     @Published var sleeps: [CachedSleepSession] = []
     @Published var loaded = false
+    /// Days whose merged row is an official WHOOP value (imported). Every other day is a NOOP estimate.
+    @Published var officialDays: Set<String> = []
+    /// NOOP's own estimates keyed by day, kept even where an official value hides them in `days`.
+    @Published var estimates: [String: DailyMetric] = [:]
+    /// Imported (official) rows keyed by day.
+    @Published var official: [String: DailyMetric] = [:]
 
     init(deviceId: String) { self.deviceId = deviceId }
 
@@ -64,7 +71,21 @@ final class Repository: ObservableObject {
 
         self.days = Self.mergeDaily(imported: imported, computed: computed)
         self.sleeps = Self.mergeSleep(imported: impSleep, computed: compSleep)
+        self.officialDays = Set(imported.map(\.day))
+        self.official = Dictionary(imported.map { ($0.day, $0) }, uniquingKeysWith: { _, b in b })
+        self.estimates = Dictionary(computed.map { ($0.day, $0) }, uniquingKeysWith: { _, b in b })
         self.loaded = true
+    }
+
+    /// True when `day`'s shown scores come from a WHOOP import rather than a NOOP estimate.
+    func isOfficial(_ day: String?) -> Bool { day.map(officialDays.contains) ?? false }
+
+    /// Official-vs-estimate comparison for one metric over days that have both.
+    func accuracy(_ pick: (DailyMetric) -> Double?) -> EstimateAccuracy.Result? {
+        func series(_ m: [String: DailyMetric]) -> [String: Double] {
+            m.compactMapValues(pick)
+        }
+        return EstimateAccuracy.compare(official: series(official), estimate: series(estimates))
     }
 
     /// Imported daily rows win per day; computed rows fill the days the import doesn't cover.

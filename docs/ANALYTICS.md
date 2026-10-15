@@ -439,3 +439,17 @@ Apple Health XML ──┘                                         │
 - **Cold-start honesty.** When a baseline isn't trustworthy yet, the recovery scorer returns `nil` rather than a fabricated number.
 - **Not a medical device.** None of this is diagnostic or medical advice. The illness early-warning is a wellness nudge from your own baselines, not a clinical screen.
 - **Not affiliated with WHOOP.** NOOP interoperates with hardware and exports you already own, entirely on-device. Protocol decoding builds on open-source reverse-engineering of the WHOOP 4.0 (project *my-whoop*, `johnmiddleton12/my-whoop`) and WHOOP 5.0 (project *goose*, `b-nnett/goose`) protocols.
+
+## Official scores vs NOOP estimates
+
+Two kinds of daily scores are kept apart in storage:
+
+- **WHOOP score** — values reported by a WHOOP export, stored under `my-whoop`.
+- **NOOP estimate** — values NOOP computes from the strap's raw streams, stored under `my-whoop-noop`.
+
+On a day that has both, the dashboard shows the WHOOP score and labels it ("WHOOP score" / "NOOP estimate"); the estimate is never overwritten. After a WHOOP import the estimates are recomputed, and **Import & Export → NOOP vs WHOOP** reports the average gap per metric over days that have both (shown once 7 days overlap). `EstimateAccuracy.modelVersion` (`noop-est-1`) tags the formulas; bump it whenever scoring math changes, in Swift and Kotlin together. Estimates are approximations, not WHOOP's proprietary model and not clinical readings.
+
+## Sleep need and cycles
+
+- **Sleep need** (Sleep screen): shows slept vs needed. With a WHOOP export it uses WHOOP's reported `sleep_need_min` / `sleep_debt_min` ("WHOOP score"). Without one it estimates need as the larger of 7.5 h and your 14-night average, and shows only that night's shortfall ("NOOP estimate"), which is not WHOOP's accumulated debt. Logic: `SleepNeed` (Swift and Kotlin).
+- **Recent cycles** (Trends): the last five WHOOP cycles with start, end and length in the timezone each was recorded in. The importer stores `cycle_start_ts`, `cycle_end_ts` and `cycle_tz_min` in the metric series, so exports imported before this change need re-importing to show cycles.

@@ -47,6 +47,7 @@ fun TodayScreen(viewModel: AppViewModel, onSupport: () -> Unit = {}) {
     val today by viewModel.today.collectAsStateWithLifecycle()
     val alert by viewModel.healthAlert.collectAsStateWithLifecycle()
     val days by viewModel.recentDays.collectAsStateWithLifecycle()
+    val officialDays by viewModel.officialDays.collectAsStateWithLifecycle()
 
     // 14-day trailing window (oldest → newest), with the macOS fallback: if the
     // trailing slice has <2 points, fall back to all history so a tile never shows
@@ -102,7 +103,9 @@ fun TodayScreen(viewModel: AppViewModel, onSupport: () -> Unit = {}) {
                 modifier = Modifier.weight(1f),
                 category = "Recovery",
                 status = synthesisWord(today?.recovery),
-                detail = synthesisDetail(today),
+                detail = synthesisDetail(today) + (today?.let {
+                    "\n" + if (it.day in officialDays) "WHOOP score" else "NOOP estimate"
+                } ?: ""),
                 statusColor = today?.recovery?.let { Palette.recoveryColor(it) } ?: Palette.textTertiary,
             )
         }

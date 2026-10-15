@@ -73,6 +73,10 @@ enum WhoopImporter {
             add(day, "sleep_efficiency", c.sleepEfficiencyPct); add(day, "sleep_performance", c.sleepPerformancePct)
             add(day, "sleep_consistency", c.sleepConsistencyPct); add(day, "sleep_need_min", c.sleepNeedMin)
             add(day, "sleep_debt_min", c.sleepDebtMin)
+            // Cycle boundaries + the timezone they were recorded in (cycles are not calendar days).
+            add(day, "cycle_start_ts", start.timeIntervalSince1970)
+            add(day, "cycle_end_ts", c.cycleEnd?.timeIntervalSince1970)
+            add(day, "cycle_tz_min", Double(c.tzOffsetMin))
             if let deep = c.deepSleepDurationMin, let rem = c.remDurationMin {
                 add(day, "restorative_min", deep + rem)
                 if let asleep = c.asleepDurationMin, asleep > 0 {

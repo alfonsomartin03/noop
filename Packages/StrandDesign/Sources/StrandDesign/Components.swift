@@ -6,12 +6,14 @@ import SwiftUI
 // the uniform, instrument-grade look from the reference. Do not invent ad-hoc cards.
 
 public enum NoopMetrics {
-    public static let cardRadius: CGFloat = 20
-    public static let cardPadding: CGFloat = 18
-    public static let gap: CGFloat = 14          // gap between cards
-    public static let sectionGap: CGFloat = 32   // gap between sections
+    public static let cardRadius: CGFloat = 22
+    public static let cardPadding: CGFloat = 20
+    public static let gap: CGFloat = 16          // gap between cards
+    public static let sectionGap: CGFloat = 36   // gap between sections
     public static let screenPadding: CGFloat = 28
     public static let contentMaxWidth: CGFloat = 1080
+    /// Corner radius for controls (buttons, inputs, chips are capsules/10pt).
+    public static let controlRadius: CGFloat = 12
     public static let tileHeight: CGFloat = 112  // every metric tile is this tall
     public static let chartHeight: CGFloat = 220
 }
@@ -40,7 +42,7 @@ public extension View {
             .background(StrandPalette.surfaceRaised, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                 .strokeBorder(StrandPalette.hairline, lineWidth: 0.5))
-            .shadow(color: .black.opacity(0.04), radius: 6, y: 2)
+            .shadow(color: StrandPalette.shadow, radius: 14, y: 4)
     }
 }
 
@@ -170,7 +172,7 @@ public struct InsightCard: View {
         NoopCard(padding: 18) {
             VStack(alignment: .leading, spacing: 8) {
                 Text(category).strandOverline()
-                Text(status).font(StrandFont.title1).foregroundStyle(statusColor)
+                Text(status).font(StrandFont.title1).foregroundStyle(StrandPalette.ink(statusColor))
                 Text(detail).font(StrandFont.subhead).foregroundStyle(StrandPalette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -191,14 +193,14 @@ public struct SegmentedPillControl<T: Hashable>: View {
         HStack(spacing: 4) {
             ForEach(Array(items.enumerated()), id: \.offset) { _, item in
                 let sel = item == selection
-                Button { withAnimation(StrandMotion.interactive) { selection = item } } label: {
+                Button { withAnimation(StrandMotion.respecting(StrandMotion.interactive)) { selection = item } } label: {
                     Text(label(item))
                         .font(StrandFont.captionNumber)
                         .foregroundStyle(sel ? StrandPalette.textPrimary : StrandPalette.textSecondary)
                         .frame(minWidth: 32)
                         .padding(.vertical, 5).padding(.horizontal, 11)
                         .background(Capsule(style: .continuous).fill(sel ? StrandPalette.surfaceRaised : Color.clear)
-                            .shadow(color: .black.opacity(sel ? 0.10 : 0), radius: 2, y: 1))
+                            .shadow(color: StrandPalette.shadow.opacity(sel ? 1.6 : 0), radius: 3, y: 1))
                 }
                 .buttonStyle(.plain)
             }
@@ -216,7 +218,77 @@ public struct SourceBadge: View {
     public var body: some View {
         Text(text).font(.system(size: 11, weight: .semibold))
             .padding(.horizontal, 9).padding(.vertical, 3)
-            .background(tint.opacity(0.14), in: Capsule())
-            .foregroundStyle(tint)
+            .background(tint.opacity(0.32), in: Capsule())
+            .foregroundStyle(StrandPalette.ink(tint))
+    }
+}
+
+
+// MARK: - Buttons
+
+/// Primary action: pastel-blue fill, charcoal label, soft press + hover feedback.
+public struct StrandPrimaryButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var enabled
+    @State private var hovering = false
+    public init() {}
+    public func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 13, weight: .semibold))
+            .foregroundStyle(StrandPalette.onAccent)
+            .padding(.horizontal, 14).padding(.vertical, 8)
+            .background(hovering ? StrandPalette.accentHover : StrandPalette.accent,
+                        in: RoundedRectangle(cornerRadius: NoopMetrics.controlRadius, style: .continuous))
+            .opacity(enabled ? 1 : StrandPalette.disabledOpacity)
+            .scaleEffect(configuration.isPressed ? 0.97 : 1)
+            .animation(StrandMotion.respecting(.easeOut(duration: 0.15)), value: configuration.isPressed)
+            .animation(StrandMotion.respecting(.easeOut(duration: 0.15)), value: hovering)
+            .onHover { hovering = $0 }
+    }
+}
+
+/// Secondary action: quiet inset fill with a hairline border.
+public struct StrandSecondaryButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var enabled
+    @State private var hovering = false
+    public init() {}
+    public func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 13, weight: .semibold))
+            .foregroundStyle(StrandPalette.textPrimary)
+            .padding(.horizontal, 14).padding(.vertical, 8)
+            .background(hovering ? StrandPalette.hairline : StrandPalette.surfaceInset,
+                        in: RoundedRectangle(cornerRadius: NoopMetrics.controlRadius, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: NoopMetrics.controlRadius, style: .continuous)
+                .strokeBorder(StrandPalette.hairline, lineWidth: 0.5))
+            .opacity(enabled ? 1 : StrandPalette.disabledOpacity)
+            .scaleEffect(configuration.isPressed ? 0.97 : 1)
+            .animation(StrandMotion.respecting(.easeOut(duration: 0.15)), value: configuration.isPressed)
+            .animation(StrandMotion.respecting(.easeOut(duration: 0.15)), value: hovering)
+            .onHover { hovering = $0 }
+    }
+}
+
+public extension ButtonStyle where Self == StrandPrimaryButtonStyle {
+    static var strandPrimary: StrandPrimaryButtonStyle { .init() }
+}
+public extension ButtonStyle where Self == StrandSecondaryButtonStyle {
+    static var strandSecondary: StrandSecondaryButtonStyle { .init() }
+}
+
+// MARK: - Loading skeleton
+
+/// Soft shimmering placeholder block, used instead of spinners while data loads.
+public struct StrandSkeleton: View {
+    var cornerRadius: CGFloat
+    @State private var phase = false
+    public init(cornerRadius: CGFloat = 12) { self.cornerRadius = cornerRadius }
+    public var body: some View {
+        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+            .fill(StrandPalette.surfaceInset)
+            .opacity(phase ? 0.55 : 1)
+            .onAppear {
+                guard !StrandMotion.reduceMotion else { return }
+                withAnimation(.easeInOut(duration: 1.0).repeatForever(autoreverses: true)) { phase = true }
+            }
     }
 }
