@@ -51,9 +51,10 @@ A few principles run through the whole codebase. Internalize them before opening
    [The BLE safety contract](#the-ble-safety-contract-read-this-before-touching-bluetooth).
 4. **Transparent math.** Analytics are approximations of published methods, documented file by file.
    No black boxes, no claims of clinical accuracy, no reproduction of any proprietary model.
-5. **Credit upstream.** The protocol work is built on prior open-source reverse-engineering —
-   `johnmiddleton12/my-whoop` (WHOOP 4.0) and `b-nnett/goose` (WHOOP 5.0). Preserve those credits in
-   code comments and in [`../ATTRIBUTION.md`](../ATTRIBUTION.md).
+5. **Preserve project and upstream credit.** Keep the original NOOP project history and author
+   records intact. The protocol work also builds on `johnmiddleton12/my-whoop` (WHOOP 4.0) and
+   `b-nnett/goose` (WHOOP 5.0); preserve those credits in code comments and in
+   [`../ATTRIBUTION.md`](../ATTRIBUTION.md).
 
 ---
 
@@ -451,8 +452,9 @@ Schema lives in `Packages/WhoopStore/Sources/WhoopStore/Database.swift` as a **v
   commits/PRs where practical.
 - **Show your verification.** For anything on the BLE path, state what you tested on real hardware.
   For analytics, cite the method and add a test. For UI, confirm it uses only `StrandDesign` tokens.
-- **Anonymous, project-voice.** Documentation and comments are written in a neutral, third-person
-  project voice. Keep upstream credits (`my-whoop`, `goose`, `GRDB.swift`, `ZIPFoundation`) intact.
+- **Project voice and clear authorship.** Documentation and comments use a neutral, third-person
+  project voice. Preserve existing Git authorship and keep project and upstream credits
+  (`muftiarfan/noop`, `NoopApp`, `my-whoop`, `goose`, `GRDB.swift`, `ZIPFoundation`) intact.
 - **No proprietary material.** Don't add WHOOP firmware, decompiled app code, logos, or assets, and
   don't introduce DRM circumvention. Keep contributions to clean-room interoperability with hardware
   the user owns.
@@ -506,6 +508,7 @@ These are scoped but intentionally not built yet. They're listed so contributors
 
 ---
 
-*NOOP is an independent, unofficial, non-commercial interoperability project, not affiliated with,
+*NOOP is an independent, unofficial interoperability project, not affiliated with,
 endorsed by, or connected to WHOOP, Inc., and is not a medical device. See
-[`../DISCLAIMER.md`](../DISCLAIMER.md).*
+[`../ATTRIBUTION.md`](../ATTRIBUTION.md) for project history and
+[`../DISCLAIMER.md`](../DISCLAIMER.md) for the product notice.*

@@ -332,12 +332,11 @@ bundle of CSV files, but the same defensive posture applies.
 
 ## 6. Reporting a security issue
 
-NOOP is a hobbyist, non-commercial interoperability and research project provided
-**as-is, with no warranty**, for personal and educational use only (see
-`DISCLAIMER.md`). If you find a security or privacy issue, please open a GitHub issue
-describing the problem and a reproduction; sensitive reports can be coordinated
-privately via the contact on the project's GitHub profile. Issues will be reviewed in
-good faith.
+NOOP is an independent, community-maintained interoperability project provided
+**as-is, with no warranty** (see `DISCLAIMER.md`). The parent repository has no
+project-wide license file. If you find a security or privacy issue, please open a
+GitHub issue describing the problem and a reproduction. Issues will be reviewed
+in good faith.
 
 ---
 
@@ -355,6 +354,5 @@ hardware the user owns, used for interoperability:
 - **`groue/GRDB.swift`** — the SQLite persistence layer.
 - **`weichsel/ZIPFoundation`** — the archive reader used by the importers.
 
-See `ATTRIBUTION.md` and `DISCLAIMER.md` for the full attribution and good-faith
-notice. NOOP contains no WHOOP proprietary code, firmware, binaries, logos, or
-assets, and performs no DRM circumvention.
+See `ATTRIBUTION.md` for project history and upstream credits, and `DISCLAIMER.md`
+for the product notice.

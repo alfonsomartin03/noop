@@ -1,26 +1,36 @@
-# Attribution
+# Project history and attribution
 
-Strand is an independent, unofficial, local-first macOS app. It is not affiliated
-with, endorsed by, or connected to WHOOP, Inc. "WHOOP" is used nominatively only to
-identify the hardware the app interoperates with.
+## Project history
 
-Strand builds on prior open-source reverse-engineering and interoperability work:
+This repository is a fork of [`muftiarfan/noop`](https://github.com/muftiarfan/noop).
+The earlier project commits in that history retain their recorded `NoopApp`
+author identity. Alfonso Martin maintains this fork; subsequent commits are
+attributed to their authors in Git history. The project name and inherited code
+history are retained with credit to both the original project authors and the
+direct parent repository.
 
-## WHOOP 4.0 protocol + Swift packages
-- **`johnmiddleton12/my-whoop`** — the `WhoopProtocol` and `WhoopStore` Swift packages
-  (vendored under `Packages/`), the WHOOP 4.0 BLE framing/command/decode work, and the
-  iOS collection logic that Strand's `WhoopBLE`/`Collect` layers are adapted from.
-  See `DISCLAIMER.md` (carried over from that project).
+## Protocol research and software
 
-## WHOOP 5.0 / MG protocol
-- **`b-nnett/goose`** — the WHOOP 5.0 BLE reverse-engineering (service UUID family
-  `fd4b0001-…`, CRC16-Modbus header, CLIENT_HELLO, and the "puffin" packet types)
-  that Strand's `DeviceFamily` Whoop-5 path and `whoop5_protocol.json` are ported from.
+NOOP builds on open-source reverse-engineering and interoperability work:
 
-## Other
-- **GRDB.swift** (`groue/GRDB.swift`) — SQLite persistence (via Swift Package Manager).
+- [`johnmiddleton12/my-whoop`](https://github.com/johnmiddleton12/my-whoop) —
+  WHOOP 4.0 BLE protocol research and Swift code adapted in the `WhoopProtocol`
+  and `WhoopStore` packages and collection layer.
+- [`b-nnett/goose`](https://github.com/b-nnett/goose) — WHOOP 5.0 / MG protocol
+  research, including the `fd4b0001-…` service family, CRC16-Modbus header, and
+  "puffin" packet types used by the WHOOP 5.0 path.
+- [`groue/GRDB.swift`](https://github.com/groue/GRDB.swift) — SQLite persistence
+  through Swift Package Manager.
+- [`weichsel/ZIPFoundation`](https://github.com/weichsel/ZIPFoundation) — ZIP
+  archive support through Swift Package Manager.
 
-Strand contains no WHOOP proprietary code, binaries, firmware, logos, or assets, and
-performs no DRM circumvention. It operates only with the user's own device and data.
-Strand is **not a medical device**; all metrics (HR, HRV, recovery, strain, sleep,
-SpO₂, temperature) are approximations and not clinically validated.
+The parent repository does not include a project-wide license file, and this fork
+does not add or claim one. Third-party components retain their own copyright and
+license terms; see their repositories and package metadata for details.
+
+## Product and data notice
+
+NOOP is an independent, unofficial project and is not affiliated with, endorsed
+by, or connected to WHOOP, Inc. "WHOOP" identifies the hardware with which the
+software interoperates. NOOP is not a medical device; derived health metrics are
+approximations and are not clinically validated.

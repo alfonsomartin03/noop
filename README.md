@@ -17,7 +17,7 @@
   <a href="#download">⬇&nbsp;Download</a> ·
   <a href="#features">Features</a> ·
   <a href="docs/PROTOCOL.md">Protocol</a> ·
-  <a href="mailto:thenoopapp@gmail.com">Contact</a>
+  <a href="https://github.com/alfonsomartin03/noop/issues">Issues</a>
 </p>
 
 ---
@@ -54,6 +54,11 @@ from **their own device**, on a machine **they** control.
 > to WHOOP, Inc. "WHOOP" is used only to identify the hardware NOOP talks to.
 > **NOOP is not a medical device** — every derived metric is an approximation, not
 > clinical data. See [`DISCLAIMER.md`](DISCLAIMER.md).
+
+This repository is a fork of [`muftiarfan/noop`](https://github.com/muftiarfan/noop),
+whose earlier project commits record the `NoopApp` author identity. Their Git
+history is preserved. Alfonso Martin maintains this fork; see
+[`ATTRIBUTION.md`](ATTRIBUTION.md) for project history and upstream protocol credits.
 
 ---
 
@@ -329,8 +334,10 @@ device and never leave it.
 
 ## Attribution
 
-NOOP stands on open-source reverse-engineering and interoperability work. With
-thanks:
+This fork preserves the work and commit history of [`muftiarfan/noop`](https://github.com/muftiarfan/noop).
+Earlier project commits in that history record the `NoopApp` author identity.
+This fork is currently maintained by Alfonso Martin. The code also builds on
+open-source reverse-engineering and interoperability work. With thanks:
 
 - **`johnmiddleton12/my-whoop`** — the WHOOP 4.0 BLE protocol; the `WhoopProtocol`
   and `WhoopStore` packages and the collection logic are adapted from this work.
@@ -340,20 +347,22 @@ thanks:
 - **`groue/GRDB.swift`** — SQLite persistence.
 - **`weichsel/ZIPFoundation`** — export unzipping.
 
-NOOP contains no WHOOP proprietary code, firmware, logos, or assets, and performs
-no DRM circumvention. Full detail in [`ATTRIBUTION.md`](ATTRIBUTION.md).
+Full project and third-party credits are in [`ATTRIBUTION.md`](ATTRIBUTION.md).
+The parent repository does not include a project license file. This fork does not
+add or claim a project-wide license; see upstream and dependency sources for their
+own terms. See [`DISCLAIMER.md`](DISCLAIMER.md) for the product notice.
 
 ---
 
 ## Contact
 
-**Contact:** questions, feedback, and bug reports → [thenoopapp@gmail.com](mailto:thenoopapp@gmail.com)
+Questions, feedback, and bug reports → [GitHub Issues](https://github.com/alfonsomartin03/noop/issues).
 
 ---
 
 ## Disclaimer
 
-NOOP is an independent, unofficial, non-commercial interoperability project. It is
+NOOP is an independent, unofficial interoperability project. It is
 **not affiliated with, endorsed by, or connected to WHOOP, Inc.** All references to
 "WHOOP" are nominative — used only to identify the third-party hardware NOOP
 interoperates with.
@@ -364,13 +373,14 @@ published methods. They are not clinically validated and are not medical advice.
 not use them to diagnose, treat, or make health decisions — consult a qualified
 professional.
 
-Provided **as-is**, with **no warranty**, for **personal and educational use**. You
-use it at your own risk. Read the full notice in [`DISCLAIMER.md`](DISCLAIMER.md).
+Provided **as-is**, with **no warranty**. This fork does not add a project-wide
+license. You use it at your own risk. Read the full notice in
+[`DISCLAIMER.md`](DISCLAIMER.md).
 
 ---
 
 ## Docs
 
 - [`DISCLAIMER.md`](DISCLAIMER.md) — trademark, interoperability, and medical/legal notice.
-- [`ATTRIBUTION.md`](ATTRIBUTION.md) — full credits and licensing notes.
+- [`ATTRIBUTION.md`](ATTRIBUTION.md) — project history and third-party credits.
 - [`project.yml`](project.yml) — XcodeGen project definition (source of `Strand.xcodeproj`).
