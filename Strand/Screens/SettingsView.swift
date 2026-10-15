@@ -15,6 +15,7 @@ struct SettingsView: View {
             PairingResetNotice()
             profileCard
             strapCard
+            keepDataCard
             aboutCard
         }
     }
@@ -161,6 +162,27 @@ struct SettingsView: View {
                     .tint(StrandPalette.statusCritical)
                     .disabled(!live.connected && !live.bonded)
                 }
+            }
+        }
+    }
+
+    // MARK: - Keep data on strap
+
+    @AppStorage(BLEManager.keepDataOnStrapKey) private var keepDataOnStrap = true
+
+    private var keepDataCard: some View {
+        SettingsSection(
+            icon: "externaldrive.badge.checkmark",
+            title: "Keep data on strap",
+            blurb: "The strap deletes a batch of history only after an app confirms it received it. With this on, NOOP saves everything it reads but never confirms, so the strap keeps its copy for the WHOOP app."
+        ) {
+            VStack(alignment: .leading, spacing: 12) {
+                Toggle("Never delete data from the strap", isOn: $keepDataOnStrap)
+                    .toggleStyle(.switch)
+                Text("Limitation: the strap normally waits for a confirmation before sending the next batch, so with this on each sync may only reach the first batch of history. Sync with NOOP first, then let the WHOOP app clear the strap.")
+                    .font(StrandFont.footnote)
+                    .foregroundStyle(StrandPalette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }

@@ -26,6 +26,13 @@ public final class BLEManager: NSObject, ObservableObject {
     static let whoop5Service = CBUUID(string: DeviceFamily.whoop5.serviceUUIDString)
     static let whoop5CmdWriteChar = CBUUID(string: DeviceFamily.whoop5.commandCharacteristicUUIDString)
 
+    /// UserDefaults key: when true (the default) NOOP stores strap history but never acknowledges it,
+    /// so the strap does not delete anything. The strap discards a chunk only once an app acks it.
+    static let keepDataOnStrapKey = "noop.keepDataOnStrap"
+    static var keepDataOnStrap: Bool {
+        UserDefaults.standard.object(forKey: keepDataOnStrapKey) as? Bool ?? true
+    }
+
     static let restoreID = "com.openwhoop.ble.central"
 
     private static let osLog = Logger(subsystem: "com.noopapp.noop", category: "ble")
@@ -177,6 +184,7 @@ public final class BLEManager: NSObject, ObservableObject {
                                     self?.ackHistoricalChunk(trim: trim, endData: endData)
                                 },
                                 enableRawCapture: enableRawCapture)
+        backfiller?.acknowledgesChunks = { !BLEManager.keepDataOnStrap }
         // Strand: no server uploader/sync — all data stays on-device.
     }
 
@@ -248,7 +256,7 @@ public final class BLEManager: NSObject, ObservableObject {
     }
 
     /// Start pairing over after a stale-bond failure. CoreBluetooth cannot unpair a device, so the user
-    /// removes the strap in System Settings ▸ Bluetooth first; this clears the app-side state and rescans.
+    /// resets Bluetooth first; this clears the app-side state and rescans.
     public func restartPairing() {
         stalePairingFailures = 0
         state.pairingStale = false
@@ -385,6 +393,7 @@ public final class BLEManager: NSObject, ObservableObject {
     /// The `trim` argument (= end_data first u32) is already persisted as the strap_trim cursor by
     /// the Backfiller; it is passed here only for logging.
     func ackHistoricalChunk(trim: UInt32, endData: [UInt8]) {
+        guard !BLEManager.keepDataOnStrap else { return }
         send(.historicalDataResult, payload: [0x01] + endData, writeType: .withResponse)
     }
 
@@ -945,7 +954,7 @@ extension BLEManager: CBCentralManagerDelegate {
                 // Retrying can't fix this: macOS keeps a bond the strap no longer recognises, and
                 // CoreBluetooth has no API to drop it. Stop the loop and let the UI guide the user.
                 log("Failed to connect: \(describe(error)). The strap forgot its pairing with this Mac — "
-                    + "forget it in System Settings ▸ Bluetooth, then retry. Auto-retry paused.")
+                    + "toggle Bluetooth off/on (or restart bluetoothd), then retry. Auto-retry paused.")
                 state.pairingStale = true
                 scanFallbackWork?.cancel()
                 central.stopScan()
