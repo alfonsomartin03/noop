@@ -19,6 +19,9 @@ public final class LiveState: ObservableObject {
     /// Data-pipeline telemetry (counts only — never payload contents) so the UI can say exactly what the
     /// app is waiting for. `family` is "whoop4" / "whoop5" once the strap's services are known.
     @Published public var family: String? = nil
+    /// Strap's standard HR broadcast switch, as last reported by BLE_HR_PROFILE_ENABLED/DISABLED
+    /// events. nil = not reported yet this session.
+    @Published public var hrBroadcast: Bool? = nil
     @Published public var hrSubscribed: Bool = false  // standard heart-rate notifications are enabled
     @Published public var hrPackets: Int = 0          // standard 0x2A37 heart-rate notifications received
     @Published public var strapFrames: Int = 0        // frames received on the strap's custom channels
@@ -65,7 +68,7 @@ public final class LiveState: ObservableObject {
 
     /// Clear per-connection telemetry (called on disconnect).
     public func resetTelemetry() {
-        family = nil; historyBusy = false; hrSubscribed = false; hrPackets = 0; strapFrames = 0; lastDataAt = nil
+        family = nil; historyBusy = false; hrSubscribed = false; hrBroadcast = nil; hrPackets = 0; strapFrames = 0; lastDataAt = nil
     }
 
     public func append(log line: String) {

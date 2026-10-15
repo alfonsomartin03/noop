@@ -61,6 +61,11 @@ public final class FrameRouter {
                 }
                 // Physical inputs the strap exposes — live only (this path never sees historical
                 // replay, which goes through the Backfiller). Event strings are "NAME(rawValue)".
+                if ev.hasPrefix("BLE_HR_PROFILE_ENABLED") {
+                    state.hrBroadcast = true
+                } else if ev.hasPrefix("BLE_HR_PROFILE_DISABLED") {
+                    state.hrBroadcast = false
+                }
                 if ev.hasPrefix("DOUBLE_TAP") {
                     state.onDoubleTap?()
                 } else if ev.hasPrefix("WRIST_ON") {

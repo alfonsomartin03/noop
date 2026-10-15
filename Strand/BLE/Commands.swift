@@ -9,6 +9,12 @@ import WhoopProtocol
 /// are deliberately EXCLUDED so the in-app command sender can never brick or wipe the device.
 public enum WhoopCommand: UInt8, CaseIterable {
     case toggleRealtimeHR      = 3
+    /// TOGGLE_GENERIC_HR_PROFILE: turn the strap's standard Bluetooth heart-rate broadcast (0x180D)
+    /// on/off — the same switch as "HR Broadcast" in the WHOOP app. Payload `[0x01]` on / `[0x00]` off
+    /// (matches a public WHOOP 4.0 write-up; see docs/HR_BROADCAST_RESEARCH.md). The strap confirms with
+    /// BLE_HR_PROFILE_ENABLED/DISABLED events, which is how the UI verifies it. Safe/reversible.
+    /// 4.0 only: the 5.0/MG encoding is undocumented, so it is NOT in the 5.0 allowlist.
+    case toggleGenericHRProfile = 14
     case reportVersionInfo     = 7
     case setClock              = 10
     case getClock              = 11
@@ -61,6 +67,7 @@ public enum WhoopCommand: UInt8, CaseIterable {
     public var label: String {
         switch self {
         case .toggleRealtimeHR:      return "Toggle Realtime HR"
+        case .toggleGenericHRProfile: return "Toggle HR Broadcast"
         case .reportVersionInfo:     return "Report Version Info"
         case .setClock:              return "Set Clock"
         case .getClock:              return "Get Clock"

@@ -90,6 +90,8 @@ final class AppModel: ObservableObject {
     func startRealtimeHR() { ble.startRealtime() }
     /// Stop the realtime stream (the lightweight 0x2A37 HR keeps recording regardless).
     func stopRealtimeHR() { ble.stopRealtime() }
+    /// Turn the strap's standard heart-rate broadcast on/off (WHOOP 4.0).
+    func setHRBroadcast(_ on: Bool) { ble.setHRBroadcast(on) }
     /// Ask the strap for a fresh battery reading.
     func getBattery() { ble.send(.getBatteryLevel, payload: [0x00]) }
 

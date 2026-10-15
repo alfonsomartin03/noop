@@ -20,6 +20,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -89,6 +90,27 @@ fun LiveScreen(viewModel: AppViewModel) {
                 value = live.lastEvent ?: "—",
                 accent = Palette.textPrimary,
             )
+        }
+
+        // Heart-rate broadcast switch (needed for the standard live-HR feed).
+        if (live.bonded) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Heart-rate broadcast", style = NoopType.body, color = Palette.textPrimary)
+                    Text(
+                        "Lets NOOP read live heart rate over Bluetooth. While on, other nearby apps can read it too.",
+                        style = NoopType.footnote, color = Palette.textSecondary,
+                    )
+                }
+                Switch(
+                    checked = live.hrBroadcast ?: (bpm != null),
+                    onCheckedChange = { viewModel.setHrBroadcast(it) },
+                )
+            }
         }
 
         // Controls.

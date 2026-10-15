@@ -119,6 +119,7 @@ public final class BLEManager: NSObject, ObservableObject {
     /// Hardware generation of the connected strap. Defaults to 4.0 (legacy path); switched to 5.0 when the
     /// fd4b… service is found during discovery. Drives framing, handshake and which commands are legal.
     private(set) var family: DeviceFamily = .whoop4
+    private var batteryCharacteristic: CBCharacteristic?
     private var scanFallbackWork: DispatchWorkItem?
     private var helloWatchdog: DispatchWorkItem?
     private var unfilteredScan = false
@@ -537,6 +538,13 @@ public final class BLEManager: NSObject, ObservableObject {
     /// Stop the realtime stream. The lightweight 0x2A37 HR keeps recording continuously regardless.
     public func stopRealtime() { wantsRealtime = false; send(.toggleRealtimeHR, payload: [0x00]) }
 
+    /// Turn the strap's standard HR broadcast on/off (WHOOP 4.0). The strap answers with a
+    /// BLE_HR_PROFILE_ENABLED/DISABLED event, which updates `state.hrBroadcast`.
+    public func setHRBroadcast(_ on: Bool) {
+        guard family != .whoop5 else { log("HR broadcast: not supported on WHOOP 5.0 yet"); return }
+        send(.toggleGenericHRProfile, payload: [on ? 0x01 : 0x00])
+    }
+
     private func startKeepAlive() {
         keepAliveTimer?.cancel()
         let s = BLEManager.keepAliveIntervalSeconds
@@ -559,7 +567,10 @@ public final class BLEManager: NSObject, ObservableObject {
         guard !backfilling else { return }            // never poke the strap mid-offload
         if wantsRealtime { send(.toggleRealtimeHR, payload: [0x01]) }   // re-arm so it can't lapse
         keepAliveTick += 1
-        if keepAliveTick % 2 == 0 { send(.getBatteryLevel, payload: []) }  // ~every 60s
+        if keepAliveTick % 2 == 0 {                                          // ~every 60s
+            send(.getBatteryLevel, payload: [])
+            if let c = batteryCharacteristic { peripheral?.readValue(for: c) }   // standard 0x2A19 (also covers 5.0)
+        }
     }
 
     private func startBackfillTimer() {
@@ -1067,6 +1078,11 @@ extension BLEManager: CBPeripheralDelegate {
                  BLEManager.batteryChar:
                 if c.uuid == BLEManager.heartRateChar { heartRateCharacteristic = c }
                 peripheral.setNotifyValue(true, for: c)
+                if c.uuid == BLEManager.batteryChar {
+                    // Notify-only fires on CHANGE; read once now so the level shows immediately.
+                    batteryCharacteristic = c
+                    peripheral.readValue(for: c)
+                }
                 log("Subscribed \(c.uuid)")
             default: break
             }

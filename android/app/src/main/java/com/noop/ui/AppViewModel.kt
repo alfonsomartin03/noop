@@ -184,6 +184,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     /** Toggle the strap's real-time HR stream off. */
     fun stopRealtimeHr() = ble.send(CommandNumber.TOGGLE_REALTIME_HR, byteArrayOf(0))
 
+    /** Turn the strap's standard Bluetooth heart-rate broadcast on/off. */
+    fun setHrBroadcast(on: Boolean) =
+        ble.send(CommandNumber.TOGGLE_GENERIC_HR_PROFILE, byteArrayOf(if (on) 1 else 0))
+
     /** Ask the strap for its current battery level. */
     fun getBattery() = ble.send(CommandNumber.GET_BATTERY_LEVEL)
 

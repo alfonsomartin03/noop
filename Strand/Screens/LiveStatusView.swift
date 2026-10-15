@@ -66,6 +66,25 @@ struct LiveStatusCard: View {
                          state: live.strapFrames > 0 ? .done : (live.bonded ? .active : .pending(false)),
                          detail: live.strapFrames > 0 ? "\(live.strapFrames) frames" : nil)
                 }
+                if live.connected {
+                    let supported = live.bonded && live.family != "whoop5"
+                    Toggle(isOn: Binding(get: { live.hrBroadcast ?? (live.hrPackets > 0) },
+                                         set: { model.setHRBroadcast($0) })) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Heart-rate broadcast").font(.system(size: 13))
+                                .foregroundStyle(StrandPalette.textPrimary)
+                            Text(live.family == "whoop5"
+                                 ? "Not available for WHOOP 5.0 / MG yet. Turn it on in the WHOOP app."
+                                 : (live.bonded
+                                    ? "Lets NOOP read live heart rate over Bluetooth. While on, other nearby apps can read it too."
+                                    : "Available once the strap is paired."))
+                                .font(.system(size: 11)).foregroundStyle(StrandPalette.textSecondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    .toggleStyle(.switch)
+                    .disabled(!supported)
+                }
                 if let note = explanation(phase) {
                     Text(note).font(.system(size: 12)).foregroundStyle(StrandPalette.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)

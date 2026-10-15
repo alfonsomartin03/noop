@@ -68,6 +68,8 @@ data class LiveState(
     val batteryPct: Double? = null,
     val worn: Boolean = true,
     val lastEvent: String? = null,
+    /** Strap's HR broadcast switch from BLE_HR_PROFILE_ENABLED/DISABLED events; null = not reported yet. */
+    val hrBroadcast: Boolean? = null,
 )
 
 /**
@@ -644,6 +646,10 @@ class WhoopBleClient(
                     // Physical inputs the strap exposes — LIVE ONLY (this path never sees historical
                     // replay; that goes through the backfill path in the full app).
                     when {
+                        ev.startsWith("BLE_HR_PROFILE_ENABLED") ->
+                            _state.value = _state.value.copy(hrBroadcast = true)
+                        ev.startsWith("BLE_HR_PROFILE_DISABLED") ->
+                            _state.value = _state.value.copy(hrBroadcast = false)
                         ev.startsWith("DOUBLE_TAP") -> {
                             // Surfaced via lastEvent; the ViewModel maps it to the user's chosen action.
                         }

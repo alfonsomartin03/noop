@@ -72,6 +72,9 @@ enum class EventNumber(val rawValue: Int) {
  */
 enum class CommandNumber(val rawValue: Int) {
     TOGGLE_REALTIME_HR(3),
+    // Standard Bluetooth HR broadcast on/off (whoop_protocol.json: 14 TOGGLE_GENERIC_HR_PROFILE).
+    // Payload [1] on / [0] off; the strap confirms with BLE_HR_PROFILE_ENABLED/DISABLED events.
+    TOGGLE_GENERIC_HR_PROFILE(14),
     SET_CLOCK(10),
     GET_CLOCK(11),
     SEND_HISTORICAL_DATA(22),
