@@ -108,6 +108,7 @@ public final class BLEManager: NSObject, ObservableObject {
     private var didBond = false
     private var clockRequested = false
     private var intentionalDisconnect = false
+    private var stalePairingFailures = 0
     /// Hardware generation of the connected strap. Defaults to 4.0 (legacy path); switched to 5.0 when the
     /// fd4b… service is found during discovery. Drives framing, handshake and which commands are legal.
     private(set) var family: DeviceFamily = .whoop4
@@ -244,6 +245,19 @@ public final class BLEManager: NSObject, ObservableObject {
         p.delegate = self
         log("Connecting (peripheral state=\(p.state.rawValue))…")
         central.connect(p, options: nil)
+    }
+
+    /// Start pairing over after a stale-bond failure. CoreBluetooth cannot unpair a device, so the user
+    /// removes the strap in System Settings ▸ Bluetooth first; this clears the app-side state and rescans.
+    public func restartPairing() {
+        stalePairingFailures = 0
+        state.pairingStale = false
+        restoredPeripheral = nil
+        if let p = peripheral { central.cancelPeripheralConnection(p) }
+        peripheral = nil
+        central.stopScan()
+        log("Restarting pairing from scratch")
+        connect()
     }
 
     public func disconnect() {
@@ -860,6 +874,8 @@ extension BLEManager: CBCentralManagerDelegate {
 
     public func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
         restoredPeripheral = nil
+        stalePairingFailures = 0
+        state.pairingStale = false
         state.connected = true
         log("Connected — discovering services")
         // nil = discover everything so the log shows what this strap actually exposes (4.0 vs 5.0).
@@ -921,8 +937,22 @@ extension BLEManager: CBCentralManagerDelegate {
     public func centralManager(_ central: CBCentralManager,
                                didFailToConnect peripheral: CBPeripheral,
                                error: Error?) {
-        log("Failed to connect: \(describe(error)); rescanning in 3s")
         self.peripheral = nil
+        if let e = error as NSError?, e.domain == CBErrorDomain,
+           e.code == CBError.peerRemovedPairingInformation.rawValue {
+            stalePairingFailures += 1
+            if stalePairingFailures >= 2 {
+                // Retrying can't fix this: macOS keeps a bond the strap no longer recognises, and
+                // CoreBluetooth has no API to drop it. Stop the loop and let the UI guide the user.
+                log("Failed to connect: \(describe(error)). The strap forgot its pairing with this Mac — "
+                    + "forget it in System Settings ▸ Bluetooth, then retry. Auto-retry paused.")
+                state.pairingStale = true
+                scanFallbackWork?.cancel()
+                central.stopScan()
+                return
+            }
+        }
+        log("Failed to connect: \(describe(error)); rescanning in 3s")
         guard !intentionalDisconnect else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
             guard let self, !self.intentionalDisconnect, self.peripheral == nil else { return }

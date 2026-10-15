@@ -12,6 +12,7 @@ struct SettingsView: View {
     var body: some View {
         ScreenScaffold(title: "Settings",
                        subtitle: "Your numbers, your strap, and how NOOP works. All on this Mac.") {
+            PairingResetNotice()
             profileCard
             strapCard
             aboutCard

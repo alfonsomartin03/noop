@@ -30,6 +30,9 @@ public final class LiveState: ObservableObject {
     @Published public var historyCaptureFile: String? = nil    // local file the raw frames were saved to
     @Published public var historyBusy: Bool = false
     @Published public var historySummary: String? = nil        // what the decoded records contained / were saved
+    /// True when macOS holds a pairing the strap has forgotten (CBError 14, "Peer removed pairing
+    /// information"). Auto-retry stops; the user must forget the strap in System Settings and re-pair.
+    @Published public var pairingStale = false
     /// Rolling log of human-readable lines for the on-device verification checklist.
     @Published public var log: [String] = []
 

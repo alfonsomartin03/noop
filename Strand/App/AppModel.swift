@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 import Combine
 import WhoopProtocol
 import WhoopStore
@@ -76,6 +77,14 @@ final class AppModel: ObservableObject {
 
     func scan() { ble.connect() }
     func disconnect() { ble.disconnect() }
+    /// Retry pairing from scratch after the strap forgot this Mac (see `LiveState.pairingStale`).
+    func restartPairing() { ble.restartPairing() }
+    /// Open System Settings ▸ Bluetooth, where the stale WHOOP entry has to be forgotten.
+    func openBluetoothSettings() {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.BluetoothSettings") {
+            NSWorkspace.shared.open(url)
+        }
+    }
 
     /// Enable the realtime stream + mark it wanted so the keep-alive re-arms it (can't lapse).
     func startRealtimeHR() { ble.startRealtime() }

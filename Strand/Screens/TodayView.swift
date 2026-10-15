@@ -21,6 +21,7 @@ struct TodayView: View {
     var body: some View {
         ScreenScaffold(title: greetingWord, subtitle: dateLine) {
             VStack(alignment: .leading, spacing: NoopMetrics.sectionGap) {
+                PairingResetNotice()
                 ConnectionStrip()
                 if repo.today?.recovery == nil {
                     StrandNotice(
