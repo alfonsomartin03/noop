@@ -333,7 +333,7 @@ bundle of CSV files, but the same defensive posture applies.
 ## 6. Reporting a security issue
 
 NOOP is an independent, community-maintained interoperability project provided
-**as-is, with no warranty** (see `DISCLAIMER.md`). The parent repository has no
+**as-is, with no warranty** (see `DISCLAIMER.md`). The source parent had no
 project-wide license file. If you find a security or privacy issue, please open a
 GitHub issue describing the problem and a reproduction. Issues will be reviewed
 in good faith.

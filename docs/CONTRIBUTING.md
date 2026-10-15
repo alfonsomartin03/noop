@@ -52,7 +52,9 @@ A few principles run through the whole codebase. Internalize them before opening
 4. **Transparent math.** Analytics are approximations of published methods, documented file by file.
    No black boxes, no claims of clinical accuracy, no reproduction of any proprietary model.
 5. **Preserve project and upstream credit.** Keep the original NOOP project history and author
-   records intact. The protocol work also builds on `johnmiddleton12/my-whoop` (WHOOP 4.0) and
+   records intact. This standalone repository began as a fork of `muftiarfan/noop`; its inherited
+   history includes commits recorded under the `NoopApp` author identity. The protocol work also
+   builds on `johnmiddleton12/my-whoop` (WHOOP 4.0) and
    `b-nnett/goose` (WHOOP 5.0); preserve those credits in code comments and in
    [`../ATTRIBUTION.md`](../ATTRIBUTION.md).
 
@@ -454,7 +456,8 @@ Schema lives in `Packages/WhoopStore/Sources/WhoopStore/Database.swift` as a **v
   For analytics, cite the method and add a test. For UI, confirm it uses only `StrandDesign` tokens.
 - **Project voice and clear authorship.** Documentation and comments use a neutral, third-person
   project voice. Preserve existing Git authorship and keep project and upstream credits
-  (`muftiarfan/noop`, `NoopApp`, `my-whoop`, `goose`, `GRDB.swift`, `ZIPFoundation`) intact.
+  (the original `muftiarfan/noop` source, `NoopApp`, `my-whoop`, `goose`, `GRDB.swift`,
+  `ZIPFoundation`) intact.
 - **No proprietary material.** Don't add WHOOP firmware, decompiled app code, logos, or assets, and
   don't introduce DRM circumvention. Keep contributions to clean-room interoperability with hardware
   the user owns.

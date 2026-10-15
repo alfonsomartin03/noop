@@ -7,11 +7,12 @@ endorsed by, sponsored by, or connected to WHOOP, Inc. References to "WHOOP"
 identify the hardware the software interoperates with. WHOOP and related marks
 belong to WHOOP, Inc.; other trademarks belong to their respective owners.
 
-This repository is a fork of [`muftiarfan/noop`](https://github.com/muftiarfan/noop).
-Its earlier Git history records the [`NoopApp`](https://github.com/NoopApp) author
-identity. Alfonso Martin maintains this fork. See
-[`ATTRIBUTION.md`](ATTRIBUTION.md) for the project history, upstream research
-credits, and license information.
+This standalone repository began as a fork of
+[`muftiarfan/noop`](https://github.com/muftiarfan/noop) and preserves its inherited
+Git history, including earlier commits recorded under the
+[`NoopApp`](https://github.com/NoopApp) author identity. Alfonso Martin maintains
+this repository. See [`ATTRIBUTION.md`](ATTRIBUTION.md) for project history,
+research credits, and license information.
 
 ## Project contents
 
@@ -29,8 +30,8 @@ laws that apply to them.
 
 ## No warranty; not medical advice
 
-The software is provided as-is, without a warranty. The parent repository does
-not include a project-wide license file, and this fork does not add one. Use the
+The software is provided as-is, without a warranty. The source parent did not
+include a project-wide license file, and this repository does not add one. Use the
 software at your own risk, including risks to your device, data, or warranty
 status.
 

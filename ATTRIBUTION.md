@@ -2,12 +2,13 @@
 
 ## Project history
 
-This repository is a fork of [`muftiarfan/noop`](https://github.com/muftiarfan/noop).
-The earlier project commits in that history retain their recorded
-[`NoopApp`](https://github.com/NoopApp) author identity. Alfonso Martin maintains
-this fork; subsequent commits are attributed to their authors in Git history.
-The project name and inherited code history are retained with credit to both the
-original project authors and the direct parent repository.
+This is a standalone repository maintained by Alfonso Martin. It began as a fork
+of [`muftiarfan/noop`](https://github.com/muftiarfan/noop), and is now separate
+from GitHub's fork network. Its inherited Git history remains intact, including
+earlier project commits recorded under the [`NoopApp`](https://github.com/NoopApp)
+author identity. Subsequent commits remain attributed to their authors in Git
+history. The project name and inherited code history are retained with credit to
+the original project authors and the direct parent repository.
 
 ## Protocol research and software
 
@@ -24,7 +25,7 @@ NOOP builds on open-source reverse-engineering and interoperability work:
 - [`weichsel/ZIPFoundation`](https://github.com/weichsel/ZIPFoundation) — ZIP
   archive support through Swift Package Manager.
 
-The parent repository does not include a project-wide license file, and this fork
+The source parent did not include a project-wide license file, and this repository
 does not add or claim one. Third-party components retain their own copyright and
 license terms; see their repositories and package metadata for details.
 

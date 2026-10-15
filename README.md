@@ -55,11 +55,12 @@ from **their own device**, on a machine **they** control.
 > **NOOP is not a medical device** — every derived metric is an approximation, not
 > clinical data. See [`DISCLAIMER.md`](DISCLAIMER.md).
 
-This repository is a fork of [`muftiarfan/noop`](https://github.com/muftiarfan/noop),
-whose earlier project commits record the [`NoopApp`](https://github.com/NoopApp)
-author identity. Their Git history is preserved. Alfonso Martin maintains this
-fork; see [`ATTRIBUTION.md`](ATTRIBUTION.md) for project history and upstream
-protocol credits.
+This is a standalone repository maintained by Alfonso Martin. It began as a fork
+of [`muftiarfan/noop`](https://github.com/muftiarfan/noop), and preserves the
+inherited Git history, including earlier project commits recorded under the
+[`NoopApp`](https://github.com/NoopApp) author identity. The repository is now
+separate from GitHub's fork network. See [`ATTRIBUTION.md`](ATTRIBUTION.md) for
+project history and protocol research credits.
 
 ---
 
@@ -276,7 +277,7 @@ The Xcode project is generated from [`project.yml`](project.yml) with
 
 ```bash
 # 1. Clone
-git clone <your-fork-url> NOOP
+git clone <your-repository-url> NOOP
 cd NOOP
 
 # 2. (Re)generate the Xcode project from project.yml
@@ -335,10 +336,10 @@ device and never leave it.
 
 ## Attribution
 
-This fork preserves the work and commit history of [`muftiarfan/noop`](https://github.com/muftiarfan/noop).
-Earlier project commits in that history record the [`NoopApp`](https://github.com/NoopApp)
-author identity.
-This fork is currently maintained by Alfonso Martin. The code also builds on
+This standalone repository began as a fork of [`muftiarfan/noop`](https://github.com/muftiarfan/noop)
+and preserves its inherited work and commit history. Earlier project commits in
+that history record the [`NoopApp`](https://github.com/NoopApp) author identity.
+Alfonso Martin maintains this repository. The code also builds on
 open-source reverse-engineering and interoperability work. With thanks:
 
 - **`johnmiddleton12/my-whoop`** — the WHOOP 4.0 BLE protocol; the `WhoopProtocol`
@@ -350,7 +351,7 @@ open-source reverse-engineering and interoperability work. With thanks:
 - **`weichsel/ZIPFoundation`** — export unzipping.
 
 Full project and third-party credits are in [`ATTRIBUTION.md`](ATTRIBUTION.md).
-The parent repository does not include a project license file. This fork does not
+The source parent did not include a project license file. This repository does not
 add or claim a project-wide license; see upstream and dependency sources for their
 own terms. See [`DISCLAIMER.md`](DISCLAIMER.md) for the product notice.
 
@@ -375,7 +376,7 @@ published methods. They are not clinically validated and are not medical advice.
 not use them to diagnose, treat, or make health decisions — consult a qualified
 professional.
 
-Provided **as-is**, with **no warranty**. This fork does not add a project-wide
+Provided **as-is**, with **no warranty**. This repository does not add a project-wide
 license. You use it at your own risk. Read the full notice in
 [`DISCLAIMER.md`](DISCLAIMER.md).
 
