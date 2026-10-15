@@ -16,6 +16,20 @@ public final class LiveState: ObservableObject {
     /// Wrist-wear state from WRIST_ON/WRIST_OFF events. Defaults true so wear-gated features work
     /// before the first event arrives; flipped by FrameRouter on a real event.
     @Published public var worn: Bool = true
+    /// Data-pipeline telemetry (counts only — never payload contents) so the UI can say exactly what the
+    /// app is waiting for. `family` is "whoop4" / "whoop5" once the strap's services are known.
+    @Published public var family: String? = nil
+    @Published public var hrSubscribed: Bool = false  // standard heart-rate notifications are enabled
+    @Published public var hrPackets: Int = 0          // standard 0x2A37 heart-rate notifications received
+    @Published public var strapFrames: Int = 0        // frames received on the strap's custom channels
+    @Published public var lastDataAt: Date? = nil     // last notification of any kind (throttled to 1 Hz)
+    /// WHOOP 5.0 stored-data ("history") pull — SAFE MODE (reads only; never acknowledges, so the strap keeps its data).
+    @Published public var historyStatus: String = "Idle"
+    @Published public var historyRange: String? = nil          // what the strap says it holds
+    @Published public var historyFrames: Int = 0               // history-related frames captured this pull
+    @Published public var historyCaptureFile: String? = nil    // local file the raw frames were saved to
+    @Published public var historyBusy: Bool = false
+    @Published public var historySummary: String? = nil        // what the decoded records contained / were saved
     /// Rolling log of human-readable lines for the on-device verification checklist.
     @Published public var log: [String] = []
 
@@ -44,6 +58,11 @@ public final class LiveState: ObservableObject {
     public func setBattery(_ pct: Double) {
         batteryPct = pct
         onBatteryUpdate?(pct)
+    }
+
+    /// Clear per-connection telemetry (called on disconnect).
+    public func resetTelemetry() {
+        family = nil; historyBusy = false; hrSubscribed = false; hrPackets = 0; strapFrames = 0; lastDataAt = nil
     }
 
     public func append(log line: String) {

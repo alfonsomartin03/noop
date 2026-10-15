@@ -1,7 +1,8 @@
 import SwiftUI
 import StrandDesign
 
-/// Standard scrollable screen container: title + dark surface + content column.
+/// Standard scrollable screen container: large title + quiet subtitle + a centered, width-limited
+/// content column on the grouped background.
 struct ScreenScaffold<Content: View>: View {
     let title: String
     var subtitle: String? = nil
@@ -9,63 +10,44 @@ struct ScreenScaffold<Content: View>: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title).font(StrandFont.title1).foregroundStyle(StrandPalette.textPrimary)
+            VStack(alignment: .leading, spacing: NoopMetrics.sectionGap) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(title)
+                        .font(.system(size: 32, weight: .bold))
+                        .foregroundStyle(StrandPalette.textPrimary)
                     if let subtitle {
-                        Text(subtitle).font(StrandFont.subhead).foregroundStyle(StrandPalette.textSecondary)
+                        Text(subtitle)
+                            .font(.system(size: 15))
+                            .foregroundStyle(StrandPalette.textSecondary)
                     }
                 }
                 content()
             }
-            .padding(28)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, NoopMetrics.screenPadding)
+            .padding(.top, 20)
+            .padding(.bottom, 44)
+            .frame(maxWidth: NoopMetrics.contentMaxWidth, alignment: .leading)
+            .frame(maxWidth: .infinity)
         }
         .background(StrandPalette.surfaceBase)
     }
 }
 
-/// Placeholder body for screens the design agents are still building.
+/// Placeholder body for screens still being built.
 struct ComingSoon: View {
     let what: String
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Coming together")
-                .font(StrandFont.headline).foregroundStyle(StrandPalette.textPrimary)
-            Text(what)
-                .font(StrandFont.body).foregroundStyle(StrandPalette.textSecondary)
-        }
-        .padding(20).frame(maxWidth: .infinity, alignment: .leading)
-        .background(StrandPalette.surfaceRaised, in: RoundedRectangle(cornerRadius: 14))
+        StrandNotice(symbol: "hourglass", title: "Coming together", message: what, tint: StrandPalette.textSecondary)
     }
 }
 
-/// A reusable "what shows now vs what needs an import" note. Bold title line plus a
-/// body line, with an info/sparkles SF Symbol. Used for empty/pending data states so
-/// every screen explains the live-now path and the import path with timing.
+/// A reusable "what shows now vs what needs an import" note for empty / pending data states.
 struct DataPendingNote: View {
     let title: String
     let message: String
     var symbol: String = "sparkles"
 
     var body: some View {
-        StrandCard(padding: 20) {
-            HStack(alignment: .top, spacing: 12) {
-                Image(systemName: symbol)
-                    .font(StrandFont.headline)
-                    .foregroundStyle(StrandPalette.accent)
-                    .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(title)
-                        .font(StrandFont.headline)
-                        .foregroundStyle(StrandPalette.textPrimary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Text(message)
-                        .font(StrandFont.subhead)
-                        .foregroundStyle(StrandPalette.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-        }
+        StrandNotice(symbol: symbol, title: title, message: message)
     }
 }

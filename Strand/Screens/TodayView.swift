@@ -4,51 +4,37 @@ import StrandAnalytics
 import WhoopStore
 import Foundation
 
-// MARK: - Control Center (the home dashboard) — HomeDensity rewrite
+// MARK: - Today — the home dashboard
 //
-// The owner's complaint was "cards then random space". This rebuild is a tight,
-// GAPLESS dashboard grid: one column of uniform sections, every gap == NoopMetrics.gap,
-// every section break == NoopMetrics.sectionGap, equal margins from ScreenScaffold.
-//
-// Composition (top → bottom):
-//   (a) HERO  — full-width HStack that fills the width EQUALLY: RecoveryRing (left card)
-//               + InsightCard "Today's Synthesis" (right card). No lone card, no gap.
-//   (b) METRICS — one adaptive LazyVGrid of fixed-104pt StatTiles (Recovery, Strain,
-//               Sleep, HRV, RHR, SpO2, Respiratory, Steps, Weight, Calories) each with
-//               a 14-day sparkline so the grid tiles perfectly with no empty cells.
-//   (c) LAST WORKOUTS — the SAME adaptive grid of fixed-104pt workout StatTiles.
-//   (d) DATA SOURCES — one full-width NoopCard footer of SourceBadges + counts.
-//
-// Sparse series (weight) fall back to ALL history so a tile never shows an empty
-// state when data exists. Only locked StrandDesign components are used.
+// A calm grid of widgets: recovery (hero), sleep, strain, live heart rate, then the supporting
+// vitals. Each widget shows one primary number; tapping opens the detailed screen. Everything
+// else (workouts, other sources) sits below or behind a disclosure. Data loading is unchanged.
 
 struct TodayView: View {
     @EnvironmentObject var repo: Repository
+    @Environment(\.navigate) private var navigate
 
     // 14-day sparkline series, keyed by metric key. Loaded once in .task.
     @State private var sparks: [String: [Double]] = [:]
     @State private var workouts: [WorkoutRow] = []
     @State private var appleDays: [AppleDaily] = []
-
-    // Support sheet (donate + contact) — always reachable from the home toolbar.
     @State private var showingSupport = false
-
-    // THE single grid definition — every tile group reuses it so margins line up.
-    private let grid = [GridItem(.adaptive(minimum: 168), spacing: NoopMetrics.gap)]
+    @State private var sourcesOpen = false
 
     var body: some View {
-        ScreenScaffold(title: "Control Center", subtitle: dateLine) {
+        ScreenScaffold(title: greetingWord, subtitle: dateLine) {
             VStack(alignment: .leading, spacing: NoopMetrics.sectionGap) {
+                ConnectionStrip()
                 HealthAlertBanner()
                 if repo.today?.recovery == nil {
-                    DataPendingNote(
-                        title: "Live now. Your scores are building.",
-                        message: "Your live heart rate is working from the strap, and recovery, strain and sleep build from it over your next few nights of wear, sharpening as it learns your baseline. Want your full history instantly? Import your WHOOP export in Data Sources and it backfills in about a minute."
+                    StrandNotice(
+                        symbol: "sparkles",
+                        title: "Your scores are building",
+                        message: "Live heart rate works from the strap right away. Recovery, strain and sleep build over your next few nights of wear. To see your history now, import your WHOOP export in Data Sources."
                     )
                 }
-                heroSection
-                metricsSection
-                workoutsSection
+                dashboard
+                activitySection
                 sourcesSection
             }
         }
@@ -56,196 +42,207 @@ struct TodayView: View {
         .toolbar {
             ToolbarItem {
                 Button { showingSupport = true } label: {
-                    Image(systemName: "heart.fill")
-                        .foregroundStyle(StrandPalette.metricRose)
-                        .attentionWiggle(period: 4)
+                    Image(systemName: "heart.fill").foregroundStyle(StrandPalette.metricRose)
                 }
                 .help("Support NOOP — donate or get in touch")
                 .accessibilityLabel("Support NOOP — donate or get in touch")
             }
         }
         .overlay {
-            if showingSupport {
-                SupportModalOverlay(isPresented: $showingSupport)
-            }
+            if showingSupport { SupportModalOverlay(isPresented: $showingSupport) }
         }
         .animation(.easeOut(duration: 0.18), value: showingSupport)
     }
 
-    // MARK: (a) HERO — RecoveryRing + Synthesis, filling the width equally.
+    // MARK: Widgets
 
     @ViewBuilder
-    private var heroSection: some View {
+    private var dashboard: some View {
         let d = repo.today
-        let score = d?.recovery
-        VStack(alignment: .leading, spacing: NoopMetrics.gap) {
-            SectionHeader("Today’s Synthesis", overline: "At a glance",
-                          trailing: greetingWord)
-            HStack(alignment: .top, spacing: NoopMetrics.gap) {
-                // Left: the signature ring in a card.
-                NoopCard {
-                    RecoveryRing(
-                        score: score ?? 0,
-                        supporting: ringSupporting(d),
-                        diameter: 168
-                    )
-                    .frame(maxWidth: .infinity)
+        let a = appleDays.last
+        WidgetGrid(minColumn: 190) {
+            recoveryWidget(d)
+            sleepWidget(d)
+
+            StrandWidget("Strain", symbol: "flame.fill", tint: StrandPalette.strain033,
+                         action: { navigate(.workouts) }) {
+                VStack(alignment: .leading, spacing: 8) {
+                    WidgetValue(d?.strain.map { String(format: "%.1f", $0) }, unit: "/ 21")
+                    Spacer(minLength: 0)
+                    meter(d?.strain.map { $0 / 21 } ?? 0, tint: d?.strain.map { StrandPalette.strainColor($0) } ?? StrandPalette.strain033)
+                    WidgetCaption(d?.strain.map { strainWord($0) } ?? "No data yet")
                 }
-                .frame(maxWidth: .infinity, alignment: .center)
+            }
 
-                // Right: the plain-English read-out, equal width.
-                InsightCard(
-                    category: "Recovery",
-                    status: synthesisWord(score),
-                    detail: synthesisDetail(d),
-                    statusColor: score.map { StrandPalette.recoveryColor($0) } ?? StrandPalette.textTertiary
-                )
-                .frame(maxWidth: .infinity, alignment: .leading)
+            LiveHeartRateWidget { navigate(.live) }
+
+            metricWidget("HRV", "waveform.path.ecg", StrandPalette.metricPurple,
+                         value: d?.avgHrv.map { "\(Int($0.rounded()))" }, unit: "ms",
+                         series: sparks["hrv"], to: .health)
+            metricWidget("Resting heart rate", "heart.fill", StrandPalette.metricRose,
+                         value: d?.restingHr.map { "\($0)" }, unit: "bpm",
+                         series: sparks["rhr"], to: .health)
+            metricWidget("Respiratory rate", "lungs.fill", StrandPalette.accent,
+                         value: d?.respRateBpm.map { String(format: "%.1f", $0) } ?? latestOptional("resp_rate", decimals: 1),
+                         unit: "br/min", series: sparks["resp_rate"], to: .health)
+            metricWidget("Blood oxygen", "drop.fill", StrandPalette.metricCyan,
+                         value: d?.spo2Pct.map { String(format: "%.0f", $0) }, unit: "%",
+                         series: sparks["spo2"], to: .health)
+
+            StrandWidget("Skin temperature", symbol: "thermometer.medium", tint: StrandPalette.metricAmber,
+                         action: { navigate(.health) }) {
+                VStack(alignment: .leading, spacing: 4) {
+                    WidgetValue(d?.skinTempDevC.map { String(format: "%+.1f", $0) }, unit: "°C")
+                    Spacer(minLength: 0)
+                    WidgetCaption(d?.skinTempDevC == nil ? "No data yet" : "Compared with your baseline")
+                }
+            }
+
+            BatteryWidget { navigate(.live) }
+
+            metricWidget("Steps", "figure.walk", StrandPalette.metricCyan,
+                         value: a?.steps.map { intString(Double($0)) } ?? latestOptional("steps", decimals: 0),
+                         unit: nil, series: sparks["steps"], to: .appleHealth)
+            metricWidget("Active energy", "bolt.fill", StrandPalette.metricAmber,
+                         value: a?.activeKcal.map { intString($0) } ?? latestOptional("active_kcal", decimals: 0),
+                         unit: "kcal", series: sparks["active_kcal"], to: .appleHealth)
+        }
+        .redacted(reason: repo.loaded ? [] : .placeholder)
+    }
+
+    private func recoveryWidget(_ d: DailyMetric?) -> some View {
+        let score = d?.recovery
+        let tint = score.map { StrandPalette.recoveryColor($0) } ?? StrandPalette.textTertiary
+        return StrandWidget("Recovery", symbol: "circle.dotted.circle", tint: tint, size: .large,
+                            action: { navigate(.trends) }) {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(alignment: .center, spacing: 20) {
+                    ProgressRing(fraction: (score ?? 0) / 100, tint: tint, lineWidth: 14) {
+                        VStack(spacing: 0) {
+                            Text(score.map { "\(Int($0.rounded()))" } ?? "—")
+                                .font(.system(size: 40, weight: .semibold).monospacedDigit())
+                                .foregroundStyle(score == nil ? StrandPalette.textTertiary : StrandPalette.textPrimary)
+                            if score != nil {
+                                Text("%").font(.system(size: 13, weight: .medium)).foregroundStyle(StrandPalette.textSecondary)
+                            }
+                        }
+                    }
+                    .frame(width: 132, height: 132)
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(synthesisWord(score))
+                            .font(.system(size: 22, weight: .semibold))
+                            .foregroundStyle(StrandPalette.textPrimary)
+                        Text(synthesisDetail(d))
+                            .font(.system(size: 13)).foregroundStyle(StrandPalette.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                Spacer(minLength: 0)
+                WidgetSpark(sparks["recovery"] ?? [], tint: tint).frame(height: 44)
+                Text("Last 14 days").font(.system(size: 11)).foregroundStyle(StrandPalette.textTertiary)
             }
         }
     }
 
-    // MARK: (b) METRICS — one uniform grid of 104pt StatTiles, every cell filled.
-
-    @ViewBuilder
-    private var metricsSection: some View {
-        let d = repo.today
-        let aLatest = appleDays.last
-        VStack(alignment: .leading, spacing: NoopMetrics.gap) {
-            SectionHeader("Key Metrics", overline: "Today", trailing: "14-day trend")
-            LazyVGrid(columns: grid, alignment: .leading, spacing: NoopMetrics.gap) {
-                StatTile(
-                    label: "Recovery",
-                    value: d?.recovery.map { "\(Int($0.rounded()))%" } ?? "—",
-                    caption: d?.recovery.map { StrandPalette.recoveryState($0).capitalized },
-                    accent: d?.recovery.map { StrandPalette.recoveryColor($0) } ?? StrandPalette.textPrimary,
-                    sparkline: sparks["recovery"],
-                    sparkColor: StrandPalette.accent
-                )
-                StatTile(
-                    label: "Day Strain",
-                    value: d?.strain.map { String(format: "%.1f", $0) } ?? "—",
-                    caption: "of 21",
-                    accent: d?.strain.map { StrandPalette.strainColor($0) } ?? StrandPalette.textPrimary,
-                    sparkline: sparks["strain"],
-                    sparkColor: StrandPalette.strain066
-                )
-                StatTile(
-                    label: "Sleep",
-                    value: sleepValue(d),
-                    caption: d?.efficiency.map { String(format: "%.0f%% eff", $0) },
-                    accent: StrandPalette.textPrimary,
-                    sparkline: sparks["sleep_total_min"],
-                    sparkColor: StrandPalette.metricPurple
-                )
-                StatTile(
-                    label: "HRV",
-                    value: d?.avgHrv.map { "\(Int($0.rounded()))" } ?? "—",
-                    caption: "ms",
-                    accent: StrandPalette.metricPurple,
-                    sparkline: sparks["hrv"],
-                    sparkColor: StrandPalette.metricPurple
-                )
-                StatTile(
-                    label: "Resting HR",
-                    value: d?.restingHr.map { "\($0)" } ?? "—",
-                    caption: "bpm",
-                    accent: StrandPalette.metricRose,
-                    sparkline: sparks["rhr"],
-                    sparkColor: StrandPalette.metricRose
-                )
-                StatTile(
-                    label: "Blood Oxygen",
-                    value: d?.spo2Pct.map { String(format: "%.0f%%", $0) } ?? "—",
-                    caption: "SpO₂",
-                    accent: StrandPalette.metricCyan,
-                    sparkline: sparks["spo2"],
-                    sparkColor: StrandPalette.metricCyan
-                )
-                StatTile(
-                    label: "Respiratory",
-                    value: d?.respRateBpm.map { String(format: "%.1f", $0) } ?? latestString("resp_rate", decimals: 1),
-                    caption: "rpm",
-                    accent: StrandPalette.accent,
-                    sparkline: sparks["resp_rate"],
-                    sparkColor: StrandPalette.accent
-                )
-                StatTile(
-                    label: "Steps",
-                    value: aLatest?.steps.map { intString(Double($0)) } ?? latestString("steps", decimals: 0),
-                    caption: "today",
-                    accent: StrandPalette.metricCyan,
-                    sparkline: sparks["steps"],
-                    sparkColor: StrandPalette.metricCyan
-                )
-                StatTile(
-                    label: "Weight",
-                    value: aLatest?.weightKg.map { String(format: "%.1f kg", $0) } ?? latestString("weight", decimals: 1, unit: "kg"),
-                    caption: "latest",
-                    accent: StrandPalette.accent,
-                    sparkline: sparks["weight"],
-                    sparkColor: StrandPalette.accent
-                )
-                StatTile(
-                    label: "Calories",
-                    value: caloriesValue(aLatest),
-                    caption: "active",
-                    accent: StrandPalette.metricAmber,
-                    sparkline: sparks["active_kcal"],
-                    sparkColor: StrandPalette.metricAmber
-                )
+    private func sleepWidget(_ d: DailyMetric?) -> some View {
+        StrandWidget("Sleep", symbol: "bed.double.fill", tint: StrandPalette.sleepLight, size: .medium,
+                     action: { navigate(.sleep) }) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(alignment: .firstTextBaseline) {
+                    WidgetValue(d?.totalSleepMin == nil ? nil : sleepValue(d))
+                    Spacer()
+                    if let eff = d?.efficiency {
+                        Text(String(format: "%.0f%% efficiency", eff))
+                            .font(.system(size: 12)).foregroundStyle(StrandPalette.textSecondary)
+                    }
+                }
+                Spacer(minLength: 0)
+                if d?.totalSleepMin != nil {
+                    SleepStageBar(deep: d?.deepMin, rem: d?.remMin, light: d?.lightMin)
+                } else {
+                    WidgetCaption("No sleep recorded yet")
+                }
             }
         }
     }
 
-    // MARK: (c) LAST WORKOUTS — SAME grid, uniform 104pt workout tiles.
+    private func metricWidget(_ title: String, _ symbol: String, _ tint: Color, value: String?, unit: String?,
+                              series: [Double]?, to destination: NavItem) -> some View {
+        StrandWidget(title, symbol: symbol, tint: tint, action: { navigate(destination) }) {
+            VStack(alignment: .leading, spacing: 6) {
+                WidgetValue(value, unit: unit)
+                Spacer(minLength: 0)
+                if value == nil { WidgetCaption("No data yet") }
+                else { WidgetSpark(series ?? [], tint: tint).frame(height: 36) }
+            }
+        }
+    }
+
+    private func meter(_ fraction: Double, tint: Color) -> some View {
+        GeometryReader { geo in
+            ZStack(alignment: .leading) {
+                Capsule().fill(tint.opacity(0.16))
+                Capsule().fill(tint).frame(width: max(6, geo.size.width * min(1, max(0, fraction))))
+            }
+        }
+        .frame(height: 8)
+    }
+
+    private func strainWord(_ v: Double) -> String {
+        switch v {
+        case ..<6:  return "Light load"
+        case ..<10: return "Moderate load"
+        case ..<14: return "Strenuous"
+        default:    return "All out"
+        }
+    }
+
+    // MARK: Activity
 
     @ViewBuilder
-    private var workoutsSection: some View {
-        if !workouts.isEmpty {
+    private var activitySection: some View {
+        let weight = appleDays.last?.weightKg.map { String(format: "%.1f", $0) } ?? latestOptional("weight", decimals: 1)
+        if !workouts.isEmpty || weight != nil {
             VStack(alignment: .leading, spacing: NoopMetrics.gap) {
-                SectionHeader("Last Workouts", overline: "Activity",
-                              trailing: "\(workouts.count) total")
-                LazyVGrid(columns: grid, alignment: .leading, spacing: NoopMetrics.gap) {
+                SectionHeader("Activity", trailing: workouts.isEmpty ? nil : "\(workouts.count) workouts")
+                WidgetGrid(minColumn: 190) {
                     ForEach(Array(workouts.prefix(6).enumerated()), id: \.offset) { _, w in
-                        StatTile(
-                            label: w.sport,
-                            value: workoutDuration(w),
-                            caption: workoutCaption(w),
-                            accent: StrandPalette.strainColor(w.strain ?? 0),
-                            delta: w.energyKcal.map { "\(Int($0.rounded())) kcal" },
-                            deltaColor: StrandPalette.metricAmber
-                        )
+                        StrandWidget(w.sport, symbol: "figure.run", tint: StrandPalette.strainColor(w.strain ?? 8),
+                                     action: { navigate(.workouts) }) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                WidgetValue(workoutDuration(w))
+                                Spacer(minLength: 0)
+                                WidgetCaption(workoutCaption(w))
+                                if let kcal = w.energyKcal { WidgetCaption("\(Int(kcal.rounded())) kcal") }
+                            }
+                        }
+                    }
+                    if let weight {
+                        metricWidget("Weight", "scalemass.fill", StrandPalette.accent,
+                                     value: weight, unit: "kg", series: sparks["weight"], to: .appleHealth)
                     }
                 }
             }
         }
     }
 
-    // MARK: (d) DATA SOURCES — one full-width footer card.
+    // MARK: Data sources (secondary → disclosure)
 
-    @ViewBuilder
     private var sourcesSection: some View {
-        VStack(alignment: .leading, spacing: NoopMetrics.gap) {
-            SectionHeader("Data Sources", overline: "Provenance")
-            NoopCard {
-                VStack(alignment: .leading, spacing: 12) {
-                    sourceRow(
-                        badge: "Whoop",
-                        tint: StrandPalette.accent,
-                        present: !repo.days.isEmpty,
-                        detail: "\(repo.days.count) days · \(repo.sleeps.count) sleeps"
-                    )
-                    Divider().overlay(StrandPalette.hairline)
-                    sourceRow(
-                        badge: "Apple Health",
-                        tint: StrandPalette.metricCyan,
-                        present: !appleDays.isEmpty,
-                        detail: "\(appleDays.count) days · \(workouts.filter { $0.source == "apple-health" }.count) workouts"
-                    )
-                }
+        DisclosureGroup(isExpanded: $sourcesOpen) {
+            VStack(alignment: .leading, spacing: 12) {
+                sourceRow(badge: "WHOOP", tint: StrandPalette.accent, present: !repo.days.isEmpty,
+                          detail: "\(repo.days.count) days · \(repo.sleeps.count) sleeps")
+                sourceRow(badge: "Apple Health", tint: StrandPalette.metricCyan, present: !appleDays.isEmpty,
+                          detail: "\(appleDays.count) days · \(workouts.filter { $0.source == "apple-health" }.count) workouts")
             }
+            .padding(.top, 10)
+        } label: {
+            Text("Data sources").font(.system(size: 15, weight: .semibold)).foregroundStyle(StrandPalette.textPrimary)
         }
+        .padding(NoopMetrics.cardPadding)
+        .strandSurface()
     }
 
     @ViewBuilder
@@ -254,9 +251,15 @@ struct TodayView: View {
             SourceBadge(badge, tint: present ? tint : StrandPalette.textTertiary)
             Spacer()
             Text(present ? detail : "Not connected")
-                .font(StrandFont.captionNumber)
+                .font(.system(size: 12).monospacedDigit())
                 .foregroundStyle(present ? StrandPalette.textSecondary : StrandPalette.textTertiary)
         }
+    }
+
+    /// Latest value of a loaded series as a display string, or nil when there is none.
+    private func latestOptional(_ key: String, decimals: Int) -> String? {
+        guard let last = sparks[key]?.last else { return nil }
+        return decimals == 0 ? intString(last) : String(format: "%.\(decimals)f", last)
     }
 
     // MARK: - Loading
@@ -415,6 +418,73 @@ struct TodayView: View {
         f.dateFormat = "yyyy-MM-dd"
         return f
     }()
+}
+
+// MARK: - Live widgets (isolated so the ~1 Hz stream only re-renders these small views)
+
+/// Shown only when the strap is not connected: a single quiet line with a Connect action.
+private struct ConnectionStrip: View {
+    @EnvironmentObject var live: LiveState
+    @EnvironmentObject var model: AppModel
+    var body: some View {
+        if !live.connected {
+            HStack(spacing: 12) {
+                Image(systemName: "antenna.radiowaves.left.and.right.slash")
+                    .font(.system(size: 16, weight: .semibold)).foregroundStyle(StrandPalette.textSecondary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("WHOOP not connected").font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(StrandPalette.textPrimary)
+                    Text("Keep your strap nearby and connect to see live heart rate.")
+                        .font(.system(size: 12)).foregroundStyle(StrandPalette.textSecondary)
+                }
+                Spacer()
+                Button("Connect") { model.scan() }.buttonStyle(.borderedProminent).tint(StrandPalette.accent)
+            }
+            .padding(NoopMetrics.cardPadding)
+            .strandSurface()
+        }
+    }
+}
+
+private struct LiveHeartRateWidget: View {
+    @EnvironmentObject var live: LiveState
+    @EnvironmentObject var model: AppModel
+    let open: () -> Void
+    var body: some View {
+        StrandWidget("Heart rate", symbol: "heart.fill", tint: StrandPalette.metricRose, action: open) {
+            VStack(alignment: .leading, spacing: 4) {
+                WidgetValue(model.bpm.map(String.init), unit: "bpm")
+                Spacer(minLength: 0)
+                WidgetCaption(model.bpm == nil ? live.phase.title : "Live from your strap")
+            }
+        }
+    }
+}
+
+private struct BatteryWidget: View {
+    @EnvironmentObject var live: LiveState
+    let open: () -> Void
+    private var pct: Int? { live.batteryPct.map { Int($0.rounded()) } }
+    private var symbol: String {
+        guard let p = pct else { return "battery.0percent" }
+        switch p {
+        case ..<13: return "battery.0percent"
+        case ..<38: return "battery.25percent"
+        case ..<63: return "battery.50percent"
+        case ..<88: return "battery.75percent"
+        default:    return "battery.100percent"
+        }
+    }
+    private var tint: Color { (pct ?? 100) < 20 ? StrandPalette.statusCritical : StrandPalette.statusPositive }
+    var body: some View {
+        StrandWidget("Strap battery", symbol: symbol, tint: tint, action: open) {
+            VStack(alignment: .leading, spacing: 4) {
+                WidgetValue(pct.map(String.init), unit: "%")
+                Spacer(minLength: 0)
+                WidgetCaption(live.connected ? (live.bonded ? "Connected" : "Connecting…") : "Not connected")
+            }
+        }
+    }
 }
 
 // MARK: - Preview

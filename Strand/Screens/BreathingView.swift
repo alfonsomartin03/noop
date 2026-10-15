@@ -153,7 +153,7 @@ struct BreathingView: View {
         StrandCard(padding: 24) {
             VStack(spacing: 18) {
                 HStack {
-                    Text(pace.label.uppercased()).strandOverline()
+                    Text(pace.label).strandOverline()
                     Spacer()
                     Text(String(format: "%.1f br/min", pace.bpm))
                         .font(StrandFont.captionNumber)
@@ -304,7 +304,7 @@ struct BreathingView: View {
                              accent: Color, caption: String) -> some View {
         StrandCard(padding: 14) {
             VStack(alignment: .leading, spacing: 0) {
-                Text(label.uppercased()).strandOverline()
+                Text(label).strandOverline()
                 Spacer(minLength: 6)
                 HStack(alignment: .firstTextBaseline, spacing: 4) {
                     Text(value)

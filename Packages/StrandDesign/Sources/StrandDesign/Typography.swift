@@ -16,7 +16,7 @@ public enum StrandFont {
         .system(size: size, weight: .semibold, design: .default).monospacedDigit()
     }
 
-    /// Title1 28 / Bold.
+    /// Title1 28 / Bold (large title).
     public static let title1 = Font.system(size: 28, weight: .bold)
 
     /// Title2 22 / Semibold.
@@ -69,11 +69,10 @@ public enum StrandFont {
 // MARK: - Text helpers
 
 public extension Text {
-    /// Style as an overline label: ALL-CAPS, semibold, +0.8 tracking, tertiary text.
+    /// Quiet label style (sentence case, medium, secondary). Historically ALL-CAPS + tracked; the
+    /// Apple-style system keeps labels calm and readable instead.
     func strandOverline() -> some View {
-        self.font(StrandFont.overline)
-            .tracking(StrandFont.overlineTracking)
-            .textCase(.uppercase)
+        self.font(.system(size: 12, weight: .medium))
             .foregroundStyle(StrandPalette.textSecondary)
     }
 }

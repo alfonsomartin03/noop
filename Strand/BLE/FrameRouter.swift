@@ -15,13 +15,22 @@ public final class FrameRouter {
     }
 
     /// Handle one complete frame (bytes including 0xAA SOF and the crc32 trailer).
-    public func handle(frame: [UInt8]) {
-        let parsed = parseFrame(frame)
+    public func handle(frame: [UInt8], family: DeviceFamily = .whoop4) {
+        let parsed = parseFrame(frame, family: family)
         guard parsed.ok else { return }
         // Reject frames that failed their checksum — never let bad bytes drive state.
         if parsed.crcOK == false { return }
 
         state.lastFrameType = parsed.typeName
+
+        // WHOOP 5.0 realtime: the generic parser exposes no fields for 5.0, so decode the record directly.
+        if family == .whoop5 {
+            if parsed.typeName == "REALTIME_DATA", let rt = decodeWhoop5Realtime(frame) {
+                if (30...220).contains(rt.heartRate) { state.heartRate = rt.heartRate }
+                if !rt.rr.isEmpty { state.rr = rt.rr }
+            }
+            return
+        }
 
         switch parsed.typeName {
         case "REALTIME_DATA":

@@ -26,45 +26,65 @@ public extension Color {
     }
 }
 
+// MARK: - Adaptive (light / dark) colors
+
+public extension Color {
+    /// A semantic color that resolves to `light` or `dark` hex with the system appearance.
+    init(light: String, dark: String) {
+        #if canImport(AppKit)
+        self.init(nsColor: NSColor(name: nil) { appearance in
+            let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            return NSColor(Color(hex: isDark ? dark : light))
+        })
+        #elseif canImport(UIKit)
+        self.init(uiColor: UIColor { traits in
+            UIColor(Color(hex: traits.userInterfaceStyle == .dark ? dark : light))
+        })
+        #else
+        self.init(hex: dark)
+        #endif
+    }
+}
+
 // MARK: - Strand Palette
 //
-// Every semantic token from design spec §9.1. Dark-only, instrument-grade.
-// Hex values are exact per the spec — do not substitute.
+// Semantic tokens, adaptive to light and dark mode. Surfaces follow Apple's grouped-content model:
+// a quiet background with elevated, rounded cards on top. Data colors are Apple system tones.
 
 public enum StrandPalette {
 
     // MARK: Surfaces (§9.1)
-    public static let surfaceBase    = Color(hex: "#060A08") // near-black, faint green (brief)
-    public static let surfaceRaised  = Color(hex: "#0D1512") // dark green-black cards
-    public static let surfaceOverlay = Color(hex: "#121D18") // raised / popovers / sheets
-    public static let surfaceInset   = Color(hex: "#0A100D") // wells / chart insets
-    public static let hairline       = Color(hex: "#1B2620") // soft green-grey 1px border
-    public static let hairlineStrong = Color(hex: "#27362E") // hover / emphasis border
+    public static let surfaceBase    = Color(light: "#F2F2F7", dark: "#000000") // near-black, faint green (brief)
+    public static let surfaceRaised  = Color(light: "#FFFFFF", dark: "#1C1C1E") // dark green-black cards
+    public static let surfaceOverlay = Color(light: "#FFFFFF", dark: "#2C2C2E") // raised / popovers / sheets
+    public static let surfaceInset   = Color(light: "#EFEFF4", dark: "#141416") // wells / chart insets
+    public static let hairline       = Color(light: "#0000000F", dark: "#FFFFFF14") // soft green-grey 1px border
+    public static let hairlineStrong = Color(light: "#0000001F", dark: "#FFFFFF29") // hover / emphasis border
 
     // MARK: Text (§9.1)
-    public static let textPrimary    = Color(hex: "#F4F7F5")
-    public static let textSecondary  = Color(hex: "#8B9690")
-    public static let textTertiary   = Color(hex: "#6F7A74")
+    public static let textPrimary    = Color(light: "#1C1C1E", dark: "#F5F5F7")
+    public static let textSecondary  = Color(light: "#6C6C70", dark: "#98989F")
+    public static let textTertiary   = Color(light: "#8E8E93", dark: "#6E6E73")
 
     // MARK: Glow (§9.1)
     public static let glowAmbient    = Color(hex: "#1B2A3A")
 
     // MARK: Accent — chrome, not data (§9.1)
-    public static let accent         = Color(hex: "#18C98B") // health green (brief)
-    public static let accentHover    = Color(hex: "#2FE0A0")
-    public static let accentMuted    = Color(hex: "#10271F") // dark-green tint (selected rows)
+    public static let accent         = Color(light: "#28A745", dark: "#30D158") // health green (brief)
+    public static let accentHover    = Color(light: "#2DB84D", dark: "#4BE073")
+    public static let accentMuted    = Color(light: "#28A7451F", dark: "#30D15826") // dark-green tint (selected rows)
     /// Focus ring color (same as accent).
-    public static let focusRing      = Color(hex: "#18C98B")
+    public static let focusRing      = Color(light: "#28A745", dark: "#30D158")
     /// Opacity for dimmed/disabled sections (shared so screens don't invent their own value).
     public static let disabledOpacity: Double = 0.45
 
     // MARK: Recovery gradient — vitaltrends-style traffic light (low red → high green).
     // 0.00 red → 0.30 amber → 0.55 gold → 0.78 green → 1.00 emerald-mint.
-    public static let recovery000 = Color(hex: "#FF4F73") // depleted — pink-red (brief)
-    public static let recovery030 = Color(hex: "#F5A623") // low — amber
-    public static let recovery055 = Color(hex: "#E8C24B") // moderate — gold
-    public static let recovery078 = Color(hex: "#18C98B") // primed — health green
-    public static let recovery100 = Color(hex: "#2FE6A8") // peak — bright green
+    public static let recovery000 = Color(hex: "#FF453A") // depleted — pink-red (brief)
+    public static let recovery030 = Color(hex: "#FF9F0A") // low — amber
+    public static let recovery055 = Color(hex: "#FFD60A") // moderate — gold
+    public static let recovery078 = Color(hex: "#30D158") // primed — health green
+    public static let recovery100 = Color(hex: "#34D96B") // peak — bright green
 
     /// Ordered gradient stops for the recovery scale (location + color).
     public static let recoveryStops: [Gradient.Stop] = [
@@ -79,10 +99,10 @@ public enum StrandPalette {
     public static let recoveryGradient = Gradient(stops: recoveryStops)
 
     // MARK: Strain ramp — ember → magenta (§9.1)
-    public static let strain000 = Color(hex: "#E8B04B") // ember / warm gold
-    public static let strain033 = Color(hex: "#E8743B") // orange
-    public static let strain066 = Color(hex: "#E0476B") // rose-red
-    public static let strain100 = Color(hex: "#C13AC1") // magenta
+    public static let strain000 = Color(hex: "#FFB340") // ember / warm gold
+    public static let strain033 = Color(hex: "#FF7A2F") // orange
+    public static let strain066 = Color(hex: "#FF375F") // rose-red
+    public static let strain100 = Color(hex: "#BF5AF2") // magenta
 
     public static let strainStops: [Gradient.Stop] = [
         .init(color: strain000, location: 0.00),
@@ -95,31 +115,31 @@ public enum StrandPalette {
     public static let strainGradient = Gradient(stops: strainStops)
 
     // MARK: Sleep stages (§9.1)
-    public static let sleepAwake = Color(hex: "#E0476B") // rose
-    public static let sleepLight = Color(hex: "#5C6FB1") // periwinkle
-    public static let sleepDeep  = Color(hex: "#2C3A7A") // deep indigo
-    public static let sleepREM   = Color(hex: "#5BE0C7") // mint (glows)
+    public static let sleepAwake = Color(hex: "#FF9F0A") // rose
+    public static let sleepLight = Color(hex: "#5E9BFF") // periwinkle
+    public static let sleepDeep  = Color(hex: "#5856D6") // deep indigo
+    public static let sleepREM   = Color(hex: "#32C8DE") // mint (glows)
 
     // MARK: HR zones (§9.1)
-    public static let zone1 = Color(hex: "#4FA9C9")
-    public static let zone2 = Color(hex: "#5BD3A0")
-    public static let zone3 = Color(hex: "#E8C24B")
-    public static let zone4 = Color(hex: "#E8743B")
-    public static let zone5 = Color(hex: "#E0476B")
+    public static let zone1 = Color(hex: "#64B5F6")
+    public static let zone2 = Color(hex: "#30D158")
+    public static let zone3 = Color(hex: "#FFD60A")
+    public static let zone4 = Color(hex: "#FF9F0A")
+    public static let zone5 = Color(hex: "#FF453A")
 
     /// HR zones indexed 1...5; index 0 mirrors zone1 for convenience.
     public static let hrZones: [Color] = [zone1, zone1, zone2, zone3, zone4, zone5]
 
     // MARK: Status (§9.1) — never reused as recovery colors.
-    public static let statusPositive = Color(hex: "#18C98B")
-    public static let statusWarning  = Color(hex: "#F5A623")
-    public static let statusCritical = Color(hex: "#FF4F73")
+    public static let statusPositive = Color(hex: "#30D158")
+    public static let statusWarning  = Color(hex: "#FF9F0A")
+    public static let statusCritical = Color(hex: "#FF453A")
 
     // MARK: Per-metric accents (brief) — Apple-Health bars / HRV / energy / risk.
-    public static let metricCyan   = Color(hex: "#2FC7FF") // Apple Health bars
-    public static let metricPurple = Color(hex: "#A879FF") // HRV / strain-style data
-    public static let metricAmber  = Color(hex: "#F5A623") // calories / moderate
-    public static let metricRose   = Color(hex: "#FF4F73") // risk / high strain / low recovery
+    public static let metricCyan   = Color(hex: "#32ADE6") // Apple Health bars
+    public static let metricPurple = Color(hex: "#AF52DE") // HRV / strain-style data
+    public static let metricAmber  = Color(hex: "#FF9F0A") // calories / moderate
+    public static let metricRose   = Color(hex: "#FF375F") // risk / high strain / low recovery
 
     // MARK: - Sampling helpers
 

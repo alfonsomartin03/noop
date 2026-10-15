@@ -13,8 +13,8 @@ public struct StrandCard<Content: View>: View {
     @ViewBuilder public var content: () -> Content
 
     public init(
-        padding: CGFloat = 16,
-        cornerRadius: CGFloat = 16,
+        padding: CGFloat = NoopMetrics.cardPadding,
+        cornerRadius: CGFloat = NoopMetrics.cardRadius,
         @ViewBuilder content: @escaping () -> Content
     ) {
         self.padding = padding
@@ -26,8 +26,7 @@ public struct StrandCard<Content: View>: View {
         content()
             .padding(padding)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(StrandPalette.surfaceRaised, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-            .strandCardHover(cornerRadius: cornerRadius)
+            .strandSurface(cornerRadius: cornerRadius)
     }
 }
 
@@ -47,15 +46,8 @@ public struct StrandCardHover: ViewModifier {
         content
             .overlay(
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .stroke(hovering ? StrandPalette.hairlineStrong : StrandPalette.hairline, lineWidth: 1)
+                    .stroke(hovering ? StrandPalette.hairlineStrong : StrandPalette.hairline, lineWidth: 0.5)
             )
-            .shadow(
-                color: Color.black.opacity(hovering ? 0.45 : 0.0),
-                radius: hovering ? 14 : 0,
-                x: 0,
-                y: hovering ? 8 : 0
-            )
-            .offset(y: hovering ? -1 : 0)
             .animation(StrandMotion.interactive, value: hovering)
             .onHover { hovering = $0 }
     }

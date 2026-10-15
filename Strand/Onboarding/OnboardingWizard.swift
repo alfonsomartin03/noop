@@ -83,7 +83,6 @@ public struct OnboardingWizard: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(StrandPalette.surfaceBase.ignoresSafeArea())
-        .preferredColorScheme(.dark)
         .onAppear { glow = true }
         // Isolated live observation — a hidden watcher slides Scan → celebration on bond
         // without subscribing the whole wizard to per-tick updates.

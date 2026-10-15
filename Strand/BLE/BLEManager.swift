@@ -1,9 +1,11 @@
 import Foundation
 import CoreBluetooth
+import os
 import WhoopProtocol
 import WhoopStore
 
-/// CoreBluetooth engine for the WHOOP 4.0: scan-by-service → connect → discover →
+/// CoreBluetooth engine for WHOOP 4.0 (full path) and WHOOP 5.0 (connect + hello + frame
+/// validation only; 5.0 command encoding / biometric decode are not implemented):  scan-by-service → connect → discover →
 /// BOND (one confirmed write) → subscribe → reassemble char-05 frames → FrameRouter.
 /// Cannot run in the simulator; verified manually on-device (Task C6).
 @MainActor
@@ -20,7 +22,17 @@ public final class BLEManager: NSObject, ObservableObject {
     static let batteryService   = CBUUID(string: "180F")
     static let batteryChar      = CBUUID(string: "2A19")
 
+    // WHOOP 5.0 ("puffin") service; source: b-nnett/goose via DeviceFamily. UNVERIFIED on hardware here.
+    static let whoop5Service = CBUUID(string: DeviceFamily.whoop5.serviceUUIDString)
+    static let whoop5CmdWriteChar = CBUUID(string: DeviceFamily.whoop5.commandCharacteristicUUIDString)
+
     static let restoreID = "com.openwhoop.ble.central"
+
+    private static let osLog = Logger(subsystem: "com.noopapp.noop", category: "ble")
+    /// Seconds of filtered scanning with no hit before falling back to an unfiltered name-based scan.
+    static let filteredScanTimeoutSeconds = 10
+    /// Seconds to wait for any notification after the 5.0 hello before logging a diagnostic.
+    static let helloResponseTimeoutSeconds = 8
 
     // MARK: Published state
     public let state: LiveState
@@ -91,11 +103,38 @@ public final class BLEManager: NSObject, ObservableObject {
     /// specific peripheral rather than starting a fresh scan.
     private var restoredPeripheral: CBPeripheral?
     private var cmdCharacteristic: CBCharacteristic?
-    private let reassembler = Reassembler()
+    private var reassembler = Reassembler()
     private var seq: UInt8 = 0
     private var didBond = false
     private var clockRequested = false
     private var intentionalDisconnect = false
+    /// Hardware generation of the connected strap. Defaults to 4.0 (legacy path); switched to 5.0 when the
+    /// fd4b… service is found during discovery. Drives framing, handshake and which commands are legal.
+    private(set) var family: DeviceFamily = .whoop4
+    private var scanFallbackWork: DispatchWorkItem?
+    private var helloWatchdog: DispatchWorkItem?
+    private var unfilteredScan = false
+    private var unfilteredSeen = 0
+    private var rxFrameCount = 0
+    private var whoop5Chars: [CBCharacteristic] = []
+    private var whoop5Reassemblers: [CBUUID: Reassembler] = [:]
+    private var rxFragmentCount = 0
+    private var strapFrameTotal = 0
+    private var whoop5HistoryActive = false
+    private var historyCapture: FileHandle?
+    private var historyIdleWork: DispatchWorkItem?
+    private var historyMetaSeen: [String] = []
+    private var historyDecoded: [Whoop5HistoricalRecord] = []
+    static let historyMaxCapturedFrames = 600
+    static let historyIdleSeconds = 20
+    private var realtimeDecodeLogged = 0
+    private var lastRealtimeTs: UInt32?
+    private var heartRateCharacteristic: CBCharacteristic?
+    private var whoop5SetupAttempts = 0
+    private var whoop5RetryPending = false
+    private var whoop5ExhaustedLogged = false
+    static let whoop5MaxSetupAttempts = 6
+    static let whoop5RetryDelaySeconds = 5
 
     /// Stable device id; matches the server's existing device for sync parity. Overridable.
     let deviceId: String
@@ -158,18 +197,59 @@ public final class BLEManager: NSObject, ObservableObject {
     public func connect() {
         intentionalDisconnect = false
         guard central.state == .poweredOn else {
-            log("Bluetooth not powered on (state=\(central.state.rawValue)); cannot scan yet")
+            log("Bluetooth not ready: \(BLEManager.stateName(central.state)); authorization=\(BLEManager.authName(CBCentralManager.authorization))")
             return
         }
-        log("Scanning for service \(BLEManager.customService)…")
+        // A strap that is already connected to macOS (or another app) does NOT advertise, so a scan can't
+        // see it. Ask the system for such peripherals first.
+        let known = central.retrieveConnectedPeripherals(
+            withServices: [BLEManager.customService, BLEManager.whoop5Service])
+        if let p = known.first {
+            log("Found \(known.count) system-connected WHOOP peripheral(s) — connecting without scan")
+            adopt(p)
+            return
+        }
+        unfilteredScan = false
+        unfilteredSeen = 0
+        log("Scanning for WHOOP 4.0 (6108…) and 5.0 (fd4b…) services…")
         central.scanForPeripherals(
-            withServices: [BLEManager.customService],
+            withServices: [BLEManager.customService, BLEManager.whoop5Service],
             options: [CBCentralManagerScanOptionAllowDuplicatesKey: false]
         )
+        scanFallbackWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in self?.startUnfilteredScan() }
+        scanFallbackWork = work
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + .seconds(BLEManager.filteredScanTimeoutSeconds), execute: work)
+    }
+
+    /// Fallback: some straps may not put their service UUID in the advertisement. Scan unfiltered and
+    /// accept only peripherals whose name starts with "WHOOP". ASSUMPTION: the 5.0 advertises such a name.
+    private func startUnfilteredScan() {
+        guard central.state == .poweredOn, !intentionalDisconnect, peripheral == nil else { return }
+        log("No WHOOP service seen in \(BLEManager.filteredScanTimeoutSeconds)s — unfiltered scan by name. "
+            + "If this fails: close the official WHOOP app / disconnect the strap from your phone (a strap "
+            + "already connected elsewhere stops advertising), keep the strap close, and check it is charged.")
+        central.stopScan()
+        unfilteredScan = true
+        central.scanForPeripherals(withServices: nil,
+                                   options: [CBCentralManagerScanOptionAllowDuplicatesKey: false])
+    }
+
+    /// Take ownership of a peripheral and start the connection.
+    private func adopt(_ p: CBPeripheral) {
+        scanFallbackWork?.cancel()
+        central.stopScan()
+        peripheral = p
+        p.delegate = self
+        log("Connecting (peripheral state=\(p.state.rawValue))…")
+        central.connect(p, options: nil)
     }
 
     public func disconnect() {
         intentionalDisconnect = true
+        scanFallbackWork?.cancel()
+        helloWatchdog?.cancel()
         if let p = peripheral {
             central.cancelPeripheralConnection(p)
         }
@@ -229,11 +309,58 @@ public final class BLEManager: NSObject, ObservableObject {
             log("send(\(command.label)) ignored — not connected")
             return
         }
+        if family == .whoop5 {
+            sendWhoop5(command, payload: payload, peripheral: p, characteristic: ch, writeType: writeType)
+            return
+        }
         seq = seq &+ 1
         let frame = command.frame(seq: seq, payload: payload)
         p.writeValue(Data(frame), for: ch, type: writeType)
         log("→ \(command.label) payload=\(hex(payload))")
     }
+
+    /// Commands verified (from the Goose reverse-engineering) to share their command NUMBER with the 4.0
+    /// and to be read-only or trivially reversible. 5.0 payloads: Goose sends these with the payloads below.
+    /// Everything else (alarm, haptics, historical, raw streams) stays blocked: payloads differ or are unverified.
+    private static let whoop5Allowed: [WhoopCommand: (_ payload: [UInt8]) -> [UInt8]] = [
+        .toggleRealtimeHR:   { $0.isEmpty ? [0] : [$0[0]] },   // [1] on / [0] off
+        .reportVersionInfo:  { _ in [] },
+        .getClock:           { _ in [] },
+        .getDataRange:       { _ in [] },
+        .sendHistoricalData: { _ in [] },   // history pull (safe mode only — see pullWhoop5History)
+    ]
+    private var whoop5SkippedLogged = Set<UInt8>()
+
+    private func sendWhoop5(_ command: WhoopCommand, payload: [UInt8], peripheral p: CBPeripheral,
+                            characteristic ch: CBCharacteristic, writeType: CBCharacteristicWriteType) {
+        guard let map = BLEManager.whoop5Allowed[command] else {
+            if whoop5SkippedLogged.insert(command.rawValue).inserted {
+                log("send(\(command.label)) not sent on WHOOP 5.0 — its 5.0 payload/encoding is unverified (logged once)")
+            }
+            return
+        }
+        guard didBond else {
+            log("send(\(command.label)) deferred — WHOOP 5.0 link not bonded yet")
+            return
+        }
+        seq = seq &+ 1
+        let data = map(payload)
+        let frame = buildWhoop5CommandFrame(seq: seq, command: command.rawValue, data: data)
+        let type: CBCharacteristicWriteType = ch.properties.contains(.writeWithoutResponse) ? writeType : .withResponse
+        p.writeValue(Data(frame), for: ch, type: type)
+        log("→ 5.0 \(command.label) seq=\(seq) payload=\(hex(data))")
+    }
+
+    /// One-shot, read-only probe once the 5.0 link is bonded + subscribed: proves the command channel works
+    /// (responses show up as "RX 5.0 … cmd-response" lines). GET_CLOCK and REPORT_VERSION_INFO only read.
+    private func whoop5Probe() {
+        guard family == .whoop5, !whoop5ProbeSent else { return }
+        whoop5ProbeSent = true
+        log("WHOOP 5.0: sending read-only probe (GET_CLOCK, REPORT_VERSION_INFO)")
+        send(.getClock, payload: [])
+        send(.reportVersionInfo, payload: [])
+    }
+    private var whoop5ProbeSent = false
 
     /// Ack one HISTORY_END chunk so the strap may trim it. Confirmed write — the strap forgets
     /// the chunk once this lands (link-layer half of safe-trim; decoded + raw already persisted).
@@ -450,12 +577,182 @@ public final class BLEManager: NSObject, ObservableObject {
 
     private func log(_ s: String) {
         state.append(log: "[\(timestamp())] \(s)")
+        BLEManager.osLog.notice("\(s, privacy: .public)")
+    }
+
+    /// Redacted name for logs: WHOOP names embed part of the strap serial, so keep only the prefix.
+    private func redactedName(_ n: String) -> String {
+        n.lowercased().hasPrefix("whoop") ? "WHOOP-…" : "other(\(n.count) chars)"
+    }
+    private static func stateName(_ s: CBManagerState) -> String {
+        switch s {
+        case .unknown: return "unknown"
+        case .resetting: return "resetting"
+        case .unsupported: return "unsupported (no BLE hardware)"
+        case .unauthorized: return "unauthorized (grant Bluetooth in System Settings ▸ Privacy & Security)"
+        case .poweredOff: return "poweredOff (turn Bluetooth on)"
+        case .poweredOn: return "poweredOn"
+        @unknown default: return "other(\(s.rawValue))"
+        }
+    }
+    private static func authName(_ a: CBManagerAuthorization) -> String {
+        switch a {
+        case .notDetermined: return "notDetermined"
+        case .restricted: return "restricted"
+        case .denied: return "denied"
+        case .allowedAlways: return "allowedAlways"
+        @unknown default: return "other(\(a.rawValue))"
+        }
+    }
+    private func describe(_ error: Error?) -> String {
+        guard let e = error as NSError? else { return "none" }
+        return "\(e.domain) code=\(e.code) \"\(e.localizedDescription)\""
+    }
+    private static func propsName(_ p: CBCharacteristicProperties) -> String {
+        var o: [String] = []
+        if p.contains(.read) { o.append("read") }
+        if p.contains(.write) { o.append("write") }
+        if p.contains(.writeWithoutResponse) { o.append("writeNoResp") }
+        if p.contains(.notify) { o.append("notify") }
+        if p.contains(.indicate) { o.append("indicate") }
+        return o.joined(separator: ",")
     }
     private func timestamp() -> String {
         BLEManager.logTimeFormatter.string(from: Date())
     }
     private func hex(_ bytes: [UInt8]) -> String {
         bytes.map { String(format: "%02x", $0) }.joined()
+    }
+
+    // MARK: WHOOP 5.0 stored data (history) — SAFE MODE
+    //
+    // Reads the strap's stored records WITHOUT acknowledging them. The ack (HISTORICAL_DATA_RESULT) is the step
+    // after which a strap discards a chunk, so we never send it here: nothing is deleted. Raw frames are saved to
+    // a local file so the record layout can be worked out before any data is stored or trimmed.
+    // ASSUMPTION: the 5.0 trims only on ack, as documented for the 4.0 in this repo.
+
+    /// Ask the strap what time span it holds (read-only).
+    public func queryWhoop5DataRange() {
+        guard family == .whoop5, didBond else { log("Data range: needs a bonded WHOOP 5.0"); return }
+        log("History: requesting data range (read-only)")
+        send(.getDataRange, payload: [])
+    }
+
+    /// Start a safe-mode pull: request history, capture raw frames to a local file, never acknowledge.
+    public func pullWhoop5History() {
+        guard family == .whoop5, didBond, !whoop5HistoryActive else {
+            log("History pull: needs a bonded WHOOP 5.0 and no pull already running"); return
+        }
+        let stamp = ISO8601DateFormatter().string(from: Date()).replacingOccurrences(of: ":", with: "-")
+        if let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first {
+            let url = dir.appendingPathComponent("whoop5-history-\(stamp).jsonl")
+            FileManager.default.createFile(atPath: url.path, contents: nil)
+            historyCapture = try? FileHandle(forWritingTo: url)
+            state.historyCaptureFile = url.lastPathComponent
+        }
+        whoop5HistoryActive = true
+        historyMetaSeen = []
+        historyDecoded = []
+        state.historySummary = nil
+        state.historyFrames = 0
+        state.historyBusy = true
+        state.historyStatus = "Requesting stored data…"
+        log("History: SAFE-MODE pull started (no acknowledgement will be sent; the strap keeps its data)")
+        guard let p = peripheral, let ch = cmdCharacteristic else { endWhoop5History("not connected"); return }
+        sendWhoop5(.sendHistoricalData, payload: [], peripheral: p, characteristic: ch, writeType: .withResponse)
+        armHistoryIdle()
+    }
+
+    public func cancelWhoop5History() { endWhoop5History("cancelled") }
+
+    private func armHistoryIdle() {
+        historyIdleWork?.cancel()
+        let w = DispatchWorkItem { [weak self] in self?.endWhoop5History("no more data for \(BLEManager.historyIdleSeconds)s") }
+        historyIdleWork = w
+        DispatchQueue.main.asyncAfter(deadline: .now() + .seconds(BLEManager.historyIdleSeconds), execute: w)
+    }
+
+    private func endWhoop5History(_ reason: String) {
+        guard whoop5HistoryActive else { return }
+        whoop5HistoryActive = false
+        historyIdleWork?.cancel()
+        try? historyCapture?.close(); historyCapture = nil
+        state.historyBusy = false
+        state.historyStatus = "Captured \(state.historyFrames) frames (\(reason)). Nothing was cleared from the strap."
+        saveDecodedHistory()
+        log("History: pull ended — \(reason); frames=\(state.historyFrames); kinds=\(historyMetaSeen.joined(separator: ","))")
+    }
+
+    /// Decode + persist the stored records captured in this pull (heart rate, R-R, gravity). Safe to repeat.
+    private func saveDecodedHistory() {
+        let recs = historyDecoded
+        historyDecoded = []
+        guard !recs.isEmpty else { return }
+        let hr = recs.filter { (30...220).contains($0.heartRate) }.map { HRSample(ts: $0.timestamp, bpm: $0.heartRate) }
+        let rr = recs.flatMap { r in r.rr.map { RRInterval(ts: r.timestamp, rrMs: $0) } }
+        let grav = recs.compactMap { r in r.gravity.map { GravitySample(ts: r.timestamp, x: $0.x, y: $0.y, z: $0.z) } }
+        let lo = recs.map(\.timestamp).min()!, hi = recs.map(\.timestamp).max()!
+        let f = DateFormatter(); f.dateFormat = "MMM d, HH:mm:ss"
+        let avg = hr.isEmpty ? nil : hr.map(\.bpm).reduce(0, +) / hr.count
+        let base = "\(recs.count) records · \(f.string(from: Date(timeIntervalSince1970: TimeInterval(lo)))) → \(f.string(from: Date(timeIntervalSince1970: TimeInterval(hi))))"
+            + (avg.map { " · avg \($0) bpm" } ?? "") + " · \(rr.count) R-R"
+        state.historySummary = base
+        log("History: decoded \(base)")
+        Task { @MainActor in
+            if let n = await collector?.persistDecodedHistory(Streams(hr: hr, rr: rr, gravity: grav)) {
+                state.historySummary = base + " · saved (\(n) new heart-rate rows)"
+                log("History: saved decoded records (\(n) new heart-rate rows)")
+            } else {
+                state.historySummary = base + " · NOT saved (database unavailable)"
+                log("History: could not save decoded records (store unavailable)")
+            }
+        }
+    }
+
+    /// Called for every complete 5.0 frame while a pull is active.
+    private func captureWhoop5HistoryFrame(_ frame: [UInt8], on characteristic: CBCharacteristic) {
+        guard whoop5HistoryActive, frame.count > 12 else { return }
+        let type = frame[8]
+        // 47 historical data, 52 historical IMU, 49/56 metadata, 48/53/54 events, 50 console — everything except the live flood.
+        guard [47, 52, 49, 56, 48, 53, 54, 50, 55].contains(type) else { return }
+        armHistoryIdle()
+        state.historyFrames += 1
+        if type == 47, let rec = decodeWhoop5Historical(frame) { historyDecoded.append(rec) }
+        if type == 49 || type == 56 {
+            let kind = type == 49 ? Int(frame[10]) : (Int(frame[10]) | Int(frame[11]) << 8)
+            let name = kind == 1 ? "START" : kind == 2 ? "END" : kind == 3 ? "COMPLETE" : "kind\(kind)"
+            historyMetaSeen.append(name)
+            log("History: metadata \(name) (frame \(state.historyFrames))")
+            if name == "COMPLETE" { endWhoop5History("strap reported HISTORY_COMPLETE") }
+        } else if state.historyFrames <= 3 || state.historyFrames % 50 == 0 {
+            log("History: frame \(state.historyFrames) type=\(type) len=\(frame.count) on \(characteristic.uuid.uuidString.prefix(8))")
+        }
+        if state.historyFrames <= BLEManager.historyMaxCapturedFrames {
+            let line = "{\"t\":\(Date().timeIntervalSince1970),\"ch\":\"\(characteristic.uuid.uuidString.prefix(8))\",\"type\":\(type),\"len\":\(frame.count),\"hex\":\"\(hex(frame))\"}\n"
+            historyCapture?.write(Data(line.utf8))
+        } else if state.historyFrames == BLEManager.historyMaxCapturedFrames + 1 {
+            endWhoop5History("capture limit reached (\(BLEManager.historyMaxCapturedFrames) frames)")
+        }
+    }
+
+    /// Decode the data-range response: list plausible unix timestamps found in the body (layout not published).
+    private func logWhoop5DataRange(_ frame: [UInt8]) {
+        let end = min((Int(frame[2]) | Int(frame[3]) << 8) + 8 - 4, frame.count)
+        guard end > 13 else { return }
+        var found: [(Int, Int)] = []
+        var o = 13
+        while o + 4 <= end {
+            let w = Int(frame[o]) | Int(frame[o+1]) << 8 | Int(frame[o+2]) << 16 | Int(frame[o+3]) << 24
+            if w >= 1_600_000_000 && w <= 2_100_000_000 { found.append((o - 13, w)) }
+            o += 1
+        }
+        let f = DateFormatter(); f.dateStyle = .medium; f.timeStyle = .short
+        let desc = found.map { "body+\($0.0)=\(f.string(from: Date(timeIntervalSince1970: TimeInterval($0.1))))" }
+        log("History: data range response body=\(end - 13) bytes; timestamps: \(desc.isEmpty ? "none recognised" : desc.joined(separator: " | "))")
+        if let lo = found.map({ $0.1 }).min(), let hi = found.map({ $0.1 }).max() {
+            state.historyRange = lo == hi ? f.string(from: Date(timeIntervalSince1970: TimeInterval(lo)))
+                : "\(f.string(from: Date(timeIntervalSince1970: TimeInterval(lo)))) → \(f.string(from: Date(timeIntervalSince1970: TimeInterval(hi))))"
+        }
     }
 
     // MARK: Alarm API (M6 — additive; does NOT touch connect/offload/sync flows)
@@ -526,12 +823,12 @@ public final class BLEManager: NSObject, ObservableObject {
 // MARK: - CBCentralManagerDelegate
 extension BLEManager: CBCentralManagerDelegate {
     public func centralManagerDidUpdateState(_ central: CBCentralManager) {
-        log("Central state: \(central.state.rawValue) (5 = poweredOn)")
+        log("Central state: \(BLEManager.stateName(central.state)); authorization=\(BLEManager.authName(CBCentralManager.authorization))")
         guard central.state == .poweredOn else { return }
         // Bootstrap the async store once on first poweredOn (idempotent if already set).
         Task { @MainActor in await bootstrapStore() }
         if let p = restoredPeripheral {
-            log("poweredOn with restored peripheral — reconnecting \(p.identifier)")
+            log("poweredOn with restored peripheral — reconnecting")
             if p.state != .connected {
                 central.connect(p, options: nil)
             } else {
@@ -548,21 +845,25 @@ extension BLEManager: CBCentralManagerDelegate {
                                didDiscover peripheral: CBPeripheral,
                                advertisementData: [String: Any],
                                rssi RSSI: NSNumber) {
-        let name = (advertisementData[CBAdvertisementDataLocalNameKey] as? String) ?? peripheral.name ?? "unknown"
-        log("Discovered \(name) (rssi \(RSSI)) — connecting")
-        central.stopScan()
-        self.peripheral = peripheral
-        peripheral.delegate = self
-        central.connect(peripheral, options: nil)
+        let name = (advertisementData[CBAdvertisementDataLocalNameKey] as? String) ?? peripheral.name ?? ""
+        let advSvcs = (advertisementData[CBAdvertisementDataServiceUUIDsKey] as? [CBUUID]) ?? []
+        if unfilteredScan {
+            unfilteredSeen += 1
+            // Only WHOOP-named devices are acceptable in the unfiltered scan; never connect to others.
+            guard name.lowercased().hasPrefix("whoop") else { return }
+        }
+        let gen = advSvcs.contains(BLEManager.whoop5Service) ? "5.0 service"
+            : advSvcs.contains(BLEManager.customService) ? "4.0 service" : "no WHOOP service in adv"
+        log("Discovered \(redactedName(name)) rssi=\(RSSI) adv=[\(gen)] connectable=\(advertisementData[CBAdvertisementDataIsConnectable] ?? "?") (unfilteredSeen=\(unfilteredSeen))")
+        adopt(peripheral)
     }
 
     public func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
         restoredPeripheral = nil
         state.connected = true
         log("Connected — discovering services")
-        peripheral.discoverServices([
-            BLEManager.customService, BLEManager.heartRateService, BLEManager.batteryService,
-        ])
+        // nil = discover everything so the log shows what this strap actually exposes (4.0 vs 5.0).
+        peripheral.discoverServices(nil)
     }
 
     public func centralManager(_ central: CBCentralManager,
@@ -570,6 +871,25 @@ extension BLEManager: CBCentralManagerDelegate {
                                error: Error?) {
         Task { @MainActor in await collector?.flush() }
         state.connected = false
+        state.bonded = false
+        state.resetTelemetry()
+        endWhoop5History("disconnected")
+        strapFrameTotal = 0
+        realtimeDecodeLogged = 0
+        lastRealtimeTs = nil
+        heartRateCharacteristic = nil
+        helloWatchdog?.cancel()
+        reassembler.reset()
+        whoop5Chars = []
+        whoop5SetupAttempts = 0
+        whoop5RetryPending = false
+        whoop5ExhaustedLogged = false
+        whoop5ProbeSent = false
+        whoop5Reassemblers.removeAll()
+        rxFragmentCount = 0
+        whoop5SkippedLogged.removeAll()
+        cmdCharacteristic = nil
+        self.peripheral = nil
         didBond = false
         clockRequested = false
         connectHandshakeDone = false
@@ -588,7 +908,7 @@ extension BLEManager: CBCentralManagerDelegate {
         keepAliveTimer = nil
         Task { @MainActor in await collector?.flushStandardHR() }   // persist any buffered 0x2A37 HR
         if !intentionalDisconnect {
-            log("Disconnected\(error.map { " — \($0.localizedDescription)" } ?? ""); rescanning in 3s")
+            log("Disconnected: \(describe(error)); rescanning in 3s")
             DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
                 guard let self, !self.intentionalDisconnect else { return }
                 self.connect()
@@ -601,7 +921,13 @@ extension BLEManager: CBCentralManagerDelegate {
     public func centralManager(_ central: CBCentralManager,
                                didFailToConnect peripheral: CBPeripheral,
                                error: Error?) {
-        log("Failed to connect\(error.map { " — \($0.localizedDescription)" } ?? "")")
+        log("Failed to connect: \(describe(error)); rescanning in 3s")
+        self.peripheral = nil
+        guard !intentionalDisconnect else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
+            guard let self, !self.intentionalDisconnect, self.peripheral == nil else { return }
+            self.connect()
+        }
     }
 
     /// State restoration entry point (M3 background collection).
@@ -629,13 +955,13 @@ extension BLEManager: CBCentralManagerDelegate {
         Task { @MainActor in await bootstrapStore() }
         if p.state == .connected {
             state.connected = true
-            log("Restored CONNECTED peripheral \(p.identifier) — re-discovering services")
+            log("Restored CONNECTED peripheral — re-discovering services")
             p.discoverServices([
                 BLEManager.customService, BLEManager.heartRateService, BLEManager.batteryService,
             ])
         } else {
             state.connected = false
-            log("Restored DISCONNECTED peripheral \(p.identifier) — reconnect on poweredOn")
+            log("Restored DISCONNECTED peripheral — reconnect on poweredOn")
             if central.state == .poweredOn { central.connect(p, options: nil) }
         }
     }
@@ -644,9 +970,24 @@ extension BLEManager: CBCentralManagerDelegate {
 // MARK: - CBPeripheralDelegate
 extension BLEManager: CBPeripheralDelegate {
     public func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
+        if let error { log("Service discovery failed: \(describe(error))") }
         guard let services = peripheral.services else { return }
+        log("Services: \(services.map { $0.uuid.uuidString }.joined(separator: ", "))")
+        if services.contains(where: { $0.uuid == BLEManager.whoop5Service }) {
+            family = .whoop5
+        } else if services.contains(where: { $0.uuid == BLEManager.customService }) {
+            family = .whoop4
+        } else {
+            log("No WHOOP 4.0 (6108…) or 5.0 (fd4b…) service on this peripheral — not a supported WHOOP, or the strap is in a different mode")
+        }
+        reassembler = Reassembler(family: family)
+        state.family = family.rawValue
+        log("Detected family: \(family.rawValue)")
         for s in services {
             switch s.uuid {
+            case BLEManager.whoop5Service:
+                // nil = all characteristics, so unexpected ones (and their properties) show up in the log.
+                peripheral.discoverCharacteristics(nil, for: s)
             case BLEManager.customService:
                 peripheral.discoverCharacteristics(
                     [BLEManager.cmdWriteChar, BLEManager.cmdNotifyChar,
@@ -663,7 +1004,13 @@ extension BLEManager: CBPeripheralDelegate {
     public func peripheral(_ peripheral: CBPeripheral,
                            didDiscoverCharacteristicsFor service: CBService,
                            error: Error?) {
+        if let error { log("Characteristic discovery failed for \(service.uuid): \(describe(error))") }
         guard let chars = service.characteristics else { return }
+        log("Characteristics of \(service.uuid): " + chars.map { "\($0.uuid.uuidString)[\(BLEManager.propsName($0.properties))]" }.joined(separator: " "))
+        if service.uuid == BLEManager.whoop5Service {
+            setUpWhoop5(peripheral, chars)
+            return
+        }
         for c in chars {
             switch c.uuid {
             case BLEManager.cmdWriteChar:
@@ -679,10 +1026,121 @@ extension BLEManager: CBPeripheralDelegate {
                  BLEManager.dataNotifyChar,
                  BLEManager.heartRateChar,
                  BLEManager.batteryChar:
+                if c.uuid == BLEManager.heartRateChar { heartRateCharacteristic = c }
                 peripheral.setNotifyValue(true, for: c)
                 log("Subscribed \(c.uuid)")
             default: break
             }
+        }
+    }
+
+    /// WHOOP 5.0 session start: subscribe to every notify/indicate characteristic, then write the static
+    /// CLIENT_HELLO (b-nnett/goose) to fd4b0002. Hello is written WITH response when the characteristic
+    /// allows it so an encryption/pairing requirement surfaces as an ATT error we can log (and macOS can
+    /// show its pairing prompt). Beyond hello, 5.0 command encoding is not implemented.
+    private func setUpWhoop5(_ peripheral: CBPeripheral, _ chars: [CBCharacteristic]) {
+        whoop5Chars = chars
+        whoop5SetupAttempts += 1
+        log("WHOOP 5.0 setup attempt \(whoop5SetupAttempts)/\(BLEManager.whoop5MaxSetupAttempts)")
+        for c in chars where c.properties.contains(.notify) || c.properties.contains(.indicate) {
+            peripheral.setNotifyValue(true, for: c)
+        }
+        guard let cmd = chars.first(where: { $0.uuid == BLEManager.whoop5CmdWriteChar }) else {
+            log("WHOOP 5.0 command characteristic fd4b0002 not found — cannot send CLIENT_HELLO")
+            return
+        }
+        cmdCharacteristic = cmd
+        let props = cmd.properties
+        let type: CBCharacteristicWriteType = props.contains(.write) ? .withResponse : .withoutResponse
+        guard props.contains(.write) || props.contains(.writeWithoutResponse) else {
+            log("fd4b0002 is not writable (props=\(BLEManager.propsName(props)))")
+            return
+        }
+        log("WHOOP 5.0: writing CLIENT_HELLO (16 bytes, \(type == .withResponse ? "with" : "without") response)")
+        peripheral.writeValue(Data(DeviceFamily.whoop5ClientHello), for: cmd, type: type)
+        if type == .withoutResponse { markWhoop5Hello() }
+        helloWatchdog?.cancel()
+        let w = DispatchWorkItem { [weak self] in
+            guard let self, self.state.connected, self.family == .whoop5, self.rxFrameCount == 0 else { return }
+            self.log("WHOOP 5.0: no frame received \(BLEManager.helloResponseTimeoutSeconds)s after CLIENT_HELLO — the strap may need pairing/bonding, a different hello, or it is held by another app")
+        }
+        helloWatchdog = w
+        rxFrameCount = 0
+        DispatchQueue.main.asyncAfter(deadline: .now() + .seconds(BLEManager.helloResponseTimeoutSeconds), execute: w)
+    }
+
+    /// ATT 5 (insufficient authentication) / 15 (insufficient encryption): the strap wants a bonded link.
+    /// macOS starts pairing on the first protected access (a system dialog may appear) and that first
+    /// access fails; retry after a delay so the now-encrypted link can succeed.
+    private func isAuthError(_ error: Error?) -> Bool {
+        guard let e = error as NSError?, e.domain == CBATTErrorDomain else { return false }
+        return e.code == CBATTError.insufficientAuthentication.rawValue
+            || e.code == CBATTError.insufficientEncryption.rawValue
+    }
+
+    private func scheduleWhoop5Retry() {
+        guard family == .whoop5, !whoop5RetryPending, let p = peripheral else { return }
+        guard whoop5SetupAttempts < BLEManager.whoop5MaxSetupAttempts else {
+            guard !whoop5ExhaustedLogged else { return }
+            whoop5ExhaustedLogged = true
+            log("WHOOP 5.0: still 'authentication insufficient' after \(whoop5SetupAttempts) attempts — pairing did not complete. "
+                + "Accept any macOS pairing dialog; otherwise remove the strap from System Settings ▸ Bluetooth and from your phone's WHOOP/Bluetooth pairing, then retry. "
+                + "(Assumption: a strap bonded to another device may refuse a second bond.)")
+            return
+        }
+        whoop5RetryPending = true
+        log("WHOOP 5.0: link needs pairing/encryption — watch for a macOS pairing prompt; retrying in \(BLEManager.whoop5RetryDelaySeconds)s")
+        DispatchQueue.main.asyncAfter(deadline: .now() + .seconds(BLEManager.whoop5RetryDelaySeconds)) { [weak self] in
+            guard let self else { return }
+            self.whoop5RetryPending = false
+            guard self.state.connected, self.family == .whoop5, !self.didBond, !self.whoop5Chars.isEmpty else { return }
+            self.setUpWhoop5(p, self.whoop5Chars)
+        }
+    }
+
+    private func markWhoop5Hello() {
+        guard !didBond else { return }
+        didBond = true
+        state.bonded = true
+        log("WHOOP 5.0: CLIENT_HELLO accepted by the link (this proves the write completed, not that the strap understood it)")
+        // The notify subscriptions may have been requested BEFORE the bond finished and failed with an
+        // auth error. Now that the link is encrypted, re-subscribe any that aren't live, then resend the
+        // hello once so its response can actually be received.
+        guard let p = peripheral else { return }
+        // The standard heart-rate subscription was made before the link was encrypted; toggle it again now
+        // that the bond is in place (harmless, and some peripherals only start notifying after this).
+        if let hr = heartRateCharacteristic {
+            log("WHOOP 5.0: re-enabling standard heart-rate notifications after bonding")
+            p.setNotifyValue(false, for: hr)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) { [weak self] in
+                guard let self, self.state.connected, let p = self.peripheral else { return }
+                p.setNotifyValue(true, for: hr)
+            }
+        }
+        let missing = whoop5Chars.filter {
+            ($0.properties.contains(.notify) || $0.properties.contains(.indicate)) && !$0.isNotifying
+        }
+        guard !missing.isEmpty else {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in self?.whoop5Probe() }
+            return
+        }
+        log("WHOOP 5.0: link encrypted — re-subscribing \(missing.count) characteristic(s), then resending CLIENT_HELLO")
+        for c in missing { p.setNotifyValue(true, for: c) }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+            guard let self, self.state.connected, self.family == .whoop5,
+                  let cmd = self.cmdCharacteristic, let p = self.peripheral else { return }
+            let type: CBCharacteristicWriteType = cmd.properties.contains(.write) ? .withResponse : .withoutResponse
+            self.log("WHOOP 5.0: resending CLIENT_HELLO after re-subscribe")
+            p.writeValue(Data(DeviceFamily.whoop5ClientHello), for: cmd, type: type)
+            self.rxFrameCount = 0
+            self.helloWatchdog?.cancel()
+            let w = DispatchWorkItem { [weak self] in
+                guard let self, self.state.connected, self.family == .whoop5, self.rxFrameCount == 0 else { return }
+                self.log("WHOOP 5.0: bonded and subscribed, but still no frame \(BLEManager.helloResponseTimeoutSeconds)s after hello — the hello may not be what this firmware expects")
+            }
+            self.helloWatchdog = w
+            DispatchQueue.main.asyncAfter(deadline: .now() + .seconds(BLEManager.helloResponseTimeoutSeconds), execute: w)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in self?.whoop5Probe() }
         }
     }
 
@@ -691,7 +1149,13 @@ extension BLEManager: CBPeripheralDelegate {
                            didWriteValueFor characteristic: CBCharacteristic,
                            error: Error?) {
         if let error = error {
-            log("Confirmed write failed: \(error.localizedDescription)")
+            log("Confirmed write to \(characteristic.uuid) failed: \(describe(error))")
+            if isAuthError(error) { scheduleWhoop5Retry() }
+            return
+        }
+        if family == .whoop5 {
+            // 4.0 handshake (HELLO_HARVARD / SET_CLOCK / historical offload) is 4.0-framed — never run it here.
+            markWhoop5Hello()
             return
         }
         if !didBond {
@@ -762,17 +1226,60 @@ extension BLEManager: CBPeripheralDelegate {
         guard let data = characteristic.value else { return }
         let bytes = [UInt8](data)
         lastDataAt = Date()   // feed the liveness watchdog on every notification
+        // UI telemetry (throttled to ~1 Hz so it can't flood SwiftUI): when did data last arrive?
+        if state.lastDataAt.map({ lastDataAt.timeIntervalSince($0) >= 1 }) ?? true { state.lastDataAt = lastDataAt }
 
         switch characteristic.uuid {
         case BLEManager.heartRateChar:
+            state.hrPackets += 1
+            if state.hrPackets == 1 { log("First standard heart-rate packet received (\(bytes.count) bytes)") }
             parseStandardHR(bytes)
         case BLEManager.batteryChar:
             if let pct = bytes.first { state.setBattery(Double(pct)) } // 0x2A19 = percent
         case BLEManager.dataNotifyChar,
              BLEManager.cmdNotifyChar,
-             BLEManager.eventNotifyChar:
+             BLEManager.eventNotifyChar,
+             _ where family == .whoop5 && characteristic.service?.uuid == BLEManager.whoop5Service:
+            // 5.0: each characteristic is its own byte stream, so reassemble per characteristic.
+            let asm: Reassembler
+            if family == .whoop5 {
+                if let existing = whoop5Reassemblers[characteristic.uuid] { asm = existing }
+                else { asm = Reassembler(family: .whoop5); whoop5Reassemblers[characteristic.uuid] = asm }
+                if rxFragmentCount < 10 {
+                    rxFragmentCount += 1
+                    log("RX 5.0 fragment on \(characteristic.uuid.uuidString.prefix(8)): \(bytes.count) bytes")
+                }
+            } else { asm = reassembler }
             // Reassemble (no-op for already-complete frames) then route each complete frame.
-            for frame in reassembler.feed(bytes) {
+            for frame in asm.feed(bytes) {
+                strapFrameTotal += 1
+                if strapFrameTotal <= 20 || strapFrameTotal % 10 == 0 { state.strapFrames = strapFrameTotal }
+                if family == .whoop5 {
+                    // 5.0: validate + route to UI state only. Biometric offsets / historical offload / clock
+                    // correlation are 4.0-only. Log metadata (never payload bytes).
+                    rxFrameCount += 1
+                    let chk = verifyFrame(frame, family: .whoop5)
+                    let parsed = parseFrame(frame, family: .whoop5)
+                    if frame.count > 12, parsed.typeName == "COMMAND_RESPONSE" {
+                        // metadata only: [8]=type [9]=seq [10]=responded-to cmd [11]=origin seq [12]=result code
+                        log("RX 5.0 cmd-response to=\(frame[10]) originSeq=\(frame[11]) result=\(frame[12]) len=\(frame.count) crc=\(chk.ok)")
+                    } else if rxFrameCount <= 20 {
+                        log("RX 5.0 on \(characteristic.uuid.uuidString.prefix(8)): type=\(parsed.typeName) len=\(frame.count) hdrCRC=\(chk.crc8OK.map(String.init) ?? "?") crc32=\(chk.crc32OK.map(String.init) ?? "?")")
+                    }
+                    router.handle(frame: frame, family: .whoop5)
+                    if chk.ok, frame.count > 12, parsed.typeName == "COMMAND_RESPONSE", frame[10] == WhoopCommand.getDataRange.rawValue, frame[12] == 1 {
+                        logWhoop5DataRange(frame)
+                    }
+                    if chk.ok { captureWhoop5HistoryFrame(frame, on: characteristic) }
+                    if let rt = decodeWhoop5Realtime(frame), realtimeDecodeLogged < 10 {
+                        // Layout validation (first 10 only): timestamps should step ~1 s, HR should be steady.
+                        let dt = lastRealtimeTs.map { Int(rt.timestamp) - Int($0) }
+                        lastRealtimeTs = rt.timestamp
+                        realtimeDecodeLogged += 1
+                        log("5.0 realtime decode check: hr=\(rt.heartRate) rrCount=\(rt.rr.count) tsStep=\(dt.map(String.init) ?? "-")")
+                    }
+                    continue
+                }
                 router.handle(frame: frame)                       // UI (always)
                 if frame.count > 6, frame[6] == WhoopCommand.getDataRange.rawValue,
                    let newest = BLEManager.dataRangeNewestUnix(from: frame) {
@@ -821,7 +1328,11 @@ extension BLEManager: CBPeripheralDelegate {
                            didUpdateNotificationStateFor characteristic: CBCharacteristic,
                            error: Error?) {
         if let error = error {
-            log("Notify enable failed for \(characteristic.uuid): \(error.localizedDescription)")
+            log("Notify enable failed for \(characteristic.uuid): \(describe(error))")
+            if isAuthError(error) { scheduleWhoop5Retry() }
+        } else {
+            if characteristic.uuid == BLEManager.heartRateChar { state.hrSubscribed = characteristic.isNotifying }
+            log("Notify \(characteristic.isNotifying ? "ON" : "OFF") for \(characteristic.uuid)")
         }
     }
 }

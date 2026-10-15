@@ -272,7 +272,7 @@ struct SleepView: View {
         }()
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline) {
-                Text(label.uppercased()).strandOverline()
+                Text(label).strandOverline()
                 Spacer()
                 Text(durationText(last)).font(StrandFont.captionNumber).foregroundStyle(StrandPalette.textPrimary)
                 if !deltaText.isEmpty {

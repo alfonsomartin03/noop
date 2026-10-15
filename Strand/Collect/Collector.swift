@@ -175,6 +175,14 @@ final class Collector {
         }
     }
 
+    // MARK: - Decoded history (WHOOP 5.0 stored records)
+
+    /// Persist already-decoded stored records. Idempotent: the store ignores rows whose (device, ts) already exist,
+    /// so re-saving the same chunk is harmless. Returns the number of NEW heart-rate rows written, or nil on failure.
+    func persistDecodedHistory(_ streams: Streams) async -> Int? {
+        do { return try await store.insert(streams, deviceId: deviceId).hr } catch { return nil }
+    }
+
     // MARK: - On-demand raw capture
 
     /// Open a bounded raw-capture window so the next flushes persist raw even with the global

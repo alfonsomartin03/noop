@@ -175,3 +175,78 @@ func appendBattery(_ out: inout Streams, ts: Int, p: [String: ParsedValue]) {
     let charging = p["battery_charging"]?.intValue.map { $0 != 0 }
     out.battery.append(BatterySample(ts: ts, soc: soc, mv: mv, charging: charging))
 }
+
+// MARK: - WHOOP 5.0 realtime heart-rate record
+
+/// Decoded WHOOP 5.0 `REALTIME_DATA` (type 40) record.
+///
+/// LAYOUT IS A HYPOTHESIS, not a published spec: it is the verified WHOOP 4.0 realtime layout
+/// (`timestamp u32 @6, subseconds u16 @10, heart_rate u8 @12, rr_count u8 @13, rr u16… @14`) shifted by the
+/// 4-byte-longer 5.0 header, i.e. `@10 / @14 / @16 / @17 / @18`. It matches the observed 32-byte frames
+/// (8 header + 20 payload + 4 CRC32) and must be confirmed against a real strap (timestamps should step ~1 s,
+/// heart rate should be steady and plausible).
+public struct Whoop5Realtime: Equatable, Sendable {
+    public let timestamp: UInt32
+    public let subseconds: UInt16
+    public let heartRate: Int
+    public let rr: [Int]          // milliseconds, zeros dropped
+}
+
+public func decodeWhoop5Realtime(_ frame: [UInt8]) -> Whoop5Realtime? {
+    guard verifyFrame(frame, family: .whoop5).ok, frame.count >= 18, frame[8] == 40 else { return nil }
+    let ts = UInt32(frame[10]) | UInt32(frame[11]) << 8 | UInt32(frame[12]) << 16 | UInt32(frame[13]) << 24
+    let sub = UInt16(frame[14]) | UInt16(frame[15]) << 8
+    let hr = Int(frame[16])
+    let declaredEnd = (Int(frame[2]) | Int(frame[3]) << 8) + 8 - 4   // start of the CRC32 trailer
+    let n = Int(frame[17])
+    var rr: [Int] = []
+    for i in 0..<n {
+        let o = 18 + i * 2
+        guard o + 1 < min(declaredEnd, frame.count) else { break }
+        let v = Int(frame[o]) | Int(frame[o + 1]) << 8
+        if v > 0 { rr.append(v) }
+    }
+    return Whoop5Realtime(timestamp: ts, subseconds: sub, heartRate: hr, rr: rr)
+}
+
+// MARK: - WHOOP 5.0 historical record (type 47)
+
+/// One decoded WHOOP 5.0 stored record. The layout was derived from a real strap capture (30 consecutive records,
+/// payload version byte 0x12) and cross-checked: timestamps step exactly 1 s, heart rate agrees with the R-R
+/// intervals (60000/bpm ≈ rr), and the 3 floats form a unit-length gravity vector (|g| = 1.00).
+///
+/// Payload offsets (payload = frame[8 ..< len-4]):
+///   0 type 47 · 1 version 0x12 · 3 counter · 7 timestamp u32 (unix s) · 14 heart_rate u8 · 15 rr_count u8
+///   16 rr[i] u16 ms · 37/41/45 gravity x/y/z float32 (g)
+/// Other bytes (optical / temperature / SpO2 candidates) are NOT decoded: their meaning is unverified.
+public struct Whoop5HistoricalRecord: Equatable, Sendable {
+    public let timestamp: Int
+    public let heartRate: Int          // 0 when the strap had no reading
+    public let rr: [Int]               // ms
+    public let gravity: (x: Double, y: Double, z: Double)?
+
+    public static func == (a: Self, b: Self) -> Bool {
+        a.timestamp == b.timestamp && a.heartRate == b.heartRate && a.rr == b.rr
+            && a.gravity?.x == b.gravity?.x && a.gravity?.y == b.gravity?.y && a.gravity?.z == b.gravity?.z
+    }
+}
+
+public func decodeWhoop5Historical(_ frame: [UInt8]) -> Whoop5HistoricalRecord? {
+    guard frame.count >= 8 + 112 + 4, frame[8] == 47, frame[9] == 0x12,
+          verifyFrame(frame, family: .whoop5).ok else { return nil }
+    let p = Array(frame[8..<(frame.count - 4)])
+    func u32(_ o: Int) -> Int { Int(p[o]) | Int(p[o+1]) << 8 | Int(p[o+2]) << 16 | Int(p[o+3]) << 24 }
+    func f32(_ o: Int) -> Double { Double(Float(bitPattern: UInt32(truncatingIfNeeded: u32(o)))) }
+    let ts = u32(7)
+    guard (1_500_000_000...2_200_000_000).contains(ts) else { return nil }
+    let hr = Int(p[14])
+    var rr: [Int] = []
+    for i in 0..<min(Int(p[15]), 4) {
+        let v = Int(p[16 + i * 2]) | Int(p[17 + i * 2]) << 8
+        if (250...3000).contains(v) { rr.append(v) }
+    }
+    let g = (f32(37), f32(41), f32(45))
+    let norm = (g.0 * g.0 + g.1 * g.1 + g.2 * g.2).squareRoot()
+    let gravity = (0.7...1.3).contains(norm) ? g : nil
+    return Whoop5HistoricalRecord(timestamp: ts, heartRate: hr, rr: rr, gravity: gravity)
+}

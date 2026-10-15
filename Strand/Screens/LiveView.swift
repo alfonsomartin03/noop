@@ -2,25 +2,50 @@ import SwiftUI
 import StrandDesign
 import WhoopProtocol
 
-/// Live — the connected strap in real time. Built on the shared design system
-/// (ScreenScaffold chrome, StrandPalette, StrandFont) so it lines up pixel-for-pixel
-/// with every other screen instead of the old standalone Milestone-1 layout.
+/// Live — the connected strap in real time, on the shared widget system.
 struct LiveView: View {
     @EnvironmentObject private var model: AppModel
     @EnvironmentObject private var live: LiveState
 
     /// Smoothed, spike-filtered live HR from AppModel (median over a short window).
     private var displayHR: Int? { model.bpm }
+    @State private var logOpen = false
 
     var body: some View {
-        ScreenScaffold(title: "Live",
-                       subtitle: "Your strap in real time — heart rate and frames as they arrive.") {
+        ScreenScaffold(title: "Live", subtitle: connectionLine) {
             VStack(alignment: .leading, spacing: NoopMetrics.sectionGap) {
-                connectionRow
-                heartRateCard
-                statusGrid
                 controls
-                logCard
+                LiveStatusCard()
+                StrapHistoryCard()
+                WidgetGrid(minColumn: 190) {
+                    heartRateWidget
+                    StrandWidget("Battery", symbol: "battery.75percent", tint: StrandPalette.statusPositive) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            WidgetValue(live.batteryPct.map { "\(Int($0))" }, unit: "%")
+                            Spacer(minLength: 0)
+                            WidgetCaption(live.connected ? "Strap battery" : "Not connected")
+                        }
+                    }
+                    StrandWidget("Last frame", symbol: "dot.radiowaves.left.and.right", tint: StrandPalette.metricCyan) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(live.lastFrameType ?? "—").font(.system(size: 17, weight: .semibold))
+                                .foregroundStyle(live.lastFrameType == nil ? StrandPalette.textTertiary : StrandPalette.textPrimary)
+                                .lineLimit(2).minimumScaleFactor(0.7)
+                            Spacer(minLength: 0)
+                            WidgetCaption("Most recent packet")
+                        }
+                    }
+                    StrandWidget("Last event", symbol: "bolt.fill", tint: StrandPalette.metricAmber) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(live.lastEvent ?? "—").font(.system(size: 17, weight: .semibold))
+                                .foregroundStyle(live.lastEvent == nil ? StrandPalette.textTertiary : StrandPalette.textPrimary)
+                                .lineLimit(2).minimumScaleFactor(0.7)
+                            Spacer(minLength: 0)
+                            WidgetCaption("From the strap")
+                        }
+                    }
+                }
+                logSection
             }
         }
         .onAppear { if live.bonded { model.startRealtimeHR(); model.getBattery() } }
@@ -30,125 +55,89 @@ struct LiveView: View {
         }
     }
 
-    // MARK: - Connection
-
-    private var connectionRow: some View {
-        HStack {
-            connectionPill
-            Spacer()
-        }
-    }
-
-    private var connectionPill: some View {
-        let (label, color): (String, Color) =
-            live.bonded ? ("Bonded", StrandPalette.accent)
-            : live.connected ? ("Connected", StrandPalette.statusWarning)
-            : ("Disconnected", StrandPalette.metricRose)
-        return HStack(spacing: 8) {
-            Circle().fill(color).frame(width: 9, height: 9)
-            Text(label).font(StrandFont.subhead).foregroundStyle(StrandPalette.textPrimary)
-        }
-        .padding(.horizontal, 14).padding(.vertical, 8)
-        .background(StrandPalette.surfaceRaised, in: Capsule())
+    private var connectionLine: String {
+        live.bonded ? "Connected to your WHOOP" : live.connected ? "Connecting to your WHOOP…" : "Your WHOOP is not connected"
     }
 
     // MARK: - Heart rate
 
-    private var heartRateCard: some View {
-        NoopCard {
-            VStack(spacing: 6) {
-                Text("HEART RATE").font(StrandFont.overline).tracking(StrandFont.overlineTracking)
-                    .foregroundStyle(StrandPalette.textSecondary)
-                Text(displayHR.map(String.init) ?? "—")
-                    .font(.system(size: 96, weight: .semibold).monospacedDigit())
-                    .foregroundStyle(displayHR == nil ? StrandPalette.textTertiary : StrandPalette.accent)
-                    .contentTransition(.numericText())
-                    .animation(.snappy, value: displayHR)
-                Text("bpm").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
-                if !live.rr.isEmpty {
-                    Text("R-R: " + live.rr.suffix(4).map(String.init).joined(separator: " · ") + " ms")
-                        .font(StrandFont.mono).foregroundStyle(StrandPalette.textTertiary)
+    private var heartRateWidget: some View {
+        StrandWidget("Heart rate", symbol: "heart.fill", tint: StrandPalette.metricRose, size: .large) {
+            VStack(alignment: .leading, spacing: 6) {
+                Spacer(minLength: 0)
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text(displayHR.map(String.init) ?? "—")
+                        .font(.system(size: 88, weight: .semibold).monospacedDigit())
+                        .foregroundStyle(displayHR == nil ? StrandPalette.textTertiary : StrandPalette.textPrimary)
+                        .contentTransition(.numericText())
+                        .animation(.snappy, value: displayHR)
+                    if displayHR != nil {
+                        Text("bpm").font(.system(size: 18, weight: .medium)).foregroundStyle(StrandPalette.textSecondary)
+                    }
                 }
+                if !live.rr.isEmpty {
+                    Text("R-R " + live.rr.suffix(4).map(String.init).joined(separator: " · ") + " ms")
+                        .font(.system(size: 12).monospacedDigit()).foregroundStyle(StrandPalette.textSecondary)
+                } else {
+                    WidgetCaption(live.phase.title)
+                }
+                Spacer(minLength: 0)
             }
-            .frame(maxWidth: .infinity).padding(.vertical, 20)
-        }
-    }
-
-    // MARK: - Status tiles
-
-    private var statusGrid: some View {
-        HStack(spacing: NoopMetrics.gap) {
-            stat("Battery", live.batteryPct.map { "\(Int($0))%" } ?? "—")
-            stat("Last frame", live.lastFrameType ?? "—")
-            stat("Last event", live.lastEvent ?? "—")
-        }
-    }
-
-    private func stat(_ title: String, _ value: String) -> some View {
-        NoopCard {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(title.uppercased()).font(StrandFont.overline).tracking(StrandFont.overlineTracking)
-                    .foregroundStyle(StrandPalette.textSecondary)
-                Text(value).font(StrandFont.headline).monospacedDigit()
-                    .foregroundStyle(StrandPalette.textPrimary)
-                    .lineLimit(1).minimumScaleFactor(0.6)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
     // MARK: - Controls
 
     private var controls: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 10) {
             Button { model.scan() } label: {
-                Label(live.connected ? "Re-scan" : "Scan & Connect",
-                      systemImage: "antenna.radiowaves.left.and.right")
-                    .frame(maxWidth: .infinity).padding(.vertical, 8)
+                Label(live.connected ? "Re-scan" : "Connect", systemImage: "antenna.radiowaves.left.and.right")
             }
             .buttonStyle(.borderedProminent).tint(StrandPalette.accent)
 
-            Button { model.buzz() } label: {
-                Label("Buzz strap", systemImage: "waveform.path")
-                    .frame(maxWidth: .infinity).padding(.vertical, 8)
-            }
-            .buttonStyle(.bordered).tint(StrandPalette.accent)
-            .disabled(!live.bonded)
-            .help("Fire a test haptic buzz on the strap (requires a bonded connection)")
+            Button { model.buzz() } label: { Label("Buzz strap", systemImage: "waveform.path") }
+                .buttonStyle(.bordered)
+                .disabled(!live.bonded)
+                .help("Fire a test haptic buzz on the strap (requires a bonded connection)")
 
-            Button(role: .destructive) { model.disconnect() } label: {
-                Label("Disconnect", systemImage: "xmark.circle")
-                    .frame(maxWidth: .infinity).padding(.vertical, 8)
-            }
-            .buttonStyle(.bordered)
-            .disabled(!live.connected)
+            Button(role: .destructive) { model.disconnect() } label: { Label("Disconnect", systemImage: "xmark.circle") }
+                .buttonStyle(.bordered)
+                .disabled(!live.connected)
+            Spacer()
         }
+        .controlSize(.large)
     }
 
-    // MARK: - Strap log
+    // MARK: - Strap log (diagnostics → collapsed)
 
-    private var logCard: some View {
-        NoopCard {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("STRAP LOG").font(StrandFont.overline).tracking(StrandFont.overlineTracking)
-                    .foregroundStyle(StrandPalette.textSecondary)
-                ScrollViewReader { proxy in
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 2) {
-                            ForEach(Array(live.log.enumerated()), id: \.offset) { idx, line in
-                                Text(line).font(StrandFont.mono)
-                                    .foregroundStyle(StrandPalette.textSecondary)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .id(idx)
-                            }
+    private var logSection: some View {
+        DisclosureGroup(isExpanded: $logOpen) {
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 3) {
+                        ForEach(Array(live.log.enumerated()), id: \.offset) { idx, line in
+                            Text(line).font(StrandFont.mono(12))
+                                .foregroundStyle(StrandPalette.textSecondary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .textSelection(.enabled)
+                                .id(idx)
                         }
                     }
-                    .frame(height: 200)
-                    .onChange(of: live.log.count) { _ in
-                        if let last = live.log.indices.last { proxy.scrollTo(last, anchor: .bottom) }
-                    }
+                }
+                .frame(height: 220)
+                .onChange(of: live.log.count) { _ in
+                    if let last = live.log.indices.last { proxy.scrollTo(last, anchor: .bottom) }
                 }
             }
+            .padding(.top, 10)
+        } label: {
+            HStack {
+                Text("Connection log").font(.system(size: 15, weight: .semibold)).foregroundStyle(StrandPalette.textPrimary)
+                Spacer()
+                Text("\(live.log.count) lines").font(.system(size: 12)).foregroundStyle(StrandPalette.textTertiary)
+            }
         }
+        .padding(NoopMetrics.cardPadding)
+        .strandSurface()
     }
 }

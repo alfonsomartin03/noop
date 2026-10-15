@@ -274,7 +274,7 @@ struct IntervalTimerView: View {
 
     private func overviewStat(_ label: String, _ value: String, _ color: Color) -> some View {
         VStack(alignment: .leading, spacing: 3) {
-            Text(label.uppercased()).font(StrandFont.footnote).foregroundStyle(StrandPalette.textTertiary)
+            Text(label).font(StrandFont.footnote).foregroundStyle(StrandPalette.textTertiary)
             Text(value).font(StrandFont.number(18)).foregroundStyle(color)
         }
         .frame(maxWidth: .infinity, alignment: .leading)

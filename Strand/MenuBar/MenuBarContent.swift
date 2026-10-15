@@ -125,7 +125,6 @@ public struct MenuBarContent: View {
         .padding(16)
         .frame(width: 268)
         .background(StrandPalette.surfaceOverlay)
-        .preferredColorScheme(.dark)
     }
 
     // MARK: Header

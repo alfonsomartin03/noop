@@ -165,6 +165,33 @@ private func verifyFrameWhoop5(_ frame: [UInt8]) -> FrameCheck {
     return FrameCheck(ok: ok, length: declaredLength, crc8OK: headerCRCOK, crc32OK: crc32OK)
 }
 
+/// Build a complete WHOOP 5.0 frame around an inner payload (`[type][seq][cmd][data…]`).
+///
+/// Layout (the inverse of `verifyFrame(_:family:)`, from the Goose reverse-engineering — the layout
+/// is checked against the static CLIENT_HELLO in tests):
+///   `AA 01 [declaredLength u16 LE] 00 01 [CRC16-Modbus over the first 6 bytes, LE]`
+///   + payload zero-padded to a multiple of 4 bytes + `[CRC32 of the padded payload, LE]`
+/// where `declaredLength = paddedPayload.count + 4`.
+public func buildWhoop5Frame(payload: [UInt8]) -> [UInt8] {
+    var padded = payload
+    let rem = padded.count % 4
+    if rem != 0 { padded.append(contentsOf: [UInt8](repeating: 0, count: 4 - rem)) }
+    let declared = padded.count + 4
+    var frame: [UInt8] = [0xAA, 0x01, UInt8(declared & 0xFF), UInt8((declared >> 8) & 0xFF), 0x00, 0x01]
+    let hdr = crc16Modbus(frame)
+    frame.append(UInt8(hdr & 0xFF))
+    frame.append(UInt8(hdr >> 8))
+    frame.append(contentsOf: padded)
+    let c = crc32(padded)
+    frame.append(contentsOf: [UInt8(c & 0xFF), UInt8((c >> 8) & 0xFF), UInt8((c >> 16) & 0xFF), UInt8((c >> 24) & 0xFF)])
+    return frame
+}
+
+/// WHOOP 5.0 COMMAND (packet type 35) frame: `[35][seq][command][data…]`.
+public func buildWhoop5CommandFrame(seq: UInt8, command: UInt8, data: [UInt8] = []) -> [UInt8] {
+    buildWhoop5Frame(payload: [35, seq, command] + data)
+}
+
 /// Reconstruct a complete frame from a bare payload (data == frame[7:]).
 /// Some captures store only the data portion; rebuild the envelope with a correct zlib
 /// crc32 and a placeholder crc8 byte (0x00). Mirrors framing.py frame_from_payload.
@@ -182,12 +209,19 @@ public func frameFromPayload(_ data: [UInt8], type: UInt8, seq: UInt8 = 0, cmd: 
 }
 
 /// Accumulate BLE notification fragments into complete frames.
-/// A complete frame is `length + 4` bytes where length = u16 LE at buf[1..3].
-/// Mirrors framing.py Reassembler.
+/// WHOOP 4.0: a complete frame is `length + 4` bytes where length = u16 LE at buf[1..3].
+/// WHOOP 5.0: a complete frame is `declaredLength + 8` bytes where declaredLength = u16 LE at
+/// buf[2..4] (see `verifyFrame(_:family:)`). Mirrors framing.py Reassembler for 4.0.
 public final class Reassembler {
     private var buf: [UInt8] = []
+    private let family: DeviceFamily
+    /// Upper bound on a believable frame; a larger declared length means we latched onto a stray
+    /// 0xAA inside payload bytes, so resync instead of buffering forever.
+    private static let maxFrame = 16 * 1024
 
-    public init() {}
+    public init(family: DeviceFamily = .whoop4) { self.family = family }
+
+    public func reset() { buf.removeAll(keepingCapacity: true) }
 
     public func feed(_ fragment: [UInt8]) -> [[UInt8]] {
         buf.append(contentsOf: fragment)
@@ -203,8 +237,15 @@ public final class Reassembler {
             if buf.count < 4 {
                 break
             }
-            let length = Int(buf[1]) | (Int(buf[2]) << 8)
-            let total = length + 4
+            let total: Int
+            switch family {
+            case .whoop4: total = (Int(buf[1]) | (Int(buf[2]) << 8)) + 4
+            case .whoop5: total = (Int(buf[2]) | (Int(buf[3]) << 8)) + 8
+            }
+            if family == .whoop5 && total > Reassembler.maxFrame {
+                buf.removeFirst()   // bogus SOF; resync on the next 0xAA
+                continue
+            }
             if buf.count < total {
                 break
             }

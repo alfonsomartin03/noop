@@ -15,7 +15,6 @@ struct StrandApp: App {
                 .environmentObject(model.intelligence)
                 .environmentObject(model.coach)
                 .frame(minWidth: 1000, minHeight: 700)
-                .preferredColorScheme(.dark)
         }
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 1180, height: 820)
