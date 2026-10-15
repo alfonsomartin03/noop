@@ -8,8 +8,8 @@ identify the hardware the software interoperates with. WHOOP and related marks
 belong to WHOOP, Inc.; other trademarks belong to their respective owners.
 
 This repository is a fork of [`muftiarfan/noop`](https://github.com/muftiarfan/noop).
-Its earlier Git history records the `NoopApp` author identity. Alfonso Martin
-maintains this fork. See
+Its earlier Git history records the [`NoopApp`](https://github.com/NoopApp) author
+identity. Alfonso Martin maintains this fork. See
 [`ATTRIBUTION.md`](ATTRIBUTION.md) for the project history, upstream research
 credits, and license information.
 

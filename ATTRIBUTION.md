@@ -3,11 +3,11 @@
 ## Project history
 
 This repository is a fork of [`muftiarfan/noop`](https://github.com/muftiarfan/noop).
-The earlier project commits in that history retain their recorded `NoopApp`
-author identity. Alfonso Martin maintains this fork; subsequent commits are
-attributed to their authors in Git history. The project name and inherited code
-history are retained with credit to both the original project authors and the
-direct parent repository.
+The earlier project commits in that history retain their recorded
+[`NoopApp`](https://github.com/NoopApp) author identity. Alfonso Martin maintains
+this fork; subsequent commits are attributed to their authors in Git history.
+The project name and inherited code history are retained with credit to both the
+original project authors and the direct parent repository.
 
 ## Protocol research and software
 

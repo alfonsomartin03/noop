@@ -56,9 +56,10 @@ from **their own device**, on a machine **they** control.
 > clinical data. See [`DISCLAIMER.md`](DISCLAIMER.md).
 
 This repository is a fork of [`muftiarfan/noop`](https://github.com/muftiarfan/noop),
-whose earlier project commits record the `NoopApp` author identity. Their Git
-history is preserved. Alfonso Martin maintains this fork; see
-[`ATTRIBUTION.md`](ATTRIBUTION.md) for project history and upstream protocol credits.
+whose earlier project commits record the [`NoopApp`](https://github.com/NoopApp)
+author identity. Their Git history is preserved. Alfonso Martin maintains this
+fork; see [`ATTRIBUTION.md`](ATTRIBUTION.md) for project history and upstream
+protocol credits.
 
 ---
 
@@ -335,7 +336,8 @@ device and never leave it.
 ## Attribution
 
 This fork preserves the work and commit history of [`muftiarfan/noop`](https://github.com/muftiarfan/noop).
-Earlier project commits in that history record the `NoopApp` author identity.
+Earlier project commits in that history record the [`NoopApp`](https://github.com/NoopApp)
+author identity.
 This fork is currently maintained by Alfonso Martin. The code also builds on
 open-source reverse-engineering and interoperability work. With thanks:
 
@@ -381,6 +383,6 @@ license. You use it at your own risk. Read the full notice in
 
 ## Docs
 
-- [`DISCLAIMER.md`](DISCLAIMER.md) — trademark, interoperability, and medical/legal notice.
+- [`DISCLAIMER.md`](DISCLAIMER.md) — product, trademark, and health notice.
 - [`ATTRIBUTION.md`](ATTRIBUTION.md) — project history and third-party credits.
 - [`project.yml`](project.yml) — XcodeGen project definition (source of `Strand.xcodeproj`).
