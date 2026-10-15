@@ -131,6 +131,12 @@ public final class BLEManager: NSObject, ObservableObject {
     private var strapFrameTotal = 0
     private var whoop5HistoryActive = false
     private var historyCapture: FileHandle?
+    /// Fired (main actor) whenever new strap data lands in the store, so the app can recompute and redraw.
+    var onStoredDataChanged: (() -> Void)?
+    /// True when the active pull was started by the connect-time auto-sync rather than the user.
+    private var whoop5HistoryAutomatic = false
+    /// Auto-pull runs once per connection.
+    private var whoop5AutoPullDone = false
     private var historyIdleWork: DispatchWorkItem?
     private var historyMetaSeen: [String] = []
     private var historyDecoded: [Whoop5HistoricalRecord] = []
@@ -382,6 +388,28 @@ public final class BLEManager: NSObject, ObservableObject {
         log("WHOOP 5.0: sending read-only probe (GET_CLOCK, REPORT_VERSION_INFO)")
         send(.getClock, payload: [])
         send(.reportVersionInfo, payload: [])
+        autoPullWhoop5History()
+    }
+
+    /// Pull whatever the strap has stored as soon as the 5.0 link is up, so the user never has to
+    /// tap "Pull stored data". Still safe mode (no ack, the strap keeps its data) and rate-limited
+    /// with the same floor as the 4.0 connect sync.
+    private func autoPullWhoop5History() {
+        guard !whoop5AutoPullDone else { return }
+        whoop5AutoPullDone = true
+        // Let the probe responses and the settled link come first, like the 4.0 path's 1.5 s delay.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+            guard let self, self.state.connected, self.family == .whoop5, self.didBond else { return }
+            let now = Date().timeIntervalSince1970
+            let last = UserDefaults.standard.object(forKey: BLEManager.backfillLastAtKey) as? Double
+            guard BackfillPolicy.shouldRun(trigger: .connect, now: now, lastBackfillAt: last) else {
+                self.log("History: auto-pull skipped (rate-limited; last \(last.map { Int(now - $0) } ?? -1)s ago)")
+                return
+            }
+            UserDefaults.standard.set(now, forKey: BLEManager.backfillLastAtKey)
+            self.log("History: auto-pulling stored data on connect")
+            self.pullWhoop5History(automatic: true)
+        }
     }
     private var whoop5ProbeSent = false
 
@@ -496,6 +524,7 @@ public final class BLEManager: NSObject, ObservableObject {
             state.lastSyncedAt = Date().timeIntervalSince1970
             UserDefaults.standard.set(state.lastSyncedAt, forKey: "lastSyncedAt")
         }
+        onStoredDataChanged?()
         checkStrapLiveness()         // safety-net: strap ahead of us AND our frontier frozen ⇒ stuck?
     }
 
@@ -673,12 +702,15 @@ public final class BLEManager: NSObject, ObservableObject {
     }
 
     /// Start a safe-mode pull: request history, capture raw frames to a local file, never acknowledge.
-    public func pullWhoop5History() {
+    /// `automatic` pulls (started on connect) skip the raw-frame research file and the capture-frame cap;
+    /// the decoded records are still saved to the database when the pull ends.
+    public func pullWhoop5History(automatic: Bool = false) {
         guard family == .whoop5, didBond, !whoop5HistoryActive else {
             log("History pull: needs a bonded WHOOP 5.0 and no pull already running"); return
         }
+        whoop5HistoryAutomatic = automatic
         let stamp = ISO8601DateFormatter().string(from: Date()).replacingOccurrences(of: ":", with: "-")
-        if let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first {
+        if !automatic, let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first {
             let url = dir.appendingPathComponent("whoop5-history-\(stamp).jsonl")
             FileManager.default.createFile(atPath: url.path, contents: nil)
             historyCapture = try? FileHandle(forWritingTo: url)
@@ -735,6 +767,9 @@ public final class BLEManager: NSObject, ObservableObject {
         Task { @MainActor in
             if let n = await collector?.persistDecodedHistory(Streams(hr: hr, rr: rr, gravity: grav)) {
                 state.historySummary = base + " · saved (\(n) new heart-rate rows)"
+                state.lastSyncedAt = Date().timeIntervalSince1970
+                UserDefaults.standard.set(state.lastSyncedAt, forKey: "lastSyncedAt")
+                onStoredDataChanged?()
                 log("History: saved decoded records (\(n) new heart-rate rows)")
             } else {
                 state.historySummary = base + " · NOT saved (database unavailable)"
@@ -761,6 +796,7 @@ public final class BLEManager: NSObject, ObservableObject {
         } else if state.historyFrames <= 3 || state.historyFrames % 50 == 0 {
             log("History: frame \(state.historyFrames) type=\(type) len=\(frame.count) on \(characteristic.uuid.uuidString.prefix(8))")
         }
+        if whoop5HistoryAutomatic { return }
         if state.historyFrames <= BLEManager.historyMaxCapturedFrames {
             let line = "{\"t\":\(Date().timeIntervalSince1970),\"ch\":\"\(characteristic.uuid.uuidString.prefix(8))\",\"type\":\(type),\"len\":\(frame.count),\"hex\":\"\(hex(frame))\"}\n"
             historyCapture?.write(Data(line.utf8))
@@ -921,6 +957,7 @@ extension BLEManager: CBCentralManagerDelegate {
         whoop5RetryPending = false
         whoop5ExhaustedLogged = false
         whoop5ProbeSent = false
+        whoop5AutoPullDone = false
         whoop5Reassemblers.removeAll()
         rxFragmentCount = 0
         whoop5SkippedLogged.removeAll()

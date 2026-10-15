@@ -9,11 +9,12 @@ import WhoopProtocol
 // WHOOP-identical (WHOOP's model is proprietary). It is a transparent,
 // HRV-dominant, baseline-normalized proxy.
 //
-// Weighting (documented, grounded, explainable):
-//   higher HRV vs baseline       → higher recovery  (W_HRV   = 0.60, dominant)
-//   lower resting HR vs baseline → higher recovery  (W_RHR   = 0.20)
-//   lower resp vs baseline       → higher recovery  (W_RESP  = 0.05)
-//   higher sleep performance     → higher recovery  (W_SLEEP = 0.15)
+// Weighting, refitted to a WHOOP export (628 nights, MAE 4.5 vs WHOOP's score; was 5.8 with the
+// previous 0.60/0.20/0.05/0.15 — see docs/WHOOP_REVERSE_ENGINEERING.md). HRV carries nearly all of it:
+//   higher HRV vs baseline       → higher recovery  (W_HRV   = 0.86, dominant)
+//   lower resting HR vs baseline → higher recovery  (W_RHR   = 0.04)
+//   lower resp vs baseline       → higher recovery  (W_RESP  = 0.07)
+//   higher sleep performance     → higher recovery  (W_SLEEP = 0.03)
 //
 // Each metric is standardized to a robust z-score against the personal baseline
 // (mean + EWMA-abs-dev spread). Missing terms are dropped and the weights
@@ -28,15 +29,15 @@ public enum RecoveryScorer {
 
     // MARK: - Constants (recovery.py)
 
-    public static let wHRV: Double = 0.60
-    public static let wRHR: Double = 0.20
-    public static let wResp: Double = 0.05
-    public static let wSleep: Double = 0.15
+    public static let wHRV: Double = 0.86
+    public static let wRHR: Double = 0.04
+    public static let wResp: Double = 0.07
+    public static let wSleep: Double = 0.03
 
-    /// Logistic spread: ±2 z-units ≈ full Red–Green band (15%–95%).
-    public static let logisticK: Double = 1.6
-    /// Logistic offset so Z=0 → 58%.
-    public static let logisticZ0: Double = -0.20
+    /// Logistic steepness (fitted): ±3 z-units spans roughly 4%–96%.
+    public static let logisticK: Double = 1.1
+    /// Logistic offset so Z=0 → ~60% (fitted; WHOOP quotes a 58% population mean).
+    public static let logisticZ0: Double = -0.39
     /// WHOOP-published population-average recovery (%). Cold-start fallback.
     public static let populationMean: Double = 58.0
 

@@ -37,6 +37,16 @@ final class AppModel: ObservableObject {
         self.ble = BLEManager(state: live, deviceId: "my-whoop")
         self.repo = Repository(deviceId: "my-whoop")
         self.intelligence = IntelligenceEngine(repo: repo, profile: profile, deviceId: "my-whoop")
+        // New strap data (offload / stored-data pull) → recompute scores, refresh caches, redraw screens.
+        ble.onStoredDataChanged = { [weak self] in
+            guard let self else { return }
+            Task { @MainActor in
+                self.repo.dataVersion += 1                       // stored HR shows at once
+                await self.intelligence.analyzeRecent()          // then scores catch up (refreshes the repo)
+                await self.repo.refresh()
+                self.repo.dataVersion += 1
+            }
+        }
         // Smooth HR centrally so it's solid everywhere it's shown.
         live.$heartRate.sink { [weak self] _ in self?.ingestHR() }.store(in: &hrCancellables)
         live.$rr.sink { [weak self] _ in self?.ingestHR() }.store(in: &hrCancellables)

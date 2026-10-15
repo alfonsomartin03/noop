@@ -2,6 +2,7 @@ import SwiftUI
 import StrandDesign
 import StrandAnalytics
 import WhoopStore
+import WhoopProtocol
 import Foundation
 
 // MARK: - Today — the home dashboard
@@ -34,7 +35,7 @@ struct TodayView: View {
                 activitySection
             }
         }
-        .task(id: repo.today?.day) { await loadAll() }
+        .task(id: "\(repo.today?.day ?? "")-\(repo.dataVersion)") { await loadAll() }
     }
 
     // MARK: Widgets
@@ -56,7 +57,7 @@ struct TodayView: View {
                 }
             }
 
-            LiveHeartRateWidget { navigate(.live) }
+            LiveHeartRateWidget(version: repo.dataVersion) { navigate(.live) }
 
             metricWidget("HRV", "waveform.path.ecg", StrandPalette.metricPurple,
                          value: d?.avgHrv.map { "\(Int($0.rounded()))" }, unit: "ms",
@@ -387,15 +388,36 @@ private struct ConnectionStrip: View {
 private struct LiveHeartRateWidget: View {
     @EnvironmentObject var live: LiveState
     @EnvironmentObject var model: AppModel
+    @EnvironmentObject var repo: Repository
+    let version: Int
     let open: () -> Void
+    @State private var today: [HRSample] = []
+
+    private var latest: HRSample? { today.last }
     var body: some View {
-        StrandWidget("Heart rate", symbol: "heart.fill", tint: StrandPalette.metricRose, action: open) {
-            VStack(alignment: .leading, spacing: 4) {
-                WidgetValue(model.bpm.map(String.init), unit: "bpm")
+        StrandWidget("Heart rate", symbol: "heart.fill", tint: StrandPalette.metricRose, size: .medium, action: open) {
+            VStack(alignment: .leading, spacing: 6) {
+                WidgetValue((model.bpm ?? latest?.bpm).map(String.init), unit: "bpm")
                 Spacer(minLength: 0)
-                WidgetCaption(model.bpm == nil ? live.phase.title : "Live from your strap")
+                WidgetSpark(today.map { Double($0.bpm) }, tint: StrandPalette.metricRose).frame(height: 36)
+                WidgetCaption(caption)
             }
         }
+        .task(id: version) { today = Self.downsample(await repo.todayHeartRate(), to: 240) }
+    }
+
+    private var caption: String {
+        if model.bpm != nil { return "Live from your strap" }
+        guard let latest, !today.isEmpty else { return live.phase.title }
+        let bpms = today.map(\.bpm)
+        let t = Date(timeIntervalSince1970: TimeInterval(latest.ts)).formatted(date: .omitted, time: .shortened)
+        return "Today \(bpms.min()!)–\(bpms.max()!) · avg \(bpms.reduce(0, +) / bpms.count) · last \(t)"
+    }
+
+    private static func downsample(_ s: [HRSample], to n: Int) -> [HRSample] {
+        guard s.count > n else { return s }
+        let step = Double(s.count) / Double(n)
+        return (0..<n).map { s[Int(Double($0) * step)] }
     }
 }
 

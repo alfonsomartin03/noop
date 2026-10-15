@@ -12,7 +12,7 @@ final class RecoveryScorerTests: XCTestCase {
     }
 
     func testRecoveryAtBaselineNearPopulationMean() {
-        // HRV at baseline, RHR at baseline, no resp, sleepPerf at center → Z≈0 → ~58%.
+        // HRV at baseline, RHR at baseline, no resp, sleepPerf at center → Z≈0 → ~60%.
         let r = RecoveryScorer.recovery(
             hrv: 50, rhr: 55, resp: nil,
             hrvBaseline: baseline(mean: 50, sigma: 6),
@@ -20,7 +20,7 @@ final class RecoveryScorerTests: XCTestCase {
             respBaseline: nil,
             sleepPerf: RecoveryScorer.sleepPerfCenter)
         XCTAssertNotNil(r)
-        XCTAssertEqual(r!, 57.93, accuracy: 0.5)
+        XCTAssertEqual(r!, 60.56, accuracy: 0.5)   // 100/(1+exp(1.1*0.39))
     }
 
     func testRecoveryHigherWhenHRVAboveAndRHRBelow() {
@@ -38,7 +38,7 @@ final class RecoveryScorerTests: XCTestCase {
             sleepPerf: 0.70)!
         XCTAssertGreaterThan(good, bad)
         XCTAssertGreaterThan(good, 90)   // matches Python golden ~97
-        XCTAssertLessThan(bad, 15)       // matches Python golden ~7
+        XCTAssertLessThan(bad, 25)       // refitted constants (was ~7 with the old 0.60/0.20/0.05/0.15 weights)
     }
 
     func testRecoveryClampedToRange() {

@@ -146,19 +146,26 @@ public enum AnalyticsEngine {
                 sleepPerf: sleepPerf)
         }
 
-        // ── Strain (day cardiovascular load over the full HR window) ──────────
-        let effMaxHR: Double? = maxHROverride ?? (profile.age > 0 ? StrainScorer.tanakaHRmax(age: profile.age) : nil)
-        let restForStrain = restingHRDaily.map(Double.init) ?? StrainScorer.defaultRestingHR
-        let strain = StrainScorer.strain(hr, maxHR: effMaxHR, restingHR: restForStrain,
-                                         sex: profile.sex)
-
         // ── Workouts ──────────────────────────────────────────────────────────
+        let effMaxHR: Double? = maxHROverride ?? (profile.age > 0 ? StrainScorer.tanakaHRmax(age: profile.age) : nil)
         let workouts = WorkoutDetector.detect(
             hr: hr, gravity: gravity,
             restingHR: restingHRDaily.map(Double.init),
             maxHR: maxHROverride,
             age: profile.age > 0 ? profile.age : nil,
             profile: profile)
+
+        // ── Strain: fitted WHOOP model = log of the workouts' weighted zone load plus a rest-day floor ──
+        let strain: Double?
+        if hr.count < StrainScorer.minReadings {
+            strain = nil
+        } else {
+            let loads: [Double] = workouts.compactMap { w in
+                let seg = hr.filter { $0.ts >= w.start && $0.ts <= w.end }
+                return StrainScorer.whoopLoad(seg, maxHR: w.hrmax ?? effMaxHR)
+            }
+            strain = StrainScorer.dayStrain(workoutLoads: loads)
+        }
 
         // ── Assemble DailyMetric ──────────────────────────────────────────────
         let daily = DailyMetric(

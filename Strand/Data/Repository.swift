@@ -20,6 +20,8 @@ final class Repository: ObservableObject {
     /// Cached sleep sessions over the recent window, oldest→newest.
     @Published var sleeps: [CachedSleepSession] = []
     @Published var loaded = false
+    /// Bumped whenever new strap data lands in the store; screens key their loads on it.
+    @Published var dataVersion = 0
     /// Days whose merged row is an official WHOOP value (imported). Every other day is a NOOP estimate.
     @Published var officialDays: Set<String> = []
     /// NOOP's own estimates keyed by day, kept even where an official value hides them in `days`.
@@ -75,6 +77,12 @@ final class Repository: ObservableObject {
         self.official = Dictionary(imported.map { ($0.day, $0) }, uniquingKeysWith: { _, b in b })
         self.estimates = Dictionary(computed.map { ($0.day, $0) }, uniquingKeysWith: { _, b in b })
         self.loaded = true
+    }
+
+    /// Today's stored heart-rate samples (local midnight → now), oldest→newest.
+    func todayHeartRate() async -> [HRSample] {
+        let start = Int(Calendar.current.startOfDay(for: Date()).timeIntervalSince1970)
+        return await hrSamples(from: start, to: Int(Date().timeIntervalSince1970) + 60, limit: 200_000)
     }
 
     /// True when `day`'s shown scores come from a WHOOP import rather than a NOOP estimate.

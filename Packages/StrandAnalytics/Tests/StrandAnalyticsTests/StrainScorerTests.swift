@@ -28,8 +28,33 @@ final class StrainScorerTests: XCTestCase {
     func testStrainGoldenEdwardsZone5() {
         // 600 z5 samples at 1 Hz, resting 60, max 190. TRIMP = 600*5*(1/60)=50.
         // strain = 21*ln(51)/ln(7201) = 9.3.
-        let s = StrainScorer.strain(hr(185, 600), maxHR: 190, restingHR: 60)
+        let s = StrainScorer.strain(hr(185, 600), maxHR: 190, restingHR: 60, method: .edwards)
         XCTAssertEqual(s!, 9.3, accuracy: 1e-2)
+    }
+
+    func testWhoopFittedActivityStrain() {
+        // 10 min at 97% HRmax = zone 5: load = 10 * 1.875 = 18.75 → 4.56 * ln(19.75) = 13.6.
+        XCTAssertEqual(StrainScorer.strain(hr(185, 600), maxHR: 190, restingHR: 60)!, 13.6, accuracy: 0.01)
+        // 10 min at 55% HRmax = zone 1: load = 1.05 → 4.56 * ln(2.05) = 3.28.
+        XCTAssertEqual(StrainScorer.strain(hr(105, 600), maxHR: 190, restingHR: 60)!, 3.28, accuracy: 0.01)
+        // Below zone 1 contributes nothing.
+        XCTAssertEqual(StrainScorer.strain(hr(80, 600), maxHR: 190, restingHR: 60)!, 0, accuracy: 1e-9)
+    }
+
+    func testWhoopZoneWeightsRiseSteeply() {
+        let z = StrainScorer.whoopZoneWeights
+        XCTAssertEqual(z.count, 5)
+        XCTAssertTrue(zip(z, z.dropFirst()).allSatisfy { $0 <= $1 })
+        XCTAssertEqual(z[4] / z[0], 17.9, accuracy: 0.1)
+    }
+
+    func testDayStrainFloorAndCeiling() {
+        // No workouts: 4.67 * ln(2.66) = 4.57 (WHOOP rest days sit near 4.3).
+        XCTAssertEqual(StrainScorer.dayStrain(workoutLoads: []), 4.57, accuracy: 0.01)
+        // Loads add up before the log.
+        XCTAssertEqual(StrainScorer.dayStrain(workoutLoads: [10, 20]),
+                       StrainScorer.dayStrain(workoutLoads: [30]), accuracy: 1e-9)
+        XCTAssertEqual(StrainScorer.dayStrain(workoutLoads: [1e9]), 21.0, accuracy: 1e-9)
     }
 
     func testStrainReturnsNilTooFewReadings() {

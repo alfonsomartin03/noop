@@ -56,8 +56,53 @@ public enum StrainScorer {
         (90.0, 5), (80.0, 4), (70.0, 3), (60.0, 2), (50.0, 1),
     ]
 
+    // MARK: - WHOOP-fitted model
+    //
+    // Fitted on a WHOOP export (428 workouts, 628 days; see docs/WHOOP_REVERSE_ENGINEERING.md):
+    //   activity strain = 4.56 · ln(1 + Σ_z w_z · minutes in zone z)      MAE 0.67 on 0–21
+    //   day strain      = 4.67 · ln(1 + 1.66 + Σ over workouts of the same sum)   MAE 0.90
+    // Zones are %HRmax bands 50–60 / 60–70 / 70–80 / 80–90 / 90–100, the zones WHOOP reports.
+    // The weights climb steeply: a zone-5 minute is worth ~18 zone-1 minutes.
+
+    /// Per-minute weight of zones 1…5.
+    public static let whoopZoneWeights: [Double] = [0.105, 0.110, 0.347, 0.749, 1.875]
+    /// Lower edge of zones 1…5 as a fraction of HRmax.
+    static let whoopZoneFloors: [Double] = [0.5, 0.6, 0.7, 0.8, 0.9]
+    /// Scale of the activity-strain log map.
+    public static let whoopActivityScale: Double = 4.56
+    /// Scale of the day-strain log map.
+    public static let whoopDayScale: Double = 4.67
+    /// Constant added inside the day-strain log: the all-day baseline load (a rest day lands near 4.5).
+    public static let whoopDayFloor: Double = 1.66
+
     /// TRIMP accumulation method.
-    public enum Method: Sendable { case edwards, banister }
+    public enum Method: Sendable { case edwards, banister, whoop }
+
+    /// Σ w_z · minutes-in-zone-z over `hr`, zones taken from %HRmax. Below zone 1 contributes nothing.
+    static func whoopZoneLoad(_ hr: [HRSample], maxHR: Double, sampleDurationMin: Double) -> Double {
+        var load = 0.0
+        for s in hr {
+            let frac = Double(s.bpm) / maxHR
+            if let z = whoopZoneFloors.lastIndex(where: { frac >= $0 }) {
+                load += whoopZoneWeights[z] * sampleDurationMin
+            }
+        }
+        return load
+    }
+
+    /// Day strain from the zone loads of the day's workouts. The floor stands in for the unmeasured
+    /// all-day load, so pass workout segments only (not the whole day's HR) to avoid double counting.
+    public static func dayStrain(workoutLoads: [Double]) -> Double {
+        let value = min(maxStrain, whoopDayScale * log(1.0 + whoopDayFloor + workoutLoads.reduce(0, +)))
+        return (value * 100).rounded() / 100
+    }
+
+    /// Zone load of one HR segment, or nil when it is too short or maxHR is unusable.
+    public static func whoopLoad(_ hr: [HRSample], maxHR: Double? = nil) -> Double? {
+        let effMax = maxHR ?? Double(defaultMaxHR())
+        guard hr.count >= minReadings, effMax > 0 else { return nil }
+        return whoopZoneLoad(hr, maxHR: effMax, sampleDurationMin: sampleDurationMinutes(hr))
+    }
 
     // MARK: - HRmax helpers
 
@@ -183,13 +228,14 @@ public enum StrainScorer {
     ///   - hr: time-ordered `[HRSample]`.
     ///   - maxHR: HRmax (bpm). Defaults to 220 − defaultAge when nil.
     ///   - restingHR: resting HR (bpm) for the HRR denominator (default 60).
-    ///   - method: `.edwards` (default) or `.banister`.
+    ///   - method: `.whoop` (default, fitted to WHOOP's activity strain: %HRmax zones, weights 1:1:3.3:7:18),
+    ///     `.edwards` or `.banister`. `denominator` applies to those two only.
     ///   - sex: "male"/"female" — selects the Banister coefficient (ignored by Edwards).
     ///   - denominator: log-map D (default STRAIN_DENOMINATOR).
     public static func strain(_ hr: [HRSample],
                               maxHR: Double? = nil,
                               restingHR: Double = defaultRestingHR,
-                              method: Method = .edwards,
+                              method: Method = .whoop,
                               sex: String = "male",
                               denominator: Double = strainDenominator) -> Double? {
         let effMax = maxHR ?? Double(defaultMaxHR())
@@ -198,13 +244,19 @@ public enum StrainScorer {
         let sampleDur = sampleDurationMinutes(hr)
         let hrReserve = effMax - restingHR
 
+        if method == .whoop {
+            let load = whoopZoneLoad(hr, maxHR: effMax, sampleDurationMin: sampleDur)
+            if load <= 0 { return 0 }
+            return (min(maxStrain, whoopActivityScale * log(1.0 + load)) * 100).rounded() / 100
+        }
+
         let trimp: Double
         switch method {
         case .banister:
             let b = sex.lowercased().hasPrefix("f") ? banisterBWomen : banisterBMen
             trimp = banisterTRIMP(hr, restingHR: restingHR, hrReserve: hrReserve,
                                   sampleDurationMin: sampleDur, b: b)
-        case .edwards:
+        case .edwards, .whoop:
             trimp = edwardsTRIMP(hr, restingHR: restingHR, hrReserve: hrReserve,
                                  sampleDurationMin: sampleDur)
         }

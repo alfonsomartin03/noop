@@ -104,11 +104,11 @@ public enum Baselines {
     /// Default per-metric configurations (HRV, resting HR, respiration, skin temp).
     public static let metricCfg: [String: MetricCfg] = [
         "hrv": MetricCfg(minVal: 5.0, maxVal: 250.0, floorSpread: 5.0,
-                         halfLifeB: 14.0, halfLifeS: 21.0),
+                         halfLifeB: 7.0, halfLifeS: 7.0),
         "resting_hr": MetricCfg(minVal: 30.0, maxVal: 120.0, floorSpread: 2.0,
-                                halfLifeB: 14.0, halfLifeS: 21.0),
+                                halfLifeB: 7.0, halfLifeS: 7.0),
         "resp": MetricCfg(minVal: 4.0, maxVal: 40.0, floorSpread: 0.5,
-                          halfLifeB: 14.0, halfLifeS: 21.0),
+                          halfLifeB: 7.0, halfLifeS: 7.0),
         "skin_temp": MetricCfg(minVal: 20.0, maxVal: 42.0, floorSpread: 0.3,
                                halfLifeB: 14.0, halfLifeS: 21.0),
     ]
