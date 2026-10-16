@@ -77,6 +77,21 @@ public enum StrainScorer {
     /// Constant added inside the day-strain log: the all-day baseline load (a rest day lands near 4.5).
     public static let whoopDayFloor: Double = 1.66
 
+    /// Above this the strain curve flattens (see `softCeiling`): scores below it are untouched, so the
+    /// fit to WHOOP's own numbers stays exact for normal days.
+    static let strainKnee: Double = 16.0
+    /// Highest value that can ever be reported; 21 itself is unreachable, like WHOOP.
+    static let strainTop: Double = 20.99
+
+    /// Smoothly squeezes a raw log-scale strain into [0, 21). Identity up to `strainKnee`; beyond it each
+    /// extra unit of effort adds less, approaching 21 but never reaching it (slope is 1 at the knee, so
+    /// there is no visible kink). Without this, a long hard day simply clamped to a flat 21.0.
+    static func softCeiling(_ raw: Double) -> Double {
+        guard raw > strainKnee else { return max(0, raw) }
+        let room = maxStrain - strainKnee
+        return min(strainTop, strainKnee + room * (1 - exp(-(raw - strainKnee) / room)))
+    }
+
     /// TRIMP accumulation method.
     public enum Method: Sendable { case edwards, banister, whoop }
 
@@ -98,7 +113,7 @@ public enum StrainScorer {
     /// all-day load, so pass workout segments only (not the whole day's HR) to avoid double counting.
     // Log-compress so strain has diminishing returns: the 10th hard hour adds far less than the 1st.
     public static func dayStrain(workoutLoads: [Double]) -> Double {
-        let value = min(maxStrain, whoopDayScale * log(1.0 + whoopDayFloor + workoutLoads.reduce(0, +)))
+        let value = softCeiling(whoopDayScale * log(1.0 + whoopDayFloor + workoutLoads.reduce(0, +)))
         return (value * 100).rounded() / 100
     }
 
@@ -136,7 +151,7 @@ public enum StrainScorer {
     public static func activityStrain(_ hr: [HRSample], maxHR: Double) -> Double {
         guard maxHR > 0, !hr.isEmpty else { return 0 }
         let load = whoopZoneLoad(hr, maxHR: maxHR, sampleDurationMin: fallbackSampleMin)
-        return (min(maxStrain, whoopActivityScale * log(1.0 + load)) * 100).rounded() / 100
+        return (softCeiling(whoopActivityScale * log(1.0 + load)) * 100).rounded() / 100
     }
 
     /// Zone load of one HR segment, or nil when it is too short or maxHR is unusable.
@@ -296,7 +311,7 @@ public enum StrainScorer {
         if method == .whoop {
             let load = whoopZoneLoad(hr, maxHR: effMax, sampleDurationMin: sampleDur)
             if load <= 0 { return 0 }
-            return (min(maxStrain, whoopActivityScale * log(1.0 + load)) * 100).rounded() / 100
+            return (softCeiling(whoopActivityScale * log(1.0 + load)) * 100).rounded() / 100
         }
 
         let trimp: Double

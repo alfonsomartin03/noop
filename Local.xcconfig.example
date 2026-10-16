@@ -1,0 +1,6 @@
+// Copy to Local.xcconfig (ignored by git) and fill in your Team ID.
+// Find it in Xcode: Settings > Accounts > your Apple ID > team (a free Apple ID works), or at
+// developer.apple.com > Membership. It looks like ABCDE12345.
+DEVELOPMENT_TEAM = ABCDE12345
+CODE_SIGN_STYLE = Automatic
+CODE_SIGN_IDENTITY = Apple Development

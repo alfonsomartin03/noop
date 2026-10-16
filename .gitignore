@@ -52,3 +52,6 @@ export.zip
 *whoop_export*.zip
 *apple_health*.zip
 __pycache__/
+
+# Personal signing settings (Team ID)
+Local.xcconfig

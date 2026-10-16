@@ -50,13 +50,29 @@ final class StrainScorerTests: XCTestCase {
         XCTAssertEqual(z[4] / z[0], 17.9, accuracy: 0.1)
     }
 
+    // Below the knee the score is untouched; above it, growth slows and never reaches 21.
+    func testSoftCeilingShape() {
+        XCTAssertEqual(StrainScorer.softCeiling(12), 12, accuracy: 1e-12)
+        XCTAssertEqual(StrainScorer.softCeiling(16), 16, accuracy: 1e-12)
+        var prev = 16.0
+        for raw in stride(from: 17.0, through: 60.0, by: 1.0) {
+            let v = StrainScorer.softCeiling(raw)
+            XCTAssertGreaterThan(v, prev - 1e-12)        // never decreases
+            XCTAssertLessThan(v, 21.0)                   // never reaches 21
+            XCTAssertLessThan(v - prev, 1.0)             // slower than the raw curve
+            prev = v
+        }
+    }
+
     func testDayStrainFloorAndCeiling() {
         // No workouts: 4.67 * ln(2.66) = 4.57 (WHOOP rest days sit near 4.3).
         XCTAssertEqual(StrainScorer.dayStrain(workoutLoads: []), 4.57, accuracy: 0.01)
         // Loads add up before the log.
         XCTAssertEqual(StrainScorer.dayStrain(workoutLoads: [10, 20]),
                        StrainScorer.dayStrain(workoutLoads: [30]), accuracy: 1e-9)
-        XCTAssertEqual(StrainScorer.dayStrain(workoutLoads: [1e9]), 21.0, accuracy: 1e-9)
+        // 21 is unreachable: even absurd load stays just under it.
+        XCTAssertLessThan(StrainScorer.dayStrain(workoutLoads: [1e9]), 21.0)
+        XCTAssertEqual(StrainScorer.dayStrain(workoutLoads: [1e9]), 20.99, accuracy: 0.001)
     }
 
     func testStrainReturnsNilTooFewReadings() {

@@ -1,0 +1,9 @@
+// Code-signing settings shared by every build.
+//
+// WHY THIS EXISTS: macOS remembers the "Allow Bluetooth" choice per app *signature*. Unsigned / ad-hoc
+// builds get a different signature on every rebuild, so the permission prompt returns each time.
+// Signing every build with the same Apple Development certificate keeps the signature stable, so
+// the prompt appears once.
+//
+// To enable: copy Local.xcconfig.example to Local.xcconfig (git-ignored) and put your Team ID in it.
+#include? "Local.xcconfig"
