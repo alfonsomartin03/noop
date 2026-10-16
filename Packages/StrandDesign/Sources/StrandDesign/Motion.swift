@@ -8,6 +8,7 @@ import AppKit
 // Physiological motion — breathe / pulse / flow, no cartoon bounce.
 // Ring draw-in, per-beat ripple, hover lift, sliding sidebar indicator.
 
+// Animation presets in one place: smooth physiological easing, no bouncy springs.
 public enum StrandMotion {
 
     /// True when the user asked macOS to reduce motion. Continuous/looping effects check this.

@@ -2,6 +2,7 @@ import Foundation
 import GRDB
 
 extension WhoopStore {
+    // Upsert: one row per cursor name, overwritten with the newest value.
     public func setCursor(_ name: String, _ value: Int) async throws {
         try syncWrite { db in
             try db.execute(sql: """
@@ -15,6 +16,7 @@ extension WhoopStore {
             try Int.fetchOne(db, sql: "SELECT value FROM cursors WHERE name = ?", arguments: [name])
         }
     }
+    // 'highwater:' cursors track what has been uploaded per stream.
     public func setHighwater(_ stream: String, _ ts: Int) async throws { try await setCursor("highwater:" + stream, ts) }
     public func highwater(_ stream: String) async throws -> Int? { try await cursor("highwater:" + stream) }
 

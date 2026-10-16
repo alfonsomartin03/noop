@@ -11,6 +11,7 @@ import Foundation
 // vitals. Each widget shows one primary number; tapping opens the detailed screen. Everything
 // else (workouts, other sources) sits below or behind a disclosure. Data loading is unchanged.
 
+// Home dashboard: recovery/sleep/strain widgets with 14-day sparklines, then live strap status and recent workouts.
 struct TodayView: View {
     @EnvironmentObject var repo: Repository
     @Environment(\.navigate) private var navigate
@@ -214,6 +215,7 @@ struct TodayView: View {
 
     // MARK: - Loading
 
+    // Fills the sparkline cache once per data refresh; each series is fetched by key from the metric store.
     private func loadAll() async {
         // 14-day sparklines — Whoop.
         sparks["recovery"]        = await sparkValues("recovery", source: "my-whoop", window: 14)
@@ -231,6 +233,7 @@ struct TodayView: View {
     /// Trailing-window values for a metric, with the sparse-data fallback:
     /// if the trailing window has <2 points, fall back to ALL history so sparse
     /// series (weight) still render a value + line instead of an empty state.
+    // If the recent window has fewer than 2 points, fall back to all history so sparse metrics (e.g. weight) still draw.
     private func sparkValues(_ key: String, source: String, window: Int) async -> [Double] {
         let all = await repo.series(key: key, source: source)   // full history, asc
         guard !all.isEmpty else { return [] }
@@ -240,6 +243,7 @@ struct TodayView: View {
     }
 
     /// Keep only points within `days` of the most recent point (parsing yyyy-MM-dd in UTC).
+    // Window is measured back from the newest data point, not from today, so old imports still show a trend.
     private func trailingWindow(_ points: [(day: String, value: Double)], days: Int) -> [(day: String, value: Double)] {
         guard let lastDay = points.last?.day, let lastDate = Self.dayParser.date(from: lastDay) else { return points }
         let cutoff = lastDate.addingTimeInterval(-Double(days) * 86_400)
@@ -280,6 +284,7 @@ struct TodayView: View {
     }
 
     /// A short recovery state word for the synthesis hero.
+    // Recovery score -> one-word state for the hero (<25 Depleted ... >=88 Peak).
     private func synthesisWord(_ score: Double?) -> String {
         guard let s = score else { return "No Data" }
         switch s {
@@ -363,6 +368,7 @@ struct TodayView: View {
 // MARK: - Live widgets (isolated so the ~1 Hz stream only re-renders these small views)
 
 /// Shown only when the strap is not connected: a single quiet line with a Connect action.
+// The live views below are separate structs so the ~1 Hz heart-rate stream only re-renders these small pieces.
 private struct ConnectionStrip: View {
     @EnvironmentObject var live: LiveState
     @EnvironmentObject var model: AppModel

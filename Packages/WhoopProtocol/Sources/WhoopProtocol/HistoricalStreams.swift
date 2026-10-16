@@ -7,8 +7,10 @@ import Foundation
 /// during a historical backfill, where type-40 frames are absent.
 /// EVENT and COMMAND_RESPONSE handling is identical to extractStreams.
 /// CRC-failed and non-ok frames are skipped.
+// Maps decoded history packets to sample rows. Type 47 has real unix timestamps; type 43 uses the strap clock and needs the wall-clock offset.
 public func extractHistoricalStreams(_ parsed: [ParsedFrame],
                                      deviceClockRef: Int, wallClockRef: Int) -> Streams {
+    // Convert strap time to real time: wallRef + (deviceTs - deviceRef).
     func wall(_ deviceTs: Int?) -> Int? {
         guard let d = deviceTs else { return nil }
         return wallClockRef + (d - deviceClockRef)
@@ -21,6 +23,7 @@ public func extractHistoricalStreams(_ parsed: [ParsedFrame],
         case "HISTORICAL_DATA":
             // type-47 carries a REAL unix timestamp + the full DSP record. No wall-clock offset.
             guard let ts = p["unix"]?.intValue else { continue }
+            // HR of 0 is the strap's startup placeholder, not a reading, so it's skipped.
             if let bpm = p["heart_rate"]?.intValue, bpm != 0 {  // skip startup hr=0
                 out.hr.append(HRSample(ts: ts, bpm: bpm))
             }
@@ -48,6 +51,7 @@ public func extractHistoricalStreams(_ parsed: [ParsedFrame],
             if let ts = ts, let rrs = p["rr_intervals"]?.intArrayValue {
                 for rr in rrs { out.rr.append(RRInterval(ts: ts, rrMs: rr)) }
             }
+        // Events already carry real timestamps (RTC), so no offset is applied.
         case "EVENT":
             // EVENT timestamps are real RTC unix seconds — already wall-clock, NOT offset.
             guard let ts = p["event_timestamp"]?.intValue else { continue }

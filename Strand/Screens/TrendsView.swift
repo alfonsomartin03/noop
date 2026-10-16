@@ -11,6 +11,7 @@ import Foundation
 // ChartCards (all NoopMetrics.chartHeight tall), and the whole history as a
 // recovery YearHeatStrip in a NoopCard. No hand-sized cards anywhere.
 
+// Trends: recovery hero chart, HRV/RHR/strain small multiples and a year heat strip.
 struct TrendsView: View {
     @EnvironmentObject var repo: Repository
     // NOTE: deliberately does NOT observe LiveState — Trends shows historical data only, and
@@ -64,6 +65,7 @@ struct TrendsView: View {
 
     /// Days for a given range, taken RELATIVE TO THE LATEST day (not "now").
     /// `.all` returns everything.
+    // Windows are relative to the LATEST day with data and auto-expand when the chosen range is empty.
     private func days(for r: Range) -> [DailyMetric] {
         guard let n = r.days else { return repo.days }
         guard let last = latestDay else { return [] }
@@ -103,6 +105,7 @@ struct TrendsView: View {
         var caption: String
     }
 
+    // Each metric is resolved once per render (points, range, mean) and reused by the charts.
     private func resolve(_ value: (DailyMetric) -> Double?) -> ResolvedMetric {
         // Find the smallest range ≥ selected whose window has ≥1 point, keeping
         // that window's points so we don't re-filter to read them back.
@@ -130,6 +133,7 @@ struct TrendsView: View {
     }
 
     /// A padded value range for a series so the line isn't flat against the axis.
+    // Pads the y-axis a little so lines don't touch the chart edges.
     private func valueRange(_ pts: [TrendPoint], fallback: ClosedRange<Double>, pad: Double = 0.12) -> ClosedRange<Double> {
         let vals = pts.map(\.value)
         guard let lo = vals.min(), let hi = vals.max() else { return fallback }

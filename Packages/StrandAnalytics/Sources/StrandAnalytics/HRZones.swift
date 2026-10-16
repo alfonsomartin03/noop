@@ -20,6 +20,7 @@ import WhoopProtocol
 // "display" zone model and is independent of the HRR-based strain math.
 
 /// A single heart-rate zone defined as a bpm interval [lower, upper).
+// One zone: bpm bounds plus the %HRmax it came from (kept for display labels).
 public struct HRZone: Equatable, Sendable {
     /// Zone number 1...5.
     public let number: Int
@@ -57,6 +58,7 @@ public struct HRZoneSet: Equatable, Sendable {
     }
 
     /// Return the zone number (1...5) for a bpm value, or 0 when below Zone 1.
+    // Top zone is inclusive so exactly-HRmax counts as zone 5; anything under zone 1's floor returns 0.
     public func zoneNumber(forBPM bpm: Double) -> Int {
         for z in zones {
             // Top zone is inclusive at its upper edge so HRmax itself lands in z5.
@@ -147,6 +149,7 @@ public enum HRZones {
     /// - Parameters:
     ///   - hr: time-ordered (or unordered) `[HRSample]`.
     ///   - zoneSet: the zone definitions to bucket against.
+    // Credits each sample with the time until the next one, so irregular sampling still totals correctly.
     public static func timeInZone(_ hr: [HRSample], zoneSet: HRZoneSet) -> TimeInZone {
         let sorted = hr.sorted { $0.ts < $1.ts }
         var zoneSeconds = [Double](repeating: 0, count: 5)
@@ -157,6 +160,7 @@ public enum HRZones {
         }
 
         // Tail sample gets the median inter-sample gap so the series is fully counted.
+        // The last sample has no 'next' sample, so it gets the typical gap.
         let tailDuration = medianInterval(sorted)
 
         for i in 0..<sorted.count {
@@ -181,6 +185,7 @@ public enum HRZones {
 
     /// Median spacing between consecutive timestamps, restricted to plausible
     /// (0, 300 s] gaps. Falls back to 1.0 s when no plausible gap exists.
+    // Median (not mean) and ignoring gaps over 300 s, so a disconnect doesn't skew the typical interval.
     static func medianInterval(_ sorted: [HRSample]) -> Double {
         guard sorted.count >= 2 else { return 1.0 }
         var gaps: [Double] = []

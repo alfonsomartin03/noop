@@ -156,6 +156,7 @@ public enum SleepStager {
     }
 
     /// Per-record sleep flags from a rolling fraction of "still" samples.
+    // A sample is 'sleep' when >= 70% of samples in a ~15 min window around it are still.
     static func classifyStill(_ grav: [GravitySample], _ deltas: [Double]) -> [Bool] {
         let n = grav.count
         if n < 2 { return [Bool](repeating: false, count: n) }
@@ -176,6 +177,7 @@ public enum SleepStager {
 
     /// Collapse per-record flags into contiguous runs, breaking on class change
     /// or a gap > maxGapMin minutes.
+    // Turns the per-sample flags into runs; a >20 min data gap always splits a run (strap was off).
     static func buildRuns(_ grav: [GravitySample], _ flags: [Bool]) -> [Period] {
         let n = grav.count
         if n == 0 { return [] }
@@ -203,6 +205,7 @@ public enum SleepStager {
     }
 
     /// Absorb runs shorter than mergeMin minutes into their neighbours.
+    // Short blips (<15 min) are absorbed so a toilet trip doesn't split one night into two sessions.
     static func mergePeriods(_ periods: [Period], mergeMinutes: Int = mergeMin) -> [Period] {
         if periods.isEmpty { return [] }
         var pending = periods
@@ -216,6 +219,7 @@ public enum SleepStager {
 
             let hasPrev = i > 0 && !merged.isEmpty
             let hasNext = i + 1 < pending.count
+            // If a short run sits between two runs of the same kind, all three become one.
             let bridgesSame = hasPrev && hasNext && pending[i - 1].stage == pending[i + 1].stage
 
             if bridgesSame {
@@ -250,6 +254,7 @@ public enum SleepStager {
         return HRVAnalyzer.median(vals)
     }
 
+    // Gravity says 'still'; HR confirms. Reading in bed while awake has HR well above the day's median.
     static func confirmSleepWithHR(_ p: Period, hr: [HRSample], baseline: Double?) -> Bool {
         guard let baseline = baseline else { return true }
         let seg = rowsBetween(hr, start: p.start, end: p.end) { $0.ts }
@@ -262,6 +267,7 @@ public enum SleepStager {
 
     /// Detect sleep sessions from biometric streams. Empty/absent gravity → [].
     /// Gravity-only input degrades gracefully (HR/RR/resp refinements skipped).
+    // Flow: gravity stillness -> runs -> merge -> keep runs > 60 min that HR confirms -> stage each.
     public static func detectSleep(hr: [HRSample] = [],
                                    rr: [RRInterval] = [],
                                    resp: [RespSample] = [],
@@ -299,6 +305,7 @@ public enum SleepStager {
     }
 
     /// asleep / in-bed in [0, 1]; asleep = in-bed − wake.
+    // Efficiency = (time in bed - wake) / time in bed.
     static func efficiency(start: Int, end: Int, stages: [StageSegment]) -> Double {
         let inBed = Double(end - start)
         if inBed <= 0 { return 0 }
@@ -310,6 +317,7 @@ public enum SleepStager {
     // MARK: - Stage 1–3: staging over a 30 s epoch grid
 
     /// First persistent-sleep epoch (onset) and last sleep epoch (final wake).
+    // Onset needs several consecutive sleep epochs so a single still epoch doesn't count.
     static func onsetAndFinalWake(_ ckFlags: [Bool]) -> (Int, Int) {
         let n = ckFlags.count
         if n == 0 { return (0, 0) }

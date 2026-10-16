@@ -3,6 +3,7 @@ import StrandDesign
 
 /// Where the live data pipeline currently stands, derived from `LiveState` telemetry. Used so a screen
 /// that has no numbers yet can say *why* instead of showing blanks.
+// One state describing the whole live pipeline, so screens can explain WHY there is no data instead of showing blanks.
 enum LivePhase: Equatable {
     case disconnected          // no link to the strap
     case pairing               // linked, not yet bonded/authenticated
@@ -26,6 +27,7 @@ enum LivePhase: Equatable {
 }
 
 extension LiveState {
+    // Evaluated top-down: not connected -> not bonded -> live (HR fresh within 15 s) -> stalled -> strap-only data -> waiting.
     var phase: LivePhase {
         guard connected else { return .disconnected }
         guard bonded else { return .pairing }
@@ -44,6 +46,7 @@ struct LiveStatusCard: View {
 
     var body: some View {
         // Re-evaluate "fresh" a few times a second without depending on new data arriving.
+        // Re-checks freshness every 2 s even if no new data arrives, so 'stalled' appears on its own.
         TimelineView(.periodic(from: .now, by: 2)) { _ in
             let phase = live.phase
             VStack(alignment: .leading, spacing: 14) {
@@ -114,6 +117,7 @@ struct LiveStatusCard: View {
         }
     }
 
+    // WHOOP 5.0 needs different guidance: it only bonds in pairing mode and its sensor data isn't fully decoded.
     private func explanation(_ phase: LivePhase) -> String? {
         let is5 = live.family == "whoop5"
         switch phase {
@@ -137,6 +141,7 @@ struct LiveStatusCard: View {
 }
 
 /// WHOOP 5.0 stored-data pull (safe mode). Reads what the strap holds without clearing anything.
+// WHOOP 5.0 only. 'Safe mode' reads stored records without telling the strap to delete them.
 struct StrapHistoryCard: View {
     @EnvironmentObject var live: LiveState
     @EnvironmentObject var model: AppModel

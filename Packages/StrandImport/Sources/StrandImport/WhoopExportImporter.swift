@@ -24,6 +24,7 @@ public struct WhoopExportImporter {
 
     /// Import from a folder or a `.zip` URL, returning all normalized rows plus
     /// a summary.
+    // Flow: find the CSVs (folder or zip) -> parse each into typed rows -> build a summary. Missing files simply yield empty arrays.
     public func `import`(from url: URL) throws -> WhoopImportResult {
         let csvData = try loadCSVData(from: url)
 
@@ -55,6 +56,7 @@ public struct WhoopExportImporter {
 
     /// Return `[lowercasedFilename: rawData]` for every recognised CSV in the
     /// folder or zip at `url`.
+    // Accepts a folder or a zip; a file with a different extension is tried as a zip before giving up.
     private func loadCSVData(from url: URL) throws -> [String: Data] {
         let fm = FileManager.default
         var isDir: ObjCBool = false
@@ -74,6 +76,7 @@ public struct WhoopExportImporter {
         throw ImportError.notAZipOrFolder(url.path)
     }
 
+    // Searches the whole tree by file name, so renamed or nested export folders still work.
     private func loadFromFolder(_ folder: URL) throws -> [String: Data] {
         let fm = FileManager.default
         var result: [String: Data] = [:]
@@ -103,6 +106,7 @@ public struct WhoopExportImporter {
     /// zip-bomb where a tiny entry inflates to many GB and OOM-kills the app.
     private static let maxEntryBytes = 256 << 20   // 256 MB
 
+    // Streams each entry with a running size budget and CRC check; bad or oversized entries are skipped, never half-imported.
     private func loadFromZip(_ zipURL: URL) throws -> [String: Data] {
         let archive: Archive
         do {
@@ -142,6 +146,7 @@ public struct WhoopExportImporter {
 
     // MARK: - physiological_cycles.csv
 
+    // Header-name driven: each field lists alternative column names to cope with differences between export versions.
     func parseCycles(_ table: CSVTable) -> [WhoopCycleRow] {
         var out: [WhoopCycleRow] = []
         out.reserveCapacity(table.rows.count)
@@ -153,6 +158,7 @@ public struct WhoopExportImporter {
             r.cycleStart = WhoopTime.parse(row.cell("cycle_start_time"), offsetMinutes: tz)
             r.cycleEnd   = WhoopTime.parse(row.cell("cycle_end_time"), offsetMinutes: tz)
 
+            // Rows with no timestamp can't be placed on a day, so they are dropped.
             // Skip rows with no usable timestamp at all.
             if r.cycleStart == nil && r.cycleEnd == nil { continue }
 
@@ -263,6 +269,7 @@ public struct WhoopExportImporter {
 
     // MARK: - journal_entries.csv
 
+    // A journal row is only kept if it has a question, answer or notes.
     func parseJournal(_ table: CSVTable) -> [WhoopJournalRow] {
         var out: [WhoopJournalRow] = []
         out.reserveCapacity(table.rows.count)
@@ -285,6 +292,7 @@ public struct WhoopExportImporter {
 
     // MARK: - Summary
 
+    // Counts and date span shown to the user after the import.
     private func makeSummary(
         cycles: [WhoopCycleRow],
         sleeps: [WhoopSleepRow],

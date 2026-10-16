@@ -83,6 +83,7 @@ public enum BehaviorInsights {
     ///
     /// Returns nil unless BOTH groups are non-empty AND the total is large enough
     /// to form a variance estimate (at least 1 value per side and ≥ 3 total).
+    // Split days into with/without the behavior, then compare group means, effect size and a p-value.
     public static func effect(behaviorDays: Set<String>,
                               outcomeByDay: [String: Double],
                               behavior: String,
@@ -97,6 +98,7 @@ public enum BehaviorInsights {
         let n1 = withVals.count
         let n2 = withoutVals.count
         // Need both groups present, and enough total points for a variance estimate.
+        // Both groups need data; otherwise there is nothing to compare.
         guard n1 >= 1, n2 >= 1, n1 + n2 >= 3 else { return nil }
 
         let m1 = withVals.reduce(0, +) / Double(n1)
@@ -111,6 +113,7 @@ public enum BehaviorInsights {
         let d = cohensD(m1: m1, m2: m2, n1: n1, v1: v1, n2: n2, v2: v2)
         let p = welchP(m1: m1, v1: v1, n1: n1, m2: m2, v2: v2, n2: n2)
 
+        // Significance also needs >= 5 days per side, so a handful of days can't look 'significant'.
         let sig = p < alpha && Swift.min(n1, n2) >= minGroupForSignificance
 
         return BehaviorEffect(behavior: behavior, outcome: outcome,
@@ -134,6 +137,7 @@ public enum BehaviorInsights {
                 effects.append(e)
             }
         }
+        // Sort: significant first, then biggest effect size, then name so ordering is stable.
         return effects.sorted { a, b in
             if a.significant != b.significant { return a.significant }  // significant first
             let la = abs(a.cohensD), lb = abs(b.cohensD)
@@ -195,6 +199,7 @@ public enum BehaviorInsights {
 
     /// Two-sided Welch t-test p-value with a normal-approximation tail.
     /// Returns 1.0 (no evidence) when neither group has a usable standard error.
+    // Welch's t-test (doesn't assume equal variances) with a normal tail: deterministic, no lookup tables.
     static func welchP(m1: Double, v1: Double, n1: Int,
                        m2: Double, v2: Double, n2: Int) -> Double {
         let se2 = v1 / Double(n1) + v2 / Double(n2)

@@ -20,6 +20,8 @@ import WhoopProtocol
 // References: Karvonen 1957 (%HRR); Edwards 1993 (5-zone TRIMP); Banister 1991
 // (exponential TRIMP, b = 1.92 men / 1.67 women); Tanaka 2001 (HRmax = 208 − 0.7×age).
 
+// Entry points: strain() for one HR segment, dayStrain() to combine workouts into a day score.
+// Three methods exist; .whoop (fitted to real WHOOP exports) is the default.
 public enum StrainScorer {
 
     // MARK: - Constants (strain.py)
@@ -79,6 +81,8 @@ public enum StrainScorer {
     public enum Method: Sendable { case edwards, banister, whoop }
 
     /// Σ w_z · minutes-in-zone-z over `hr`, zones taken from %HRmax. Below zone 1 contributes nothing.
+    // Walks every HR sample, finds the highest %HRmax zone floor it clears and adds that zone's
+    // per-minute weight. Samples below 50% HRmax add nothing, so idle time never inflates strain.
     static func whoopZoneLoad(_ hr: [HRSample], maxHR: Double, sampleDurationMin: Double) -> Double {
         var load = 0.0
         for s in hr {
@@ -92,6 +96,7 @@ public enum StrainScorer {
 
     /// Day strain from the zone loads of the day's workouts. The floor stands in for the unmeasured
     /// all-day load, so pass workout segments only (not the whole day's HR) to avoid double counting.
+    // Log-compress so strain has diminishing returns: the 10th hard hour adds far less than the 1st.
     public static func dayStrain(workoutLoads: [Double]) -> Double {
         let value = min(maxStrain, whoopDayScale * log(1.0 + whoopDayFloor + workoutLoads.reduce(0, +)))
         return (value * 100).rounded() / 100
@@ -101,22 +106,26 @@ public enum StrainScorer {
     /// moves while HR is high). Runs of HR ≥ 70 % HRmax lasting ≥ `minHighHRRunS`, bridging gaps of up
     /// to `mergeGapS`, outside `excluding` (already-counted workout ranges). Returns their zone load.
     public static let minHighHRRunS = 300
+    // Cycling/rowing safety net: counts long hard-HR stretches that detection did not already claim as a workout.
     public static func highEffortLoad(_ hr: [HRSample], maxHR: Double,
                                       excluding: [(start: Int, end: Int)]) -> Double {
         guard maxHR > 0 else { return 0 }
         let sorted = hr.sorted { $0.ts < $1.ts }
+        // Keep only samples at >=70% HRmax that fall outside already-counted workout ranges.
         let hot = sorted.filter { s in
             Double(s.bpm) / maxHR >= 0.7 && !excluding.contains { s.ts >= $0.start && s.ts <= $0.end }
         }
         guard !hot.isEmpty else { return 0 }
         var load = 0.0
         var run: [HRSample] = [hot[0]]
+        // Only runs lasting >= minHighHRRunS count; shorter ones are just spikes (stairs, a sprint to the bus).
         func flush() {
             if let f = run.first, let l = run.last, l.ts - f.ts >= minHighHRRunS {
                 load += whoopZoneLoad(run, maxHR: maxHR, sampleDurationMin: fallbackSampleMin)
             }
         }
         for h in hot.dropFirst() {
+            // A gap over 150 s ends the current run and starts a new one.
             if h.ts - run[run.count - 1].ts > 150 { flush(); run = [h] } else { run.append(h) }
         }
         flush()
@@ -131,6 +140,7 @@ public enum StrainScorer {
     }
 
     /// Zone load of one HR segment, or nil when it is too short or maxHR is unusable.
+    // Needs >= minReadings samples so a few seconds of data can't yield a score.
     public static func whoopLoad(_ hr: [HRSample], maxHR: Double? = nil) -> Double? {
         let effMax = maxHR ?? Double(defaultMaxHR())
         guard hr.count >= minReadings, effMax > 0 else { return nil }
@@ -146,6 +156,7 @@ public enum StrainScorer {
     public static func defaultMaxHR(age: Int = defaultAge) -> Int { 220 - age }
 
     /// Linear-interpolated percentile of an already-sorted sequence (numpy-style).
+    // Same interpolation as numpy.percentile so results match the Python reference.
     static func percentile(_ sortedValues: [Double], _ pct: Double) -> Double {
         let n = sortedValues.count
         if n == 0 { return 0 }
@@ -159,6 +170,8 @@ public enum StrainScorer {
 
     /// Estimate a personalized HRmax from a trailing HR series.
     /// Returns (hrmax bpm, source) where source ∈ {"observed", "tanaka", "unknown"}.
+    // Prefer the observed 99.5th-percentile HR once enough data exists, but never go below Tanaka:
+    // a lazy week of data must not lower the user's HRmax and inflate every zone.
     public static func estimateHRmax(_ hrHistory: [Double], age: Double?) -> (Double, String) {
         let n = hrHistory.count
         let tanaka = age.map { tanakaHRmax(age: $0) }
@@ -194,6 +207,7 @@ public enum StrainScorer {
 
     /// Infer per-sample duration (minutes) from the first two timestamps. Falls
     /// back to 1 s when fewer than two samples or coincident timestamps.
+    // Duration is inferred from sample spacing so the same maths works for 1 Hz and sparser data.
     static func sampleDurationMinutes(_ hr: [HRSample]) -> Double {
         guard hr.count >= 2 else { return fallbackSampleMin }
         let deltaS = abs(Double(hr[1].ts - hr[0].ts))
@@ -232,6 +246,7 @@ public enum StrainScorer {
     /// Calibrate D from (TRIMP, reference_strain) pairs via the through-origin
     /// least-squares line: ln(D) = 21 × Σ(x²) / Σ(xy), x = ln(TRIMP+1).
     /// Throws when fewer than 2 usable pairs (TRIMP>0, strain>0) or degenerate.
+    // Least-squares calibration of the log map against reference strain values (used by Tools/).
     public static func fitStrainDenominator(_ pairs: [(trimp: Double, strain: Double)]) throws -> Double {
         let usable = pairs.filter { $0.trimp > 0 && $0.strain > 0 }
         guard usable.count >= 2 else { throw StrainError.tooFewPairs }
@@ -272,6 +287,7 @@ public enum StrainScorer {
                               sex: String = "male",
                               denominator: Double = strainDenominator) -> Double? {
         let effMax = maxHR ?? Double(defaultMaxHR())
+        // Refuse to score on too little data or an impossible HRR rather than return a misleading number.
         if hr.count < minReadings || effMax <= restingHR { return nil }
 
         let sampleDur = sampleDurationMinutes(hr)

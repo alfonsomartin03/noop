@@ -68,6 +68,7 @@ public struct YearHeatStrip: View {
         var monthLabel: String?
     }
 
+    // Lays days into week columns x weekday rows; leading/trailing blanks keep weekdays aligned.
     private func buildWeeks() -> [Week] {
         guard let first = days.first?.date else { return [] }
         var weeks: [Week] = []
@@ -179,6 +180,7 @@ public struct YearHeatStrip: View {
 
     /// Map a local cursor location to a (week, row) cell, or nil if outside the
     /// grid or in the inter-cell gaps.
+    // Hit-testing for hover: converts a cursor point back to (week, weekday).
     private func cellIndex(at point: CGPoint, weekCount: Int) -> (week: Int, row: Int)? {
         let stride = cellSize + spacing
         let lx = point.x - gridOriginX

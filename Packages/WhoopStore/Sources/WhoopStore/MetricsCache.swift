@@ -11,6 +11,7 @@ import GRDB
 /// One cached sleep session pulled from the server's /v1/sleep. Natural key (deviceId, startTs).
 /// `stagesJSON` is the verbatim JSON array of stage segments ([{start,end,stage}]) — stored as a
 /// string so the cache stays schema-agnostic about the staging shape.
+// stagesJSON is stored verbatim so the cache doesn't need to know the staging format.
 public struct CachedSleepSession: Equatable, Codable {
     public let startTs: Int          // unix seconds
     public let endTs: Int            // unix seconds
@@ -27,6 +28,7 @@ public struct CachedSleepSession: Equatable, Codable {
 }
 
 /// One cached daily-metrics row pulled from the server's /v1/daily. Natural key (deviceId, day).
+// One row per day; every metric is optional because any given day may lack data.
 public struct DailyMetric: Equatable, Codable {
     public let day: String           // YYYY-MM-DD
     public let totalSleepMin: Double?
@@ -62,6 +64,7 @@ extension WhoopStore {
 
     /// Upsert cached sleep sessions. Natural key (deviceId, startTs). Returns rows changed.
     @discardableResult
+    // Upserts everywhere in the store: natural key + ON CONFLICT DO UPDATE, so re-running analysis refreshes rows.
     public func upsertSleepSessions(_ sessions: [CachedSleepSession], deviceId: String) async throws -> Int {
         try syncWrite { db in
             var n = 0
@@ -124,6 +127,7 @@ extension WhoopStore {
     // MARK: - Reads
 
     /// Cached sleep sessions overlapping [from, to] (by startTs), oldest first.
+    // Date-range read, oldest first, capped by limit.
     public func sleepSessions(deviceId: String, from: Int, to: Int, limit: Int) async throws -> [CachedSleepSession] {
         try syncRead { db in
             try Row.fetchAll(db, sql: """

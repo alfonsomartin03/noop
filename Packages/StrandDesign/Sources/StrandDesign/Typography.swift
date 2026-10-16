@@ -7,6 +7,7 @@ import SwiftUI
 //
 // All numeric styles use `.monospacedDigit()` so live values don't reflow.
 
+// Type scale. Numbers use monospaced digits so live values don't jitter as they change.
 public enum StrandFont {
 
     // MARK: Scale (§9.2)

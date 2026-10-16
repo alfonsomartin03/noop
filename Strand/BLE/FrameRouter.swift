@@ -4,6 +4,7 @@ import WhoopProtocol
 /// Pure decode→state router. Takes a COMPLETE (already reassembled) frame, decodes it with
 /// WhoopProtocol.parseFrame, and updates LiveState. No CoreBluetooth — fully unit-testable.
 @MainActor
+// Decodes whole frames into LiveState updates. No CoreBluetooth here, which keeps it unit-testable.
 public final class FrameRouter {
     private let state: LiveState
     /// Called when the strap pushes an EVENT packet (WHOOP's strap-as-clock catch-up signal). The
@@ -19,6 +20,7 @@ public final class FrameRouter {
         let parsed = parseFrame(frame, family: family)
         guard parsed.ok else { return }
         // Reject frames that failed their checksum — never let bad bytes drive state.
+        // Corrupt frames never touch state.
         if parsed.crcOK == false { return }
 
         state.lastFrameType = parsed.typeName
@@ -26,6 +28,7 @@ public final class FrameRouter {
         // WHOOP 5.0 realtime: the generic parser exposes no fields for 5.0, so decode the record directly.
         if family == .whoop5 {
             if parsed.typeName == "REALTIME_DATA", let rt = decodeWhoop5Realtime(frame) {
+                // Plausibility window: 0 or absurd values are sensor glitches, not heart rates.
                 if (30...220).contains(rt.heartRate) { state.heartRate = rt.heartRate }
                 if !rt.rr.isEmpty { state.rr = rt.rr }
             }

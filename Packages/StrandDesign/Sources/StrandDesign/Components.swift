@@ -5,6 +5,7 @@ import SwiftUI
 // Every screen composes ONLY these. Fixed dimensions + one spacing scale guarantee
 // the uniform, instrument-grade look from the reference. Do not invent ad-hoc cards.
 
+// Shared spacing/radius constants so every screen lines up; change here, not per view.
 public enum NoopMetrics {
     public static let cardRadius: CGFloat = 22
     public static let cardPadding: CGFloat = 20
@@ -21,6 +22,7 @@ public enum NoopMetrics {
 // MARK: - Surface
 
 /// The one card surface. All cards use this — same radius, border, fill.
+// The one card surface used app-wide.
 public struct NoopCard<Content: View>: View {
     private let padding: CGFloat
     @ViewBuilder private let content: () -> Content
@@ -66,6 +68,7 @@ public struct SectionHeader: View {
 
 // MARK: - Metric tile (UNIFORM fixed height)
 
+// All metric tiles share a fixed height so rows of tiles align.
 public struct StatTile: View {
     let label: String, value: String
     var caption: String? = nil
@@ -182,6 +185,7 @@ public struct InsightCard: View {
 
 // MARK: - Range control (the ONE segmented pill control, used everywhere)
 
+// The single segmented control used for every range/mode picker.
 public struct SegmentedPillControl<T: Hashable>: View {
     let items: [T]
     let label: (T) -> String
@@ -278,6 +282,7 @@ public extension ButtonStyle where Self == StrandSecondaryButtonStyle {
 // MARK: - Loading skeleton
 
 /// Soft shimmering placeholder block, used instead of spinners while data loads.
+// Shimmer placeholder shown while data loads (instead of a spinner).
 public struct StrandSkeleton: View {
     var cornerRadius: CGFloat
     @State private var phase = false

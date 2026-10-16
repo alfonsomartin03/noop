@@ -5,6 +5,7 @@ import StrandAnalytics
 
 /// Import & Export — the data-ownership screen. Bring in your full WHOOP export, see what NOOP
 /// has stored, and take a complete copy of the database out.
+// Screen layout: what is stored, WHOOP export import, NOOP-vs-WHOOP accuracy, and full backup/restore.
 struct DataSourcesView: View {
     @EnvironmentObject var model: AppModel
     @EnvironmentObject var repo: Repository
@@ -23,6 +24,7 @@ struct DataSourcesView: View {
             accuracyCard
             backupCard
         }
+        // Accepts a zip or an extracted folder; the importer finds the CSVs itself.
         .fileImporter(isPresented: $picking,
                       allowedContentTypes: [.zip, .folder],
                       allowsMultipleSelection: false) { result in
@@ -70,6 +72,7 @@ struct DataSourcesView: View {
     /// Official WHOOP scores vs NOOP's own estimates, over days that have both. Hidden until there
     /// is an overlap (needs a WHOOP import plus nights NOOP scored itself).
     @ViewBuilder
+    // Hidden until at least one metric has days with both an official and an estimated value.
     private var accuracyCard: some View {
         let rows: [(String, String, EstimateAccuracy.Result?)] = [
             ("Recovery", "points", repo.accuracy { $0.recovery }),
@@ -118,6 +121,7 @@ struct DataSourcesView: View {
         }
     }
 
+    // Checkpoint is passed in so the backup gets a consolidated database file.
     private func runExport() {
         backupBusy = true
         Task {
@@ -132,6 +136,7 @@ struct DataSourcesView: View {
     }
 
     @MainActor
+    // Maps the result to alert text; cancelling shows nothing.
     private func handleBackup(_ result: DataBackup.BackupResult) {
         backupBusy = false
         switch result {

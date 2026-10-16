@@ -53,6 +53,7 @@ public struct StrainGauge: View {
         }
     }
 
+    // 240-degree open arc with the gap at the bottom, matching the recovery ring so the two read as a pair.
     private let arcSpanDegrees: Double = 240
     private var startAngle: Angle { .degrees(150) }
     private var endAngle: Angle { .degrees(150 + arcSpanDegrees) }
@@ -60,8 +61,10 @@ public struct StrainGauge: View {
     @State private var animatedFraction: Double = 0
     @State private var bloomPulse = false
 
+    // Strain is 0-21; clamp to 0...1 for drawing.
     private var fraction: Double { min(max(strain / 21.0, 0), 1) }
     private var tipColor: Color { StrandPalette.strainColor(strain) }
+    // The glow strengthens as strain rises, so heavier days look visibly 'hotter'.
     private var bloomOpacity: Double { 0.16 + 0.34 * fraction }
     private var bloomRadius: CGFloat { lineWidth * (0.8 + 1.2 * fraction) }
 

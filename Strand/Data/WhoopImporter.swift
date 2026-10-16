@@ -7,10 +7,12 @@ import StrandImport
 enum WhoopImporter {
 
     @discardableResult
+    // Steps: parse the export -> daily rows -> sleep sessions -> generic metric series -> journal -> workouts. All writes are upserts, so re-importing is safe.
     static func importExport(url: URL, into store: WhoopStore, deviceId: String) async throws -> ImportSummary {
         let result = try ImportCoordinator().importWhoopExport(from: url)
 
         // physiological_cycles → DailyMetric (one row per sleep-to-sleep day)
+        // One DailyMetric per WHOOP cycle, keyed to the local day the cycle started in.
         var metrics: [DailyMetric] = []
         for c in result.cycles {
             guard let start = c.cycleStart else { continue }
@@ -33,6 +35,7 @@ enum WhoopImporter {
         }
 
         // sleeps → CachedSleepSession (stage durations encoded as JSON; export has no per-epoch timeline)
+        // The export has stage durations but no timeline, so stages are stored as minutes-per-stage JSON. Naps are skipped.
         var sessions: [CachedSleepSession] = []
         for s in result.sleeps where !s.isNap {
             guard let onset = s.sleepOnset, let wake = s.wakeOnset else { continue }
@@ -55,6 +58,7 @@ enum WhoopImporter {
         try await store.upsertSleepSessions(sessions, deviceId: deviceId)
 
         // Generic metric series — every cycle field, keyed, for the explorer + correlations.
+        // Every cycle field also goes into the generic metric table so the explorer and correlations can use it.
         var points: [MetricPoint] = []
         func add(_ day: String, _ key: String, _ v: Double?) {
             if let v { points.append(MetricPoint(day: day, key: key, value: v)) }
@@ -88,6 +92,7 @@ enum WhoopImporter {
             }
         }
         // Derived: a daily stress proxy from RHR (up) + HRV (down) vs the personal baseline.
+        // Mean and standard deviation across all cycles, used to turn RHR and HRV into z-scores below.
         func meanStd(_ a: [Double]) -> (Double, Double) {
             guard !a.isEmpty else { return (0, 1) }
             let m = a.reduce(0, +) / Double(a.count)
@@ -98,10 +103,12 @@ enum WhoopImporter {
         let (hm, hs) = meanStd(result.cycles.compactMap(\.hrvMs))
         for c in result.cycles {
             guard let start = c.cycleStart, let rhr = c.restingHeartRate, let hrv = c.hrvMs else { continue }
+            // Stress proxy: higher resting HR and lower HRV than your own average => more stress. Clamped to 0...3.
             let z = 0.6 * ((rhr - rm) / rs) - 0.6 * ((hrv - hm) / hs)
             add(dayString(start, tzOffsetMin: c.tzOffsetMin), "stress", max(0, min(3, 1.5 + z)))
         }
         // Derived: daily HR-zone minutes + strength-activity time from workouts.
+        // Roll workout zone percentages up into minutes per zone per day.
         var zoneByDay: [String: [Double]] = [:]
         var strengthByDay: [String: Double] = [:]
         for w in result.workouts {

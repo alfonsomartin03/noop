@@ -166,4 +166,31 @@ final class WorkoutDetectorHROnlyTests: XCTestCase {
         let hr = series([(1200, 58), (900, 140), (120, 90), (900, 140), (1200, 58)])
         XCTAssertEqual(WorkoutDetector.detect(hr: hr, gravity: [], restingHR: 58, maxHR: 190, age: 30).count, 1)
     }
+
+    /// 2h20 steady endurance ride with a 12-min stop in the middle and gentle drift: one session.
+    func testLongEnduranceRideWithStopIsOneSession() {
+        // rest 55, hrmax 190 → HRR 135. 125 bpm ≈ 52% HRR (zone 1), drifting to 135.
+        let hr = series([(1800, 55), (3600, 125), (720, 70), (4200, 135), (1800, 55)])
+        let w = WorkoutDetector.detect(hr: hr, gravity: [], restingHR: 55, maxHR: 190, age: 30)
+        XCTAssertEqual(w.count, 1)
+        XCTAssertGreaterThan(w.first?.durationS ?? 0, 2 * 3600)
+    }
+
+    /// A 15-min zone-1 jog is still not a workout (endurance leniency is for long efforts only).
+    func testShortZone1EffortStillRejected() {
+        let hr = series([(1800, 55), (900, 125), (1800, 55)])
+        XCTAssertTrue(WorkoutDetector.detect(hr: hr, gravity: [], restingHR: 55, maxHR: 190, age: 30).isEmpty)
+    }
+
+    /// A 22-min stop (HR back near rest) between two 45-min legs is still one ride.
+    func testLongStopWithRecoveredHRStillOneRide() {
+        let hr = series([(1800, 55), (2700, 130), (1320, 62), (2700, 130), (1800, 55)])
+        XCTAssertEqual(WorkoutDetector.detect(hr: hr, gravity: [], restingHR: 55, maxHR: 190, age: 30).count, 1)
+    }
+
+    /// A 60-min gap is two separate workouts.
+    func testVeryLongGapStaysTwoWorkouts() {
+        let hr = series([(1800, 55), (2700, 130), (3600, 60), (2700, 130), (1800, 55)])
+        XCTAssertEqual(WorkoutDetector.detect(hr: hr, gravity: [], restingHR: 55, maxHR: 190, age: 30).count, 2)
+    }
 }

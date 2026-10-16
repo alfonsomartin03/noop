@@ -5,6 +5,7 @@ import Combine
 /// (from decoded frames) and BLEManager (from CoreBluetooth callbacks).
 /// `@MainActor` so SwiftUI views observe it safely; mutators are called on the main queue.
 @MainActor
+// Single observable snapshot the UI binds to; FrameRouter and BLEManager are the only writers.
 public final class LiveState: ObservableObject {
     @Published public var connected: Bool = false
     @Published public var bonded: Bool = false
@@ -67,6 +68,7 @@ public final class LiveState: ObservableObject {
 
     /// Single funnel for battery readings — updates the published value AND notifies the hook,
     /// so both write sites (FrameRouter, BLEManager) drive the alert monitor identically.
+    // One funnel for battery updates so every source also notifies the alert hook.
     public func setBattery(_ pct: Double) {
         batteryPct = pct
         onBatteryUpdate?(pct)
@@ -77,6 +79,7 @@ public final class LiveState: ObservableObject {
         family = nil; historyBusy = false; hrSubscribed = false; hrBroadcast = nil; hrPackets = 0; strapFrames = 0; lastDataAt = nil
     }
 
+    // Capped at 200 lines so the debug log can't grow without bound.
     public func append(log line: String) {
         log.append(line)
         if log.count > 200 { log.removeFirst(log.count - 200) }

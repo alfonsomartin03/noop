@@ -48,6 +48,7 @@ struct LiveView: View {
                 logSection
             }
         }
+        // The heavy realtime stream runs only while this screen is visible, to save strap battery.
         .onAppear { if live.bonded { model.startRealtimeHR(); model.getBattery() } }
         .onDisappear { model.stopRealtimeHR() }
         .onChange(of: live.bonded) { bonded in
@@ -61,6 +62,7 @@ struct LiveView: View {
 
     // MARK: - Heart rate
 
+    // Shows the smoothed bpm from AppModel (median), not the raw per-beat value, which swings with HRV.
     private var heartRateWidget: some View {
         StrandWidget("Heart rate", symbol: "heart.fill", tint: StrandPalette.metricRose, size: .large) {
             VStack(alignment: .leading, spacing: 6) {
@@ -105,6 +107,7 @@ struct LiveView: View {
 
     // MARK: - Strap log (diagnostics → collapsed)
 
+    // Diagnostics log is collapsed by default and auto-scrolls to the newest line.
     private var logSection: some View {
         DisclosureGroup(isExpanded: $logOpen) {
             ScrollViewReader { proxy in

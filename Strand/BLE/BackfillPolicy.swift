@@ -13,6 +13,7 @@ enum BackfillTrigger {
 /// Pure rate-limiter for historical-offload kicks. No BLE/store deps. Floors match WHOOP
 /// (observed: ~15-min periodic + expedited event syncs).
 enum BackfillPolicy {
+    // Floors prevent hammering the strap: timers sync at most every 15 min, event-driven triggers at most every 90 s, manual always runs.
     static let periodicFloorSeconds: TimeInterval = 900   // 15 min
     static let eventFloorSeconds: TimeInterval = 90       // absorbs reconnect-flaps / event bursts
 

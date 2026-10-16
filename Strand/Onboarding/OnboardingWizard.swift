@@ -35,6 +35,7 @@ public struct OnboardingWizard: View {
     // caused flicker. Child steps observe what they need; a hidden BondWatcher (below)
     // handles the bond→celebration transition without re-rendering the root.
 
+    // Nine steps: welcome -> what it does -> Bluetooth -> wear & wake -> scan -> bonded -> profile -> import -> done.
     private enum Step: Int, CaseIterable {
         case welcome, what, bluetooth, wear, scan, bonded, profile, importData, done
 
@@ -89,6 +90,7 @@ public struct OnboardingWizard: View {
         .background(BondWatcher(onBonded: handleBond))
     }
 
+    // Bonding is detected from live state, which advances the wizard automatically.
     private func handleBond() {
         if step == .scan { withAnimation(StrandMotion.hero) { step = .bonded } }
     }
@@ -199,6 +201,7 @@ public struct OnboardingWizard: View {
         }
     }
 
+    // The bottom button does different things per step (e.g. start scanning on the scan step).
     private func primaryAction() {
         if step.isLast {
             onFinished()
@@ -230,6 +233,7 @@ public struct OnboardingWizard: View {
 /// Hidden, isolated observer — re-renders on live updates (it's just Color.clear, so no
 /// visible cost) and fires `onBonded` when the strap bonds, keeping the main wizard body
 /// out of the per-tick re-render path that caused flicker.
+// Invisible helper that watches LiveState.bonded and reports changes.
 private struct BondWatcher: View {
     @EnvironmentObject private var live: LiveState
     let onBonded: () -> Void
@@ -421,6 +425,7 @@ private struct WearStep: View {
 
 // MARK: - Step 5 · Scan (radar sweep + reassurance)
 
+// Radar animation while scanning, with reassurance text if it takes a while.
 private struct ScanStep: View {
     let advance: () -> Void
     @EnvironmentObject private var model: AppModel
@@ -576,6 +581,7 @@ private struct BondedStep: View {
 
 // MARK: - Step 7 · Profile
 
+// Collects age/sex/height/weight, which feed HR zones, calories and baselines.
 private struct ProfileStep: View {
     @EnvironmentObject private var profile: ProfileStore
 
@@ -636,6 +642,7 @@ private struct ProfileStep: View {
 
 // MARK: - Step 8 · Import (optional)
 
+// Optional: bring in a WHOOP export now or skip.
 private struct ImportStep: View {
     var body: some View {
         StepShell(title: "Bring your history",
@@ -715,6 +722,7 @@ private struct DoneStep: View {
 
 // MARK: - Step shell (shared layout for each page)
 
+// Shared layout so every step has the same header, content area and spacing.
 private struct StepShell<Content: View>: View {
     var title: String? = nil
     var subtitle: String? = nil

@@ -37,6 +37,7 @@ struct RecentCyclesCard: View {
         }
     }
 
+    // Formats times in the timezone the cycle was recorded in, not the current one.
     private func window(_ r: Row) -> String {
         var cal = Calendar(identifier: .gregorian)
         cal.timeZone = TimeZone(secondsFromGMT: r.tzMin * 60) ?? .gmt
@@ -56,6 +57,7 @@ struct RecentCyclesCard: View {
         return parts.isEmpty ? "No scores" : parts.joined(separator: " · ")
     }
 
+    // Reads the stored cycle start/end/timezone series and joins them by day; shows the latest 5, newest first.
     private func load() async -> [Row] {
         let src = repo.deviceId
         let starts = await repo.series(key: "cycle_start_ts", source: src, days: 14)

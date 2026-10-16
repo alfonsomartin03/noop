@@ -7,6 +7,7 @@ import Foundation
 /// This layer is **parsing only** — it does not touch the database. Persistence
 /// is wired in a later integration step; keeping the coordinator pure makes the
 /// whole package unit-testable.
+// Single entry point for imports: pick the right importer for a file/folder/zip and return its parsed result.
 public struct ImportCoordinator {
 
     private let appleHealth: AppleHealthImporter
@@ -61,6 +62,7 @@ public struct ImportCoordinator {
     /// - A folder/zip containing `physiological_cycles.csv` (or any of the Whoop
     ///   CSVs) → Whoop export.
     /// - A folder/zip containing `export.xml` → Apple Health.
+    // Lets the user drop in any export; the content (not the file name) decides which importer runs.
     public func detectAndImport(from url: URL) throws -> DetectedImport {
         switch try detectKind(of: url) {
         case .appleHealth:
@@ -71,6 +73,7 @@ public struct ImportCoordinator {
     }
 
     /// Determine which kind of export a URL points at without parsing it fully.
+    // Detection order: .xml or export.xml => Apple Health, any known WHOOP CSV name => WHOOP export, else error.
     public func detectKind(of url: URL) throws -> DataSourceKind {
         let fm = FileManager.default
         var isDir: ObjCBool = false
@@ -96,6 +99,7 @@ public struct ImportCoordinator {
     /// Lowercased base filenames present in a folder or zip (shallow scan of all
     /// entries; cheap because we only read the zip's central directory or list
     /// the folder).
+    // Collects file names from a folder or inside a zip WITHOUT extracting, so detection is cheap.
     private func entryFilenames(of url: URL, isDirectory: Bool) throws -> Set<String> {
         let fm = FileManager.default
         var names: Set<String> = []
@@ -124,6 +128,7 @@ public struct ImportCoordinator {
 import ZIPFoundation
 
 /// Reads only the zip central directory to list base filenames — no extraction.
+// Reads only the zip's table of contents.
 enum ZipPeek {
     static func filenames(in zipURL: URL) throws -> Set<String> {
         let archive = try Archive(url: zipURL, accessMode: .read)

@@ -60,6 +60,7 @@ public enum RecoveryScorer {
     /// "Sustained" = the minimum of 5-minute non-overlapping bin means of the HR
     /// samples whose ts ∈ [start, end]. Rejects single-beat dips while capturing
     /// the night's true floor. Returns nil when there are no HR samples in window.
+    // Averages 5-minute bins and takes the lowest: robust to single-beat dips, still finds the night's floor.
     public static func restingHR(_ hr: [HRSample], start: Int, end: Int) -> Int? {
         let seg = hr.filter { $0.ts >= start && $0.ts <= end }
         guard !seg.isEmpty else { return nil }
@@ -106,6 +107,7 @@ public enum RecoveryScorer {
     }
 
     /// Robust z-score using EWMA spread: (value − mean) / (1.253 × spread).
+    // 1.253 x mean-abs-deviation approximates a standard deviation, so the z-score is robust to outliers.
     static func zScore(_ value: Double, mean: Double, spread: Double) -> Double {
         let sigma = max(1.253 * spread, 1e-9)
         return (value - mean) / sigma
@@ -127,6 +129,7 @@ public enum RecoveryScorer {
     ///   - sleepPerf: sleep-performance proxy (efficiency 0..1); nil drops the term.
     ///   - hrvBaselineUsable: whether the HRV baseline has enough nights
     ///     (BaselineState.usable). When false, returns nil (cold-start).
+    // Pipeline: z-score each metric vs personal baseline -> weighted average -> logistic squash to 0-100.
     public static func recovery(hrv: Double,
                                 rhr: Double,
                                 resp: Double?,
@@ -162,6 +165,7 @@ public enum RecoveryScorer {
         let totalWeight = terms.reduce(0) { $0 + $1.w }
         guard totalWeight > 0 else { return nil }
 
+        // Weighted mean z over the terms that exist; missing inputs are dropped and weights renormalise.
         let z = terms.reduce(0) { $0 + $1.z * $1.w } / totalWeight
         let score = 100.0 / (1.0 + exp(-logisticK * (z - logisticZ0)))
         return max(0.0, min(100.0, score))

@@ -24,6 +24,7 @@ public enum SleepNeed {
     ///   - officialNeed / officialDebt: values from the WHOOP export for the same day, if any.
     ///   - asleep: minutes asleep that night. Nil → no summary.
     ///   - recentAsleep: recent nights' minutes asleep, used only for the fallback need.
+    // Official WHOOP need wins; otherwise estimate = max(7.5 h, recent average) and debt = just this night's shortfall.
     public static func summarize(officialNeed: Double?, officialDebt: Double?,
                                  asleep: Double?, recentAsleep: [Double]) -> Summary? {
         guard let asleep, asleep > 0 else { return nil }

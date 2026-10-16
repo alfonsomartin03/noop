@@ -50,6 +50,7 @@ private func i16Block(_ frame: [UInt8], _ off: Int, _ count: Int) -> [Int] {
 
 /// Error-free transformation of a * b into (product, error).
 /// Uses Knuth / Dekker splitting so that a * b = product + error exactly.
+// Exact-product trick used only so round1 can reproduce Python's rounding bit-for-bit (parity with golden test data).
 private func twoProduct(_ a: Double, _ b: Double) -> (Double, Double) {
     let p = a * b
     let split = 134217729.0  // 2^27 + 1 (Dekker/Knuth constant)
@@ -103,7 +104,9 @@ private let utcRangeFormatter: DateFormatter = {
     return f
 }()
 
+// Each hook decodes one packet type whose layout is irregular; registered by name from the schema JSON.
 func registerPostHooks() {
+    // Live heart rate packet: up to N RR intervals after the HR byte; zero intervals are placeholders and are dropped.
     postHooks["realtime_data"] = { fb, frame, _, _ in
         let rrn = u8(frame, 13) ?? 0
         var rrs: [Int] = []
@@ -118,6 +121,7 @@ func registerPostHooks() {
         fb.parsed["rr_intervals"] = .intArray(rrs)
     }
 
+    // Events: only BATTERY_LEVEL is fully decoded (sent ~every 8 min, giving a dense battery series).
     postHooks["event"] = { fb, frame, length, schema in
         let evVal = frame.count > 6 ? Int(frame[6]) : nil
         let evName = evVal.flatMap { schema.enums["EventNumber"]?[String($0)] }
@@ -128,6 +132,7 @@ func registerPostHooks() {
             // u32 event_timestamp@8). Emitted ~every 8 min → a DENSE battery series.
             //   soc% = u16@17/10 · mV = u16@21 · charging = u8@26 bit0
             fb.region(7, length, "BATTERY_LEVEL payload", "battery", note: "soc@17(/10) mv@21 charge@26")
+            // Range checks reject garbage: battery tenths-of-percent <= 100.0%, 3.0-4.3 V, charging flag 0/1.
             if let raw = u16(frame, 17), raw <= 1100 {
                 fb.parsed["battery_pct"] = .double(Double(raw) / 10)
             }
@@ -155,6 +160,7 @@ func registerPostHooks() {
         }
     }
 
+    // Replies to commands we sent; payload layout depends on which command it answers.
     postHooks["command_response"] = { fb, frame, length, schema in
         guard let length = length else { return }
         let payEnd = min(length, frame.count)
@@ -191,6 +197,7 @@ func registerPostHooks() {
             let b0 = le32(19), b1 = le32(23), b2 = le32(27), b3 = le32(31)
             fb.parsed["fw_harvard"] = .string("\(h0).\(h1).\(h2).\(h3)")
             fb.parsed["fw_boylston"] = .string("\(b0).\(b1).\(b2).\(b3)")
+        // Scans the payload for plausible unix timestamps (2020-2027) and reports the oldest/newest as the stored-history range.
         case "GET_DATA_RANGE":
             // Set membership instead of an O(n) linear scan inside a byte-by-byte sliding window
             // over the whole payload (was O(n^2)).
@@ -215,6 +222,7 @@ func registerPostHooks() {
         }
     }
 
+    // Raw sensor packets: IMU variant (HR + RR + accelerometer/gyro blocks) or optical variant (PPG samples). Axes are summarised by their mean.
     postHooks["raw_data"] = { fb, frame, length, schema in
         guard let length = length else { return }
         let spec = schema.packet(forType: Int(frame[4]))
@@ -289,6 +297,7 @@ func registerPostHooks() {
         }
     }
 
+    // Stored-history record (type 47): fields come from the version-specific layout in the schema, then the RR list is read.
     postHooks["historical_data"] = { fb, frame, length, schema in
         guard let length = length else { return }
         let spec = schema.packet(forType: Int(frame[4]))
@@ -331,6 +340,7 @@ func registerPostHooks() {
         fb.parsed["rr_intervals"] = .intArray(rrVals)
     }
 
+    // History markers; trim_cursor is the value we must echo back to tell the strap which data it can free.
     postHooks["metadata"] = { fb, frame, length, _ in
         guard let length = length else { return }
         let payEnd = min(length, frame.count)
@@ -349,6 +359,7 @@ func registerPostHooks() {
         }
     }
 
+    // Firmware log text; capped at 2 KB so a bad peer can't make us store huge strings.
     postHooks["console_logs"] = { fb, frame, length, _ in
         guard let length = length else { return }
         var txt = ""

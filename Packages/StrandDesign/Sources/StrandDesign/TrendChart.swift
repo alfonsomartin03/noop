@@ -71,6 +71,7 @@ public struct TrendChart: View {
     }
 
     /// The point nearest a given chart-local x, using the proxy to map back.
+    // Hover support: finds the data point closest to the cursor's x position.
     private func nearestPoint(toX x: CGFloat, proxy: ChartProxy, plot: CGRect) -> TrendPoint? {
         guard !points.isEmpty else { return nil }
         // Map the cursor x (relative to the plot area) back to a Date.
@@ -205,6 +206,7 @@ public struct TrendChart: View {
 
 // MARK: - Gradient → stops bridge
 
+// Bridges SwiftUI Gradient to explicit stops so the line can be coloured by value.
 extension Gradient {
     /// Reconstruct ordered stops from a Gradient. SwiftUI does not expose `.stops`
     /// directly on all paths, so we use the public `stops` mirror when present.

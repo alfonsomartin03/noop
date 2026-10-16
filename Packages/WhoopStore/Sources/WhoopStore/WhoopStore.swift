@@ -4,6 +4,7 @@ import WhoopProtocol
 
 /// OpenWhoop persistence library — decoded streams are durable; raw frames are a
 /// transient, compressed, prunable outbox. Built on GRDB/SQLite.
+// Single source of truth for the DB schema version; bump with every new migration.
 public enum WhoopStoreInfo {
     /// Bumped whenever the migrator gains a new migration.
     public static let schemaVersion = 9
@@ -13,9 +14,11 @@ public enum WhoopStoreInfo {
 /// actor's serial executor rather than the caller's (the main actor). DatabaseQueue calls
 /// are synchronous-blocking; the actor moves them off the main thread (it does not make them
 /// non-blocking). That is the intended off-main win — DatabaseQueue kept, not DatabasePool.
+// Why an actor: serialises all database access and keeps blocking SQLite calls off the main thread.
 public actor WhoopStore {
     let dbQueue: DatabaseQueue
 
+    // Every open path funnels through here so migrations always run before first use.
     private init(dbQueue: DatabaseQueue) throws {
         self.dbQueue = dbQueue
         try WhoopStore.makeMigrator().migrate(dbQueue)
@@ -26,6 +29,7 @@ public actor WhoopStore {
     /// file (BLEManager + MetricsRepository) don't deadlock on write contention.
     public init(path: String) async throws {
         var config = Configuration()
+        // Runs on each new connection: WAL lets reads continue during writes, plus bulk-write speed tuning.
         config.prepareDatabase { db in
             try db.execute(sql: "PRAGMA journal_mode = WAL")
             // Bulk-write/read tuning. NORMAL is the durable, recommended pairing with WAL (only an
@@ -67,6 +71,7 @@ public actor WhoopStore {
     /// Used before a file-level backup so the single `whoop.sqlite` carries all committed data
     /// (the -wal/-shm siblings can then be ignored). Runs outside a transaction — `wal_checkpoint`
     /// must. Best-effort: throws on a hard SQLite error so callers can fall back to a plain copy.
+    // Flush the WAL into the main file so a file-level backup contains everything.
     public func checkpointWAL() async throws {
         try checkpointWALImpl()
     }

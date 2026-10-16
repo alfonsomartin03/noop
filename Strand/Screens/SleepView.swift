@@ -20,6 +20,7 @@ import WhoopStore
 // equal margins. Data wiring is preserved from the previous screen (stagesJSON =
 // minutes for light/deep/rem/awake; typical = mean of repo.days).
 
+// Sleep screen: stage-breakdown hero, metric tiles with sparklines, stages vs your typical, and a 30-day trend.
 struct SleepView: View {
     @EnvironmentObject var repo: Repository
     @EnvironmentObject var live: LiveState
@@ -366,6 +367,7 @@ struct SleepView: View {
     /// Build every expensive derivation exactly once. Called only when `dataKey` changes,
     /// so each full pass over repo.days / repo.sleeps runs once per data change rather than
     /// once per render. Returns nil when there is no usable latest night (renders empty state).
+    // Everything is derived once into SleepModel and cached, so hover/animation re-renders don't redo the maths.
     private func buildModel() -> SleepModel? {
         guard let night = latestNight else { return nil }
         return SleepModel(
@@ -401,6 +403,7 @@ struct SleepView: View {
     }
 
     /// Mean of a per-stage minutes column across days with data.
+    // 'Typical' = the average of recent nights, shown next to last night for context.
     private func typicalStageMin(_ key: KeyPath<DailyMetric, Double?>) -> Double? {
         mean(repo.days.compactMap { $0[keyPath: key] }.filter { $0 > 0 })
     }
@@ -614,6 +617,7 @@ struct SleepView: View {
     // MARK: - Stage decoding
 
     /// Decode the imported stagesJSON dict of MINUTES {"light","deep","rem","awake"}.
+    // Stored stages are JSON of minutes per stage (from an import) - decoded defensively because older rows may lack keys.
     private func decodeStages(_ json: String?) -> Stages? {
         guard let json, let data = json.data(using: .utf8) else { return nil }
         guard let obj = try? JSONSerialization.jsonObject(with: data),
@@ -644,6 +648,7 @@ struct SleepView: View {
 /// Cheap, Equatable fingerprint of the repo inputs SleepView derives from. Two snapshots are
 /// equal iff the data the screen reads is unchanged, so the heavy `SleepModel` rebuild is
 /// skipped on the many `body` re-evaluations that don't touch sleep data.
+// Fingerprint of the inputs; the cached model is rebuilt only when it changes.
 private struct SleepInputKey: Equatable {
     let loaded: Bool
     let daysCount: Int

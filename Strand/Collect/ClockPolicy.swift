@@ -6,6 +6,7 @@ import Foundation
 enum ClockPolicy {
     /// `deviceClock` = the strap's current RTC reading (unix seconds, from GET_CLOCK). `wallNow` =
     /// phone wall time (unix seconds). Returns true if |drift| >= threshold.
+    // Only resets the strap clock if it drifted by >= 2 s, avoiding needless resets that could cause timestamp jumps.
     static func shouldSetClock(deviceClock: Int, wallNow: Int, driftThreshold: Int = 2) -> Bool {
         abs(wallNow - deviceClock) >= driftThreshold
     }

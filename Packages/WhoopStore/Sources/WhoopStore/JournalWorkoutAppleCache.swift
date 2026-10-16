@@ -7,6 +7,7 @@ import GRDB
 // syncWrite/syncRead helpers (off the main thread).
 
 /// One journal answer. Natural key (deviceId, day, question).
+// A yes/no answer to a daily journal question, with optional notes.
 public struct JournalEntry: Equatable, Codable {
     public let day: String          // YYYY-MM-DD
     public let question: String
@@ -21,6 +22,7 @@ public struct JournalEntry: Equatable, Codable {
 /// One workout. Natural key (deviceId, startTs, sport). All metric columns nullable.
 /// `zonesJSON` is verbatim JSON of HR-zone percentages, stored as a string so the cache stays
 /// schema-agnostic about the zone shape.
+// zonesJSON is kept as raw JSON so the zone format can change without a schema migration.
 public struct WorkoutRow: Equatable, Codable {
     public let startTs: Int          // unix seconds
     public let endTs: Int            // unix seconds
@@ -45,6 +47,7 @@ public struct WorkoutRow: Equatable, Codable {
 }
 
 /// One Apple-Health daily-aggregate row. Natural key (deviceId, day). All metric columns nullable.
+// Daily totals imported from Apple Health.
 public struct AppleDaily: Equatable, Codable {
     public let day: String           // YYYY-MM-DD
     public let steps: Int?
@@ -89,6 +92,7 @@ extension WhoopStore {
 
     /// Upsert workouts. Natural key (deviceId, startTs, sport). Returns rows changed.
     @discardableResult
+    // Keyed by (start, sport), so re-importing the same workout updates it instead of duplicating.
     public func upsertWorkouts(_ rows: [WorkoutRow], deviceId: String) async throws -> Int {
         try syncWrite { db in
             var n = 0

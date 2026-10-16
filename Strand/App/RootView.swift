@@ -1,6 +1,7 @@
 import SwiftUI
 import StrandDesign
 
+// Every sidebar destination; icon and grouping live here so adding a screen is one case.
 enum NavItem: String, CaseIterable, Identifiable, Hashable {
     case today = "Today"
     case live = "Live"
@@ -34,6 +35,7 @@ enum NavItem: String, CaseIterable, Identifiable, Hashable {
 }
 
 /// Lets any screen jump to another destination (e.g. a widget opening its detail view).
+// Environment hook so any screen can switch tabs (e.g. a widget opening its detail view).
 private struct NavigateKey: EnvironmentKey {
     static let defaultValue: (NavItem) -> Void = { _ in }
 }
@@ -44,6 +46,7 @@ extension EnvironmentValues {
     }
 }
 
+// Sidebar + detail shell. Observes only Repository so ~1 Hz heart-rate updates don't re-render the whole window.
 struct RootView: View {
     // Observe only Repository (changes on data refresh, not the ~1 Hz HR/frame stream). The live
     // status row is isolated into SidebarStatus so HR/frame ticks don't re-render the whole shell.
@@ -140,6 +143,7 @@ private struct SidebarRow: View {
 
 /// Isolated live-status row — owns the LiveState observation so the rest of RootView does not
 /// re-render on the ~1 Hz HR / frame stream.
+// Isolated view: owns the LiveState subscription so only this small row updates on live ticks.
 private struct SidebarStatus: View {
     @EnvironmentObject var live: LiveState
     let open: () -> Void

@@ -16,6 +16,7 @@ import Foundation
 //
 // No custom card heights, paddings, colours or surfaces — uniformity is the bar.
 
+// Workouts: range picker, summary tiles, per-sport breakdown and a table of every session.
 struct WorkoutsView: View {
     @EnvironmentObject var repo: Repository
 
@@ -42,6 +43,7 @@ struct WorkoutsView: View {
                 // property fan-out (rows → effectiveRange → sessions(_:), and
                 // sportGroups → rows → …) rebuilt the same filters/aggregations
                 // several times per render. Same windowing, same results.
+                // Windowed rows and sport groups are computed once per render and passed down, instead of being recomputed in each section.
                 let resolved = effectiveRange
                 let windowRows = sessions(for: resolved)
                 let groups = sportGroups(from: windowRows)
@@ -52,6 +54,7 @@ struct WorkoutsView: View {
                 sessionsSection(rows: windowRows)
             }
         }
+        // Reloads when new strap data arrives, so freshly detected workouts show up without a restart.
         .task(id: repo.dataVersion) {
             // Reloads when new strap data / scores land, so auto-detected workouts appear without a restart.
             let r = await repo.workoutRows()
@@ -88,6 +91,7 @@ struct WorkoutsView: View {
     private var latestTs: Int? { allRows.map(\.startTs).max() }
 
     /// Sessions inside a given range, RELATIVE TO THE LATEST session. `.all` = all.
+    // Ranges are measured back from the LATEST workout, so the window always contains recent activity.
     private func sessions(for r: Range) -> [WorkoutRow] {
         guard let days = r.days else { return allRows }
         guard let last = latestTs else { return [] }
@@ -98,6 +102,7 @@ struct WorkoutsView: View {
     /// The range actually shown: the SELECTED range when it holds ≥1 session, else
     /// the smallest LARGER range that does — so switching ranges stays visibly
     /// distinct and only an empty window widens.
+    // If the chosen range is empty, widen to the next larger one that has sessions (and flag it in the caption).
     private var effectiveRange: Range {
         guard !allRows.isEmpty else { return range }
         for r in range.widening where !sessions(for: r).isEmpty { return r }
@@ -117,6 +122,7 @@ struct WorkoutsView: View {
     }
 
     /// Pick the tightest range that still holds ≥2 sessions; otherwise show All.
+    // Initial range = the tightest one containing at least 2 sessions.
     private func defaultRange(for source: [WorkoutRow]) -> Range {
         guard let last = source.map(\.startTs).max() else { return .all }
         for r in Range.allCases where r.days != nil {
@@ -347,6 +353,7 @@ struct WorkoutsView: View {
 
     /// Sessions grouped by sport, ordered by count (desc), then total time.
     /// Takes the already-windowed rows so `body` builds the groups exactly once.
+    // Counts, total time and kcal per sport, ordered by number of sessions then total time.
     private func sportGroups(from rows: [WorkoutRow]) -> [SportGroup] {
         var bySport: [String: (count: Int, time: Double, kcal: Double)] = [:]
         for r in rows {
@@ -370,6 +377,7 @@ struct WorkoutsView: View {
 
     // MARK: - Range model
 
+    // Range options: 7D / 30D / 90D / 1Y / All.
     private enum Range: CaseIterable, Hashable {
         case week, month, quarter, year, all
         var label: String {

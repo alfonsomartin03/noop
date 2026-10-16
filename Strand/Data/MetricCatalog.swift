@@ -2,6 +2,7 @@ import Foundation
 
 /// One interrogable metric: how to fetch it (key+source), how to label/format it, and whether
 /// higher is better (drives delta tinting). The Metric Explorer + Compare are built from this list.
+// Metadata for one metric: where it lives, how to label/format it, and whether higher is better (used to tint comparisons).
 struct MetricDescriptor: Identifiable, Hashable {
     let key: String
     let title: String
@@ -21,6 +22,7 @@ struct MetricDescriptor: Identifiable, Hashable {
 
 /// Canonical catalog — mirrors the WHOOP "Trend View" plus Apple Health body metrics.
 /// Keys match exactly what the importers write into metricSeries.
+// Add a metric here and it appears in the Explorer and Compare automatically.
 enum MetricCatalog {
     static let categories = ["Heart", "Recovery", "Sleep", "Strain", "Health"]
 

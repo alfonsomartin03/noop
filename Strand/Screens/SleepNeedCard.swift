@@ -28,6 +28,7 @@ struct SleepNeedCard: View {
                 }
             }
         }
+        // Reloads only when the 'today' day changes, not on every refresh.
         .task(id: repo.today?.day) { summary = await load() }
     }
 
@@ -37,6 +38,7 @@ struct SleepNeedCard: View {
                             : "Short by \(hm(s.debtMin)) last night, against your recent average."
     }
 
+    // Needs come from the WHOOP import when present; the last 14 nights feed the fallback estimate.
     private func load() async -> SleepNeed.Summary? {
         guard let today = repo.today else { return nil }
         let need = await repo.series(key: "sleep_need_min", source: repo.deviceId, days: 30)

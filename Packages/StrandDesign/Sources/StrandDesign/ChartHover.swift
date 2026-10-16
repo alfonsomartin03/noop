@@ -71,6 +71,7 @@ public struct ChartTooltip: View {
 
 /// Position a tooltip near an anchor point while keeping it inside `container`.
 /// Estimates the tooltip's size, then flips/clamps so it never spills off-edge.
+// Keeps the tooltip inside the chart bounds and flips side near edges.
 public struct ChartTooltipPlacement {
 
     /// Compute the tooltip centre for an anchor (typically the highlighted point
@@ -104,6 +105,7 @@ public struct ChartTooltipPlacement {
 // MARK: - Nearest-point lookup
 
 /// Geometry helpers for mapping a hover location to the nearest datum.
+// Shared geometry helpers so every chart's hover behaves identically.
 public enum ChartHoverMath {
 
     /// Index of the sample whose x-position (evenly spaced across `width`) is

@@ -4,6 +4,7 @@ import WhoopStore
 
 /// Settings — profile (powers zones / calories / recovery), strap connection, and about.
 /// Grouped cards on surface.raised with a two-column form feel.
+// Settings: profile (feeds zones/calories/baselines), strap connection, keep-data-on-strap, and About.
 struct SettingsView: View {
     @EnvironmentObject var model: AppModel
     @EnvironmentObject var live: LiveState
@@ -107,6 +108,7 @@ struct SettingsView: View {
     }
 
     /// HR-max override: 0 = auto. Shown as a compact tabular value with a stepper.
+    // Blank/0 = estimate from age (Tanaka); typing a value overrides it.
     private var hrMaxField: some View {
         HStack(spacing: 10) {
             Text(profile.hrMaxOverride > 0 ? "\(profile.hrMaxOverride)" : "Auto")
@@ -168,6 +170,7 @@ struct SettingsView: View {
 
     @AppStorage(BLEManager.keepDataOnStrapKey) private var keepDataOnStrap = false
 
+    // When ON, data is stored but never acknowledged, so the strap keeps its copy for another app (the trade-off: the strap stops after ~50 records per sync).
     private var keepDataCard: some View {
         SettingsSection(
             icon: "externaldrive.badge.checkmark",
@@ -207,6 +210,7 @@ struct SettingsView: View {
         return "No strap connected. Put your WHOOP nearby and tap Re-scan to pair."
     }
 
+    // Battery colour thresholds for the strap status pill.
     private func batteryTone(_ pct: Double) -> StrandTone {
         if pct <= 15 { return .critical }
         if pct <= 30 { return .warning }

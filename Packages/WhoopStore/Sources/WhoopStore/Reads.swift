@@ -8,6 +8,7 @@ extension WhoopStore {
     /// thousands of rows; reusing one decoder removes that per-row allocation.
     fileprivate static let eventDecoder = JSONDecoder()
 
+    // All stream reads share one shape: a device, an inclusive [from, to] ts window, and a row limit, oldest first.
     public func hrSamples(deviceId: String, from: Int, to: Int, limit: Int) async throws -> [HRSample] {
         try syncRead { db in
             try Row.fetchAll(db, sql: """
@@ -19,6 +20,7 @@ extension WhoopStore {
         }
     }
 
+    // Secondary ORDER BY rrMs keeps order deterministic when several beats share a second.
     public func rrIntervals(deviceId: String, from: Int, to: Int, limit: Int) async throws -> [RRInterval] {
         try syncRead { db in
             try Row.fetchAll(db, sql: """
@@ -30,6 +32,7 @@ extension WhoopStore {
         }
     }
 
+    // Event payloads are stored as JSON text and decoded here; bad JSON yields an empty payload instead of failing the read.
     public func events(deviceId: String, from: Int, to: Int, limit: Int) async throws -> [WhoopEvent] {
         try syncRead { db in
             try Row.fetchAll(db, sql: """
@@ -104,6 +107,7 @@ extension WhoopStore {
 
     /// Max HR sample timestamp for a device, or nil if there are none. The biometric "data frontier"
     /// used by the stuck-strap watchdog (advances iff the strap is actually logging + offloading).
+    // Used by the stuck-strap watchdog: if this stops advancing, the strap isn't delivering data.
     public func latestHRSampleTs(deviceId: String) async throws -> Int? {
         try syncRead { db in
             try Int.fetchOne(db,
@@ -112,6 +116,7 @@ extension WhoopStore {
     }
 
     /// Aggregate storage footprint: total decoded rows, raw batch count, total raw byteSize.
+    // Counts every decoded table plus the raw outbox, for the storage screen.
     public func storageStats() async throws -> (decodedRows: Int, rawBatches: Int, rawBytes: Int) {
         try syncRead { db in
             let hr   = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM hrSample") ?? 0

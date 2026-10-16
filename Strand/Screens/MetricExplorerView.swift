@@ -73,6 +73,7 @@ private func metricGradient(_ m: MetricDescriptor) -> Gradient {
 // MARK: - Range
 
 /// The W/M/3M/6M/1Y/ALL window, driving the single SegmentedPillControl.
+// Same range semantics as the other screens: 7D / 30D / 90D / 1Y / All.
 enum ExploreRange: Int, CaseIterable, Identifiable, Hashable {
     case week = 7, month = 30, quarter = 90, half = 180, year = 365, all = 0
     var id: Int { rawValue }
@@ -104,6 +105,7 @@ enum ExploreRange: Int, CaseIterable, Identifiable, Hashable {
 
 /// The "Explore" picker — categories as sections, metrics as rows, each pushing a
 /// MetricDetailView. A faint trailing "•" marks metrics whose series is empty.
+// Explorer: every catalog metric grouped by category; rows with no data are hidden after an emptiness probe.
 struct MetricExplorerView: View {
     @EnvironmentObject var repo: Repository
     /// metric.id → whether its series is empty (loaded once, lazily).
@@ -216,6 +218,7 @@ private struct MetricRow: View {
 /// The full analytic dossier for one metric, built ONLY from locked components:
 /// a SegmentedPillControl range, a hero ChartCard (line + latest "as of"), a uniform
 /// StatTile row (Average / Min / Max / Latest / Δ), and a "What correlates" NoopCard.
+// Drill-down for one metric: range bar, trend chart, stats vs the previous window and correlations with other metrics.
 struct MetricDetailView: View {
     let metric: MetricDescriptor
     @EnvironmentObject var repo: Repository
@@ -259,6 +262,7 @@ struct MetricDetailView: View {
     }
 
     /// The window immediately preceding the active one (equal length, by day count).
+    // The comparison window is the same length immediately before the current one.
     private func previousWindow(effectiveRange: ExploreRange,
                                 windowed: [(day: String, value: Double)]) -> [(day: String, value: Double)] {
         guard effectiveRange != .all else { return [] }
@@ -474,6 +478,7 @@ struct MetricDetailView: View {
     /// Top |r| catalog metrics over a given window (|r| ≥ 0.30, n ≥ 10). Pure — takes
     /// the window so the heavy scan can be driven from `recomputeCorrelations()` into
     /// the `@State` cache instead of running inside `body`.
+    // Correlates this metric with the others over the same days, using Pearson r on day-aligned pairs.
     private func computeCorrelationRows(windowed: [(day: String, value: Double)]) -> [CorrRow] {
         let myDays = Set(windowed.map(\.day))
         guard !myDays.isEmpty else { return [] }

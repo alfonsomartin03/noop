@@ -5,6 +5,7 @@ import Foundation
 public enum StandardHeartRate {
     public static func parse(_ data: [UInt8]) -> (hr: Int, rr: [Int])? {
         guard !data.isEmpty else { return nil }
+        // Byte 0 is a flags field that says how the rest is laid out (HR width, energy, RR present).
         let flags = data[0]
         var idx = 1
         let hr: Int
@@ -16,6 +17,7 @@ public enum StandardHeartRate {
             hr = Int(data[idx]); idx += 1
         }
         if flags & 0x08 != 0 { idx += 2 }            // skip Energy Expended (bit 3)
+        // RR values arrive in 1/1024 s units; converted to milliseconds to match the rest of the app.
         var rr: [Int] = []
         if (flags >> 4) & 0x01 != 0 {                // R-R present (bit 4)
             while idx + 1 < data.count {

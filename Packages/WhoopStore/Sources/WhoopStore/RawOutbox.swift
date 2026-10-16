@@ -3,6 +3,7 @@ import Compression
 import GRDB
 import WhoopProtocol
 
+// Pairs the strap's own clock with the phone's wall clock at capture time, to convert strap ticks to real time.
 public struct ClockRef: Equatable, Codable {
     public let device: Int
     public let wall: Int
@@ -30,6 +31,7 @@ extension WhoopStore {
     // MARK: - frame (de)serialization
     // Layout: [count u32 LE]{ [len u32 LE][bytes] } x count. zlib-compressed as a whole.
 
+    // Binary layout: [count][len][bytes]... little-endian, so frames round-trip byte-for-byte.
     static func packFrames(_ frames: [[UInt8]]) -> Data {
         var buf = Data()
         func appendU32(_ v: Int) {
@@ -70,6 +72,7 @@ extension WhoopStore {
 
     /// Decompress a blob that was produced by `zlibCompressWithLength`.
     /// The first 4 bytes are the uncompressed length (UInt32 LE); the rest is the zlib payload.
+    // Blob = 4-byte uncompressed length + zlib data; the length tells us how big a buffer to allocate.
     static func zlibDecompressWithLength(_ input: Data) throws -> Data {
         // Read the 4-byte uncompressed-length prefix (UInt32 LE).
         guard input.count >= 4 else { throw CocoaError(.fileReadUnknown) }
@@ -112,6 +115,7 @@ extension WhoopStore {
     // MARK: - Public API
 
     /// Compress raw frames into the outbox and store batch meta.
+    // Raw frames are kept compressed so the original bytes can be re-decoded if the parser improves.
     public func enqueueRawBatch(_ meta: RawBatchMeta, frames: [[UInt8]]) async throws {
         let packed = WhoopStore.packFrames(frames)
         let blob = try WhoopStore.zlibCompressWithLength(packed)
@@ -151,6 +155,7 @@ extension WhoopStore {
     }
 
     /// Un-synced batches (syncedAt IS NULL), oldest first, capped at `limit`.
+    // Oldest first so batches are processed in capture order.
     public func pendingRawBatches(limit: Int) async throws -> [RawBatchMeta] {
         try syncRead { db in
             try Row.fetchAll(db, sql: """
@@ -190,6 +195,7 @@ extension WhoopStore {
     ///   - maxUnsyncedBytes: Intentionally unused — unsynced raw is the sole copy of unknown
     ///     bytes post-trim and must never be dropped. Parameter kept for call-site compatibility.
     @discardableResult
+    // Only already-synced raw is deleted; unsynced raw may be the only copy of data, so it is never pruned.
     public func pruneRaw(now: Int, keepWindowSeconds: Int, maxUnsyncedBytes: Int) async throws -> Int {
         // maxUnsyncedBytes intentionally unused: unsynced raw is the sole copy of unknown bytes
         // post-trim and must never be dropped.

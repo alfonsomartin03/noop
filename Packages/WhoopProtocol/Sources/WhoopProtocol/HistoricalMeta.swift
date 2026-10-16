@@ -1,6 +1,7 @@
 import Foundation
 
 /// Classification of a METADATA frame (packet type 49) for the historical-offload state machine.
+// The three markers the strap sends around a history offload: start, end (with a trim cursor to ack), complete.
 public enum HistoricalMeta: Equatable {
     case start
     case end(unix: UInt32, trim: UInt32)
@@ -21,11 +22,13 @@ public func classifyHistoricalMeta(_ p: ParsedFrame) -> HistoricalMeta {
     // Integrity gate: only act on a checksum-valid frame. CRC32 is the protocol's only integrity
     // check; without this a malicious/garbled BLE peer could forge HISTORY_END/HISTORY_COMPLETE
     // (advancing the trim cursor + acking the strap to discard data we never durably stored).
+    // Ignore frames that fail their checksum, so a corrupt frame can't make us ack and discard data we haven't saved.
     guard p.ok, p.crcOK != false else { return .other }
     guard p.typeName == "METADATA" else { return .other }
     guard case .string(let metaName)? = p.parsed["meta_type"] else { return .other }
     // Schema.enumName() produces "NAME(rawValue)" — match by prefix so the classifier is
     // insulated from raw-value changes.
+    // Prefix match because enum names look like NAME(rawValue).
     if metaName.hasPrefix("HISTORY_START") {
         return .start
     } else if metaName.hasPrefix("HISTORY_COMPLETE") {

@@ -7,6 +7,7 @@ import SwiftUI
 // plus neutral and accent. The ConnectionDot is a tiny pulsing presence indicator
 // used in the strap-status footer / menu-bar.
 
+// Semantic colour roles (positive/warning/...) so status colours stay consistent.
 public enum StrandTone: Sendable {
     case neutral
     case accent
@@ -36,6 +37,7 @@ public enum StrandTone: Sendable {
     }
 }
 
+// Small status chip: dot + label, optionally pulsing for live states.
 public struct StatePill: View {
 
     public var title: String
@@ -80,6 +82,7 @@ public struct StatePill: View {
 
 /// A tiny status dot with an optional breathing pulse halo. Used for connection
 /// state, live indicators, and inside StatePill.
+// Dot with optional breathing halo, e.g. for BLE connection state.
 public struct ConnectionDot: View {
 
     public var tone: StrandTone

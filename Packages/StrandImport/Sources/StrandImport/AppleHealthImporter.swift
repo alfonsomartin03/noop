@@ -21,6 +21,7 @@ public struct AppleHealthImporter {
     public init() {}
 
     /// Health types Strand cares about (prefix already stripped).
+    // Whitelist: an Apple Health export holds hundreds of record types; only the ones the app uses are kept, which keeps memory small.
     public static let relevantTypes: Set<String> = [
         "HeartRate",
         "RestingHeartRate",
@@ -172,6 +173,7 @@ public struct AppleHealthImporter {
 
 // MARK: - SAX delegate
 
+// Streaming (SAX) parser: export.xml can be gigabytes, so it is processed element by element instead of loaded whole.
 final class HealthXMLDelegate: NSObject, XMLParserDelegate {
 
     // Outputs
@@ -185,6 +187,7 @@ final class HealthXMLDelegate: NSObject, XMLParserDelegate {
     private var stack: [String] = []
     // Depth of the current Correlation, if inside one. Records nested inside a
     // Correlation are skipped (they also appear top-level).
+    // Records inside a Correlation also appear at top level, so they are skipped to avoid double counting.
     private var correlationDepth = 0
 
     // Dedupe set over HealthSample dedupeKeys.
@@ -260,6 +263,7 @@ final class HealthXMLDelegate: NSObject, XMLParserDelegate {
 
     // MARK: Record handling
 
+    // Per record: filter by type -> parse dates -> sleep goes to stage intervals, everything else becomes a numeric sample.
     private func handleRecord(_ attrs: [String: String]) {
         guard let rawType = attrs["type"] else { return }
         let type = Self.stripPrefix(rawType)
@@ -305,6 +309,7 @@ final class HealthXMLDelegate: NSObject, XMLParserDelegate {
         }
 
         var numeric = rawValue.flatMap { Double($0) }
+        // Apple stores SpO2 as 0-1; convert to the usual percent.
         // OxygenSaturation is a 0–1 fraction → percent.
         if type == "OxygenSaturation", let v = numeric {
             numeric = v * 100.0
@@ -351,6 +356,7 @@ final class HealthXMLDelegate: NSObject, XMLParserDelegate {
 
     // MARK: Workout handling
 
+    // Workouts are separate elements from records and carry their own duration/distance/energy attributes.
     private func handleWorkout(_ attrs: [String: String]) {
         guard
             let startStr = attrs["startDate"],
@@ -449,6 +455,7 @@ final class HealthXMLDelegate: NSObject, XMLParserDelegate {
 /// Parses Apple Health dates `yyyy-MM-dd HH:mm:ss Z` (space before a colon-less
 /// offset) with `en_US_POSIX`, returning a UTC `Date` plus the original offset
 /// in minutes.
+// Apple dates look like '2024-01-02 03:04:05 +0100'; the offset is kept so days can be bucketed in local time.
 final class HealthDateParser {
     private let formatter: DateFormatter
 

@@ -6,6 +6,7 @@ import WhoopStore
 /// (WhoopStore is `final`). WhoopStore conforms via the extension below.
 /// Not @MainActor — the WhoopStore actor's async methods satisfy the async requirements;
 /// a @MainActor SpyStore in tests also conforms (async witnesses hop actors).
+// Seam over the store so tests can inject a spy.
 protocol StoreWriting: AnyObject {
     @discardableResult
     func insert(_ streams: Streams, deviceId: String) async throws
@@ -17,6 +18,7 @@ extension WhoopStore: StoreWriting {}
 
 /// Cadence: flush after this many buffered frames OR this many seconds since the last
 /// flush — whichever first. Also flushed explicitly on disconnect/foreground.
+// Flush when 64 frames are buffered or 30 s have passed, whichever comes first.
 struct CollectorPolicy {
     var maxFrames: Int
     var maxInterval: TimeInterval
@@ -37,6 +39,7 @@ struct CollectorPolicy {
 /// store.enqueueRawBatch (raw, transient outbox) → clear buffer.
 /// Because decoded is committed before raw is queued, pruning raw never loses a metric.
 @MainActor
+// Live-capture buffer: decode frames in batches and persist them. Decoded rows are saved before raw, so pruning raw can never lose a metric.
 final class Collector {
     private let store: StoreWriting
     /// Concrete store for prune + stats (the StoreWriting seam covers the hot insert/enqueue path;
@@ -100,6 +103,7 @@ final class Collector {
 
     /// Buffer one complete frame (synchronous: preserves delegate arrival order).
     /// Auto-flushes via a detached Task when the cadence threshold is hit (flush is async).
+    // Frames are kept in arrival order; nothing is decoded until a clock reference exists, because live timestamps need it.
     func ingest(_ frame: [UInt8]) {
         buffer.append(frame)
         // Pre-clock only: bound memory if GET_CLOCK never lands while data keeps flowing.
@@ -117,6 +121,7 @@ final class Collector {
     /// Persist + queue everything buffered. No-op when empty or before a clock ref exists.
     /// Buffer is snapshotted and cleared SYNCHRONOUSLY before the first await so that any
     /// concurrent ingest() calls during persistence accumulate into the NEXT batch cleanly.
+    // Snapshot-and-clear before the first await so frames arriving mid-save go into the next batch. On failure they are put back to retry.
     func flush() async {
         guard let ref = clockRef, !buffer.isEmpty else { return }
         // SNAPSHOT + CLEAR before any await: decoded-before-raw ordering AND the
@@ -153,6 +158,7 @@ final class Collector {
 
     /// Buffer one standard Heart-Rate-Measurement reading. No clock correlation needed —
     /// these carry a wall-clock `ts` directly. Auto-flushes ~every 30 readings (~30s).
+    // The standard Bluetooth HR channel carries real timestamps, so it is recorded continuously without a clock reference. Out-of-range values are dropped.
     func ingestStandardHR(hr: Int, rr: [Int], at ts: Int) {
         if hr >= 30, hr <= 220 { stdHR.append(HRSample(ts: ts, bpm: hr)) }
         for r in rr where r >= 250 && r <= 3000 { stdRR.append(RRInterval(ts: ts, rrMs: r)) }
@@ -179,6 +185,7 @@ final class Collector {
 
     /// Persist already-decoded stored records. Idempotent: the store ignores rows whose (device, ts) already exist,
     /// so re-saving the same chunk is harmless. Returns the number of NEW heart-rate rows written, or nil on failure.
+    // Safe to call repeatedly: the store ignores rows it already has.
     func persistDecodedHistory(_ streams: Streams) async -> Int? {
         do { return try await store.insert(streams, deviceId: deviceId).hr } catch { return nil }
     }

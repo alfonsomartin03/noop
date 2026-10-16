@@ -53,6 +53,7 @@ public enum CorrelationEngine {
     /// Pearson r plus an OLS regression line and approximate p-value for the pairs.
     /// Returns nil when fewer than 3 pairs, or when either variable has zero
     /// variance (r undefined).
+    // Pearson r + regression line from one pass over centred sums. Needs >= 3 pairs and variance in both series.
     public static func pearson(_ xy: [(Double, Double)]) -> Correlation? {
         let n = xy.count
         guard n >= 3 else { return nil }
@@ -92,6 +93,7 @@ public enum CorrelationEngine {
     /// Inner-join two "yyyy-MM-dd"-keyed series on the day key, returning the (x, y)
     /// value pairs for days present in BOTH, sorted ascending by day. Later entries
     /// for a duplicated day in either series win (last-write).
+    // Inner join on the day key so only days with both values are correlated.
     public static func alignByDay(_ a: [(day: String, value: Double)],
                                   _ b: [(day: String, value: Double)]) -> [(Double, Double)] {
         var mapA: [String: Double] = [:]
@@ -111,6 +113,7 @@ public enum CorrelationEngine {
     ///
     /// Returns nil when fewer than 3 lag-matched pairs survive or when `pearson`
     /// rejects them (zero variance).
+    // Shifts x's day forward by lagDays before joining (e.g. today's strain vs tomorrow's recovery).
     public static func lagged(x: [(day: String, value: Double)],
                               y: [(day: String, value: Double)],
                               lagDays: Int) -> Correlation? {
@@ -162,6 +165,7 @@ public enum CorrelationEngine {
     /// Shift a "yyyy-MM-dd" day string by `delta` days (can be negative), returning
     /// a normalised "yyyy-MM-dd" string. Uses a fixed UTC calendar so it is
     /// deterministic and timezone-free. Returns nil if the input can't be parsed.
+    // UTC calendar so day arithmetic is deterministic and ignores DST.
     static func shiftDay(_ day: String, by delta: Int) -> String? {
         if delta == 0 { return day }
         let parts = day.split(separator: "-", omittingEmptySubsequences: false)

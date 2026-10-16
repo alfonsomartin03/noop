@@ -213,6 +213,7 @@ public final class BLEManager: NSObject, ObservableObject {
     }
 
     // MARK: Public API
+    // Scan by service first; if nothing is found, fall back to an unfiltered name-based scan (see startUnfilteredScan).
     public func connect() {
         intentionalDisconnect = false
         guard central.state == .poweredOn else {
@@ -267,6 +268,7 @@ public final class BLEManager: NSObject, ObservableObject {
 
     /// Start pairing over after a stale-bond failure. CoreBluetooth cannot unpair a device, so the user
     /// resets Bluetooth first; this clears the app-side state and rescans.
+    // Used when macOS holds a stale pairing the strap has forgotten; clears state and scans again.
     public func restartPairing() {
         stalePairingFailures = 0
         state.pairingStale = false
@@ -335,6 +337,7 @@ public final class BLEManager: NSObject, ObservableObject {
     ///   - payload: Command payload bytes (default `[0x00]`).
     ///   - writeType: BLE write type; defaults to `.withoutResponse` so all existing call
     ///     sites are unaffected. Pass `.withResponse` for acked commands (e.g. historicalDataResult).
+    // Single place commands are framed and written; picks the 4.0 or 5.0 frame format from the connected family.
     public func send(_ command: WhoopCommand, payload: [UInt8] = [0x00],
                      writeType: CBCharacteristicWriteType = .withoutResponse) {
         guard let p = peripheral, let ch = cmdCharacteristic else {
@@ -580,6 +583,7 @@ public final class BLEManager: NSObject, ObservableObject {
         send(.toggleGenericHRProfile, payload: [on ? 0x01 : 0x00])
     }
 
+    // Timers use DispatchSource on the main queue and are cancelled on disconnect to avoid leaks.
     private func startKeepAlive() {
         keepAliveTimer?.cancel()
         let s = BLEManager.keepAliveIntervalSeconds
@@ -590,6 +594,7 @@ public final class BLEManager: NSObject, ObservableObject {
         keepAliveTimer = t
     }
 
+    // Runs every 30 s: bounces a silent link, re-arms realtime, and polls battery every other tick.
     private func keepAliveFire() {
         guard state.connected, didBond else { return }
         // Liveness watchdog: if NOTHING has arrived for a while, the stream/link stalled.
@@ -621,6 +626,7 @@ public final class BLEManager: NSObject, ObservableObject {
     /// The single gated entry point for every historical-offload kick. Applies the connection/state
     /// gate AND the BackfillPolicy rate-limiter for the trigger. On a go: records the attempt time
     /// (persisted) and starts the offload.
+    // The ONLY door to a historical offload: checks connection state, then the rate limiter, then starts it.
     func requestSync(_ trigger: BackfillTrigger) {
         guard BLEManager.shouldRunPeriodicBackfill(
             connected: state.connected, bonded: state.bonded || (family == .whoop5 && didBond),
@@ -703,6 +709,7 @@ public final class BLEManager: NSObject, ObservableObject {
     // ASSUMPTION: the 5.0 trims only on ack, as documented for the 4.0 in this repo.
 
     /// Ask the strap what time span it holds (read-only).
+    // 5.0 history is read-only ('safe mode'): data is saved locally without acking, so the strap keeps its copy.
     public func queryWhoop5DataRange() {
         guard family == .whoop5, didBond else { log("Data range: needs a bonded WHOOP 5.0"); return }
         log("History: requesting data range (read-only)")
@@ -891,6 +898,7 @@ public final class BLEManager: NSObject, ObservableObject {
     ///
     /// On-device verification needed: confirm the strap ACKs SET_ALARM_TIME and that the
     /// alarm persists across BLE disconnect (cannot be verified in the simulator).
+    // Strap alarm: write the wake time to the strap so it buzzes without the phone.
     func armStrapAlarm(at date: Date) {
         // Clamp rather than trap: an out-of-range alarm date (pre-1970 / post-2106) must not crash.
         let epochSec = UInt32(clamping: Int64(date.timeIntervalSince1970))
@@ -945,6 +953,7 @@ public final class BLEManager: NSObject, ObservableObject {
 }
 
 // MARK: - CBCentralManagerDelegate
+// Connection lifecycle: Bluetooth state, discovery, connect/disconnect and state restoration.
 extension BLEManager: CBCentralManagerDelegate {
     public func centralManagerDidUpdateState(_ central: CBCentralManager) {
         log("Central state: \(BLEManager.stateName(central.state)); authorization=\(BLEManager.authName(CBCentralManager.authorization))")
@@ -1109,6 +1118,7 @@ extension BLEManager: CBCentralManagerDelegate {
 }
 
 // MARK: - CBPeripheralDelegate
+// Data path: service discovery, characteristic subscription and incoming notifications.
 extension BLEManager: CBPeripheralDelegate {
     public func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
         if let error { log("Service discovery failed: \(describe(error))") }
@@ -1346,6 +1356,7 @@ extension BLEManager: CBPeripheralDelegate {
     /// SET_CLOCK(10) payload = the strap's 8-byte form: [seconds u32 LE][subseconds
     /// u32 LE], subseconds in 1/32768 s (0 is fine). NOT the old 9-byte [u32 + 5 pad] — a wrong-length
     /// SET_CLOCK is ack-received but NOT latched, leaving the RTC lost so the strap won't serve type-47.
+    // SET_CLOCK payload: current unix time, little-endian, so the strap's timestamps line up with ours.
     static func setClockPayload(now: UInt32 = UInt32(Date().timeIntervalSince1970)) -> [UInt8] {
         [UInt8(now & 0xFF), UInt8((now >> 8) & 0xFF),
          UInt8((now >> 16) & 0xFF), UInt8((now >> 24) & 0xFF),

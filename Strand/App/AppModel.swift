@@ -9,6 +9,7 @@ import WhoopStore
 @MainActor
 final class AppModel: ObservableObject {
     /// Shared device id for both live capture (BLEManager) and imported history.
+    // Single-strap app: one fixed id keys everything in the database.
     let deviceId = "my-whoop"
     /// Observable snapshot driven by the BLE engine (connection, HR, battery, log).
     let live: LiveState
@@ -31,6 +32,7 @@ final class AppModel: ObservableObject {
     private var hrWindow: [(t: Date, v: Double)] = []
     private var hrCancellables = Set<AnyCancellable>()
 
+    // Wiring order: live state -> BLE engine -> repository -> analytics, then the refresh hooks below.
     init() {
         let live = LiveState()
         self.live = live
@@ -38,6 +40,7 @@ final class AppModel: ObservableObject {
         self.repo = Repository(deviceId: "my-whoop")
         self.intelligence = IntelligenceEngine(repo: repo, profile: profile, deviceId: "my-whoop")
         // New strap data (offload / stored-data pull) → recompute scores, refresh caches, redraw screens.
+        // When new strap data lands: show raw rows immediately, recompute scores, then refresh the UI again.
         ble.onStoredDataChanged = { [weak self] in
             guard let self else { return }
             Task { @MainActor in
@@ -48,12 +51,14 @@ final class AppModel: ObservableObject {
             }
         }
         // Smooth HR centrally so it's solid everywhere it's shown.
+        // Both signals feed one smoother, so every screen shows the same steady bpm.
         live.$heartRate.sink { [weak self] _ in self?.ingestHR() }.store(in: &hrCancellables)
         live.$rr.sink { [weak self] _ in self?.ingestHR() }.store(in: &hrCancellables)
 
         // Turn the strap's offloaded raw data into dashboard scores on launch and every 15
         // minutes, so recovery / strain / sleep populate from the strap itself with no import.
         // IntelligenceEngine computes, persists under "my-whoop-noop", and refreshes the dashboard.
+        // Background loop: analyse on launch, then every 15 min (same cadence as the strap offload).
         Task { [weak self] in
             guard let self else { return }
             await self.repo.refresh()                          // surface any imported data at once
@@ -68,6 +73,7 @@ final class AppModel: ObservableObject {
     /// Fold a fresh reading into the smoothing window and republish a stable bpm.
     /// Prefers the strap's reported HR; falls back to 60000/R-R. Clamps to a plausible
     /// 30–220 range (rejects 0 / garbage spikes) and publishes the window MEDIAN.
+    // Smoothing: keep ~10 s of readings, drop implausible ones, publish the median so single beats don't make the number jump.
     private func ingestHR() {
         var inst: Double?
         if let hr = live.heartRate, hr >= 30, hr <= 220 {
@@ -106,6 +112,7 @@ final class AppModel: ObservableObject {
     func getBattery() { ble.send(.getBatteryLevel, payload: [0x00]) }
 
     /// Import a Whoop CSV export (.zip or folder) → on-device store, then refresh the dashboard.
+    // security-scoped access is required to read files picked from the file dialog in a sandboxed app.
     func importWhoop(url: URL) {
         importing = true
         importSummary = nil

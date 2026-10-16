@@ -20,6 +20,7 @@ private let crc8Table: [UInt8] = [
     0xDE, 0xD9, 0xD0, 0xD7, 0xC2, 0xC5, 0xCC, 0xCB, 0xE6, 0xE1, 0xE8, 0xEF, 0xFA, 0xFD, 0xF4, 0xF3,
 ]
 
+// CRC8 guards the 4.0 frame header (the length bytes).
 public func crc8(_ bytes: [UInt8]) -> UInt8 {
     var crc: UInt8 = 0
     for b in bytes {
@@ -29,6 +30,7 @@ public func crc8(_ bytes: [UInt8]) -> UInt8 {
 }
 
 // Standard zlib CRC-32 (reflected, poly 0xEDB88320), table built in code.
+// Built once at load: standard zlib CRC32, which guards the payload on both device families.
 private let crc32Table: [UInt32] = {
     var table = [UInt32](repeating: 0, count: 256)
     for i in 0..<256 {
@@ -92,6 +94,7 @@ private func u32le(_ bytes: [UInt8], _ off: Int) -> UInt32 {
 
 /// Validate a complete frame envelope and both CRCs.
 /// Frame: [0xAA][len u16 LE][crc8(len)][...inner...][crc32 u32 LE], total = len + 4.
+// 4.0 frame: AA | len | crc8(len) | inner | crc32(inner). ok only when both checksums pass.
 public func verifyFrame(_ frame: [UInt8]) -> FrameCheck {
     if frame.count < 8 || frame[0] != 0xAA {
         return FrameCheck(ok: false)
@@ -133,6 +136,7 @@ public func verifyFrame(_ frame: [UInt8], family: DeviceFamily) -> FrameCheck {
     }
 }
 
+// 5.0 frame: header CRC16 over the first 6 bytes, then CRC32 over the payload at the tail.
 private func verifyFrameWhoop5(_ frame: [UInt8]) -> FrameCheck {
     // Minimum whoop5 frame: 8 header bytes (incl. CRC16) + 4 CRC32 trailer = 12.
     if frame.count < 12 || frame[0] != 0xAA {
@@ -172,6 +176,7 @@ private func verifyFrameWhoop5(_ frame: [UInt8]) -> FrameCheck {
 ///   `AA 01 [declaredLength u16 LE] 00 01 [CRC16-Modbus over the first 6 bytes, LE]`
 ///   + payload zero-padded to a multiple of 4 bytes + `[CRC32 of the padded payload, LE]`
 /// where `declaredLength = paddedPayload.count + 4`.
+// Inverse of verifyFrame: pads payload to 4 bytes, then adds header CRC16 and trailing CRC32.
 public func buildWhoop5Frame(payload: [UInt8]) -> [UInt8] {
     var padded = payload
     let rem = padded.count % 4
@@ -195,6 +200,7 @@ public func buildWhoop5CommandFrame(seq: UInt8, command: UInt8, data: [UInt8] = 
 /// Reconstruct a complete frame from a bare payload (data == frame[7:]).
 /// Some captures store only the data portion; rebuild the envelope with a correct zlib
 /// crc32 and a placeholder crc8 byte (0x00). Mirrors framing.py frame_from_payload.
+// Rebuilds a full frame from a stored bare payload; crc8 is a placeholder since stored captures don't use it.
 public func frameFromPayload(_ data: [UInt8], type: UInt8, seq: UInt8 = 0, cmd: UInt8 = 0) -> [UInt8] {
     let inner: [UInt8] = [type, seq, cmd] + data
     let length = inner.count + 4
@@ -212,6 +218,7 @@ public func frameFromPayload(_ data: [UInt8], type: UInt8, seq: UInt8 = 0, cmd: 
 /// WHOOP 4.0: a complete frame is `length + 4` bytes where length = u16 LE at buf[1..3].
 /// WHOOP 5.0: a complete frame is `declaredLength + 8` bytes where declaredLength = u16 LE at
 /// buf[2..4] (see `verifyFrame(_:family:)`). Mirrors framing.py Reassembler for 4.0.
+// BLE splits frames across notifications; this buffers fragments and emits only whole frames.
 public final class Reassembler {
     private var buf: [UInt8] = []
     private let family: DeviceFamily
@@ -223,6 +230,7 @@ public final class Reassembler {
 
     public func reset() { buf.removeAll(keepingCapacity: true) }
 
+    // Resync loop: drop bytes before the next 0xAA, wait until a full frame is buffered, then emit it.
     public func feed(_ fragment: [UInt8]) -> [[UInt8]] {
         buf.append(contentsOf: fragment)
         var out: [[UInt8]] = []

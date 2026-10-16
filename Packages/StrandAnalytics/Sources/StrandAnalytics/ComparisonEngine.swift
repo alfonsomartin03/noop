@@ -81,6 +81,7 @@ public enum ComparisonEngine {
     /// Summarise a slice of values into a `SeriesStat`. The slope is the OLS slope
     /// of value against the 0-based position index (the order in which values are
     /// supplied). Returns `.empty` for an empty input.
+    // One pass of summary stats; slope is the average per-day trend across the slice.
     public static func stat(_ values: [Double]) -> SeriesStat {
         let n = values.count
         guard n > 0 else { return .empty }
@@ -115,6 +116,7 @@ public enum ComparisonEngine {
 
         let delta = cur.mean - prev.mean
 
+        // Percent change is undefined when the previous mean is 0 or missing, so it stays nil.
         let pct: Double?
         if prev.n > 0 && prev.mean != 0 {
             pct = (cur.mean - prev.mean) / abs(prev.mean) * 100.0
@@ -157,6 +159,7 @@ public enum ComparisonEngine {
         let prevPrefix = monthPrefix(year: prevYear, month: prevMonth)
 
         // Sort by day string so the slope is chronological regardless of input order.
+        // Sort first so the trend slope is chronological regardless of input order.
         let sorted = byDay.sorted { $0.day < $1.day }
         var curVals: [Double] = []
         var prevVals: [Double] = []
@@ -183,6 +186,7 @@ public enum ComparisonEngine {
 
     /// OLS slope of values against their 0-based index. 0 when n < 2 or the index
     /// has zero variance (impossible for distinct indices, but guarded anyway).
+    // Ordinary least squares of value vs index 0...n-1: slope = Sxy / Sxx.
     static func leastSquaresSlope(_ values: [Double]) -> Double {
         let n = values.count
         guard n >= 2 else { return 0 }

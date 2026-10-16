@@ -9,6 +9,7 @@ struct PairingResetNotice: View {
     @EnvironmentObject var model: AppModel
 
     var body: some View {
+        // Only shown when the Mac holds a pairing the strap has forgotten (CoreBluetooth error 14); otherwise renders nothing.
         if live.pairingStale {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 10) {

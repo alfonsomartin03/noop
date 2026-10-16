@@ -10,6 +10,7 @@ enum ClockCorrelation {
     /// Build a `ClockRef` from a decoded GET_CLOCK COMMAND_RESPONSE frame and the wall
     /// time observed when the response arrived. Returns nil unless the frame parsed OK,
     /// passed CRC, and carries a `clock` value.
+    // Pairs the strap's clock reading with the phone's time at the moment the reply arrived.
     static func clockRef(from parsed: ParsedFrame, wall: Int) -> ClockRef? {
         guard parsed.ok, parsed.crcOK != false,
               let device = parsed.parsed["clock"]?.intValue else { return nil }

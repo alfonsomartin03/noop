@@ -37,11 +37,13 @@ public extension View {
     }
 }
 
+// Custom Layout: packs small/medium/large widgets into a responsive column grid, first-fit, like Apple Health.
 struct WidgetGridLayout: Layout {
     var minColumn: CGFloat
     var rowHeight: CGFloat
     var spacing: CGFloat
 
+    // Column count follows available width.
     private func columns(for width: CGFloat) -> Int {
         max(2, Int((width + spacing) / (minColumn + spacing)))
     }
@@ -54,6 +56,7 @@ struct WidgetGridLayout: Layout {
         func ensureRows(_ n: Int) {
             while occupied.count < n { occupied.append([Bool](repeating: false, count: cols)) }
         }
+        // Checks whether a widget of w x h cells fits at row r, column c without overlapping.
         func fits(_ r: Int, _ c: Int, _ w: Int, _ h: Int) -> Bool {
             guard c + w <= cols else { return false }
             ensureRows(r + h)

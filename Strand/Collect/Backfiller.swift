@@ -6,6 +6,7 @@ import WhoopStore
 
 /// The async subset the Backfiller needs. Plain async protocol (not @MainActor) so both the
 /// real WhoopStore actor and a @MainActor SpyBackfillStore in tests can satisfy it.
+// Narrow protocol over the store so tests can substitute a fake.
 protocol BackfillStoreWriting: AnyObject {
     @discardableResult
     func insert(_ streams: Streams, deviceId: String) async throws
@@ -83,6 +84,7 @@ final class Backfiller {
     }
 
     /// Feed one raw BLE frame into the state machine. May trigger async store operations.
+    // State machine input: START opens a chunk, other frames accumulate, END commits it, COMPLETE finishes the session.
     func ingest(_ frame: [UInt8]) async {
         switch classifyHistoricalMeta(parseFrame(frame)) {
         case .start:
@@ -105,6 +107,7 @@ final class Backfiller {
     /// trim cursor = the first u32 of end_data (data[10:14]). Returns nil if the frame is too
     /// short to contain the field (shouldn't happen for a real HISTORY_END, which is >=14 data
     /// bytes, but guards against a malformed frame).
+    // The strap needs these 8 bytes echoed back in its acknowledgement.
     static func endData(from frame: [UInt8]) -> [UInt8]? {
         guard frame.count >= 25 else { return nil }
         return Array(frame[17..<25])
@@ -119,6 +122,7 @@ final class Backfiller {
     /// TRUE so the records following this END become the next chunk. An END with no accumulated
     /// records is still acked (it advances the strap's trim) — that's how the offload progresses.
     /// `endFrame` carries the 8-byte `end_data` the ack requires.
+    // Order is what makes this safe: save decoded -> (optional raw) -> save cursor -> ack. The strap only forgets data after we have it on disk.
     private func finishChunk(unix: UInt32, trim: UInt32, endFrame: [UInt8]) async {
         guard let endData = Backfiller.endData(from: endFrame) else { return }
 
@@ -132,6 +136,7 @@ final class Backfiller {
             // to an identity ref (device==wall==now): the offset math becomes a no-op, type-47 still
             // decodes to correct wall time, and we can persist + ack + upload. The correlation is only
             // truly required to map REALTIME (type-40/43) device-epoch timestamps, never in a hist chunk.
+            // Historical records carry real timestamps, so a missing clock reference falls back to an identity offset instead of blocking the sync.
             let ref = clockRef ?? { let now = Int(Date().timeIntervalSince1970); return ClockRef(device: now, wall: now) }()
             let parsed = frames.map { parseFrame($0) }
             let decoded = extract(parsed, ref.device, ref.wall)
@@ -154,6 +159,7 @@ final class Backfiller {
         }
         // Keep-on-strap mode: data is durably stored above; skip the cursor and the ack so the strap
         // does not discard its copy.
+        // 'Keep data on strap' mode: store everything but never ack, so another app can still sync from the strap.
         guard acknowledgesChunks() else { return }
         do { try await store.setCursor("strap_trim", Int(trim)) } catch { return }
 
@@ -162,6 +168,7 @@ final class Backfiller {
 
     /// Called when a backfill watchdog timer fires (strap went silent mid-offload).
     /// Clears state without acking — the chunk was never durably committed.
+    // Strap went silent: reset without acking, since the current chunk was never committed.
     func timeoutFired() {
         isBackfilling = false
         chunk.removeAll(keepingCapacity: true)

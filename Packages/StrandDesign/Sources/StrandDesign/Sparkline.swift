@@ -133,6 +133,7 @@ public struct Sparkline: View {
         return StrandPalette.sample(stops: gradient.stops, at: pos)
     }
 
+    // Scales the series to the view: x evenly spaced, y normalised to the min/max of the data.
     private func points(in size: CGSize) -> [CGPoint] {
         guard !values.isEmpty else { return [] }
         let (lo, hi) = bounds
@@ -157,6 +158,7 @@ public struct Sparkline: View {
         return path
     }
 
+    // Closed version of the line used for the faint fill underneath.
     private func areaPath(_ pts: [CGPoint], in size: CGSize) -> Path {
         var path = linePath(pts)
         if let last = pts.last, let first = pts.first {

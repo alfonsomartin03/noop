@@ -1,6 +1,7 @@
 import Foundation
 
 /// One static field entry from a packet spec's "fields" array.
+// Describes one field in a packet: byte offset, length, data type, name, category and optional enum.
 public struct FieldSpec: Codable, Equatable {
     public let off: Int
     public let len: Int
@@ -55,12 +56,14 @@ public struct PacketSpec: Equatable {
     public let versions: [String: VersionSpec]
 }
 
+// The packet layout is data (whoop_protocol.json), not code, so protocol changes rarely need Swift edits.
 public struct Schema {
     public var enums: [String: [String: String]]
     public var envelope: [FieldSpec]
     public var packets: [String: PacketSpec]
     private var byType: [Int: PacketSpec]
 
+    // Index packets by type id and by each alias for O(1) lookup while parsing.
     public init(enums: [String: [String: String]], envelope: [FieldSpec], packets: [String: PacketSpec]) {
         self.enums = enums
         self.envelope = envelope
@@ -95,6 +98,7 @@ public extension Schema {
     /// Pick the layout for a type-47 version byte, following a `ref` chain (V12 -> V24).
     /// Mirrors interpreter._resolve_version: base entry's keys, then this entry's non-ref
     /// keys override.
+    // Versions can inherit from another via 'ref' (e.g. V12 reuses V24); entry fields override the base.
     func resolveVersion(_ versions: [String: VersionSpec], _ version: Int) -> VersionSpec? {
         guard var entry = versions[String(version)] else { return nil }
         var seen = Set<String>()
@@ -171,8 +175,10 @@ private struct RawSchema: Decodable {
     let packets: [String: RawPacket]
 }
 
+// Parsed once and cached: the JSON is a bundled resource and never changes at runtime.
 private var _cachedSchema: Schema?
 
+// fatalError on a missing/corrupt bundle resource is intentional: nothing can work without the schema.
 public func loadSchema() -> Schema {
     if let cached = _cachedSchema { return cached }
     guard let url = Bundle.module.url(forResource: "whoop_protocol", withExtension: "json") else {

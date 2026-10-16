@@ -9,6 +9,7 @@ import SwiftUI
 // animation when the value changes. Center shows the big monospaced number (no %),
 // a state word tinted to the sampled color, and an optional supporting line.
 
+// The signature gauge: a 240-degree arc filled to score/100 using the recovery gradient.
 public struct RecoveryRing: View {
 
     /// Recovery score 0...100.
@@ -217,6 +218,7 @@ public struct RecoveryRing: View {
 // MARK: - Arc Shape
 
 /// An open 240° gauge arc that fills clockwise from the start angle.
+// Custom Shape for the open arc so fill, track and bead share identical geometry.
 public struct RecoveryArc: Shape {
     public var startAngle: Angle
     public var spanDegrees: Double

@@ -24,6 +24,7 @@ public enum EstimateAccuracy {
     }
 
     /// Compare day-keyed official values with day-keyed estimates. Nil when no day overlaps.
+    // Only days present in both sets are compared. bias > 0 means NOOP reads higher than WHOOP.
     public static func compare(official: [String: Double], estimate: [String: Double]) -> Result? {
         var diffs: [Double] = []
         for (day, o) in official {

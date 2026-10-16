@@ -103,6 +103,7 @@ public struct MenuBarContent: View {
     }
 
     /// Public-palette color for a tone (StrandTone.color is module-internal).
+    // Semantic tone -> colour for the status text.
     private func toneColor(_ tone: StrandTone) -> Color {
         switch tone {
         case .neutral:  return StrandPalette.textSecondary
@@ -147,6 +148,7 @@ public struct MenuBarContent: View {
 
     // MARK: Recovery + HR
 
+    // Recovery ring plus live heart rate; shows an empty ring when there is no score yet.
     private var recoveryBlock: some View {
         HStack(spacing: 16) {
             if let recovery {
@@ -194,6 +196,7 @@ public struct MenuBarContent: View {
 
     // MARK: Stats row
 
+    // Compact sleep / strain / HRV summary.
     private var statsRow: some View {
         HStack(spacing: 0) {
             statCell(
@@ -241,6 +244,7 @@ public struct MenuBarContent: View {
 
     // MARK: Actions
 
+    // Shortcuts: open the main window, connect/disconnect, quit.
     private var actions: some View {
         VStack(spacing: 8) {
             if live.bonded {

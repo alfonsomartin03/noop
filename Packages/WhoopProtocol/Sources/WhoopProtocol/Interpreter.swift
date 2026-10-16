@@ -1,5 +1,6 @@
 import Foundation
 
+// One annotated slice of a frame: where it sits, what it's called, its decoded value and raw hex (used by the debug views).
 public struct DecodedField: Codable, Equatable {
     public let off: Int
     public let len: Int
@@ -10,6 +11,7 @@ public struct DecodedField: Codable, Equatable {
     public let note: String?
 }
 
+// The result of decoding one frame: validity, packet type, checksum status, annotated fields and a flat name->value dict.
 public struct ParsedFrame: Codable, Equatable {
     public let ok: Bool
     public let typeName: String
@@ -24,6 +26,7 @@ public struct ParsedFrame: Codable, Equatable {
 
 // MARK: - low-level readers (LE), nil when out of range (mirrors interpreter._read)
 
+// Little-endian readers return nil when out of range, so a truncated frame skips a field instead of crashing.
 @inline(__always) private func readU8(_ f: [UInt8], _ off: Int) -> Int? {
     off + 1 <= f.count ? Int(f[off]) : nil
 }
@@ -56,6 +59,7 @@ private func hexString(_ bytes: ArraySlice<UInt8>) -> String {
 }
 
 /// Field builder: accumulates annotated fields and a flat parsed dict. Port of Python FB.
+// Collects both the annotated field list and the flat parsed dictionary while a frame is decoded.
 final class FieldBuilder {
     let frame: [UInt8]
     var fields: [DecodedField] = []
@@ -72,6 +76,7 @@ final class FieldBuilder {
         let raw = off <= frame.count ? hexString(frame[max(0, off)..<max(off, end)]) : ""
         fields.append(DecodedField(off: off, len: length, name: name, cat: cat,
                                    value: value, raw: raw, note: note))
+        // Envelope/unknown bytes are shown in the field list but kept out of the flat parsed dict.
         if value != nil && cat != "frame" && cat != "unknown" {
             parsed[name] = value
         }
@@ -85,6 +90,7 @@ final class FieldBuilder {
     }
 }
 
+// 4.0 decode: envelope fields, then the schema's static fields, then an optional post-hook for irregular layouts.
 public func parseFrame(_ frame: [UInt8]) -> ParsedFrame {
     let rawHex = frame.map { String(format: "%02x", $0) }.joined()
     if frame.count < 8 || frame[0] != 0xAA {
@@ -110,6 +116,7 @@ public func parseFrame(_ frame: [UInt8]) -> ParsedFrame {
     fb.add(4, 1, "packet_type", "frame", value: .string(typeName))
     fb.add(5, 1, "seq", "frame", value: .int(Int(frame[5])))
 
+    // Unknown packet types still return a frame, with the payload shown as an opaque region.
     let spec = schema.packet(forType: t)
     if spec == nil {
         fb.add(6, 1, "cmd", "cmd", value: frame.count > 6 ? .int(Int(frame[6])) : nil)
@@ -128,6 +135,7 @@ public func parseFrame(_ frame: [UInt8]) -> ParsedFrame {
             fb.add(fld.off, fld.len, fld.name, fld.cat, value: value, note: fld.note)
         }
         // per-type post-hook for irregular fields (populated in PostHooks.swift by B7)
+        // Post-hooks handle packets whose layout can't be expressed as fixed offsets (variable-length lists, versions).
         if let postName = spec!.post, let hook = postHooks[postName] {
             hook(fb, frame, length, schema)
         }
@@ -165,6 +173,7 @@ public func parseFrame(_ frame: [UInt8], family: DeviceFamily) -> ParsedFrame {
     }
 }
 
+// 5.0 decode: only the envelope and type are interpreted; payload bytes are not guessed at.
 private func parseFrameWhoop5(_ frame: [UInt8]) -> ParsedFrame {
     let rawHex = frame.map { String(format: "%02x", $0) }.joined()
     // Minimum whoop5 frame: 8 header bytes + 1 inner (type) + 4 CRC32 trailer.
@@ -234,4 +243,5 @@ private func hexFrameSlice(_ f: [UInt8], _ start: Int, _ end: Int) -> String {
 // Post-hook registry (populated in PostHooks.swift by Task B7).
 // name -> (FieldBuilder, frame, length, schema) -> Void
 typealias PostHook = (FieldBuilder, [UInt8], Int?, Schema) -> Void
+// Registry filled by registerPostHooks() when the schema loads.
 var postHooks: [String: PostHook] = [:]

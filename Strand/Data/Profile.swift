@@ -4,6 +4,7 @@ import Combine
 /// User profile (age/sex/body metrics/HR-max) persisted in UserDefaults.
 /// Powers HR zones, calories and recovery baselines.
 @MainActor
+// Each property writes itself to UserDefaults in didSet, so there is no separate 'save' step.
 final class ProfileStore: ObservableObject {
     @Published var age: Int { didSet { d.set(age, forKey: K.age) } }
     @Published var sex: String { didSet { d.set(sex, forKey: K.sex) } }          // "male" | "female" | "nonbinary"
@@ -27,5 +28,6 @@ final class ProfileStore: ObservableObject {
     }
 
     /// Tanaka estimate unless overridden.
+    // 0 means 'not overridden': fall back to the Tanaka age formula.
     var hrMax: Int { hrMaxOverride > 0 ? hrMaxOverride : Int((208 - 0.7 * Double(age)).rounded()) }
 }

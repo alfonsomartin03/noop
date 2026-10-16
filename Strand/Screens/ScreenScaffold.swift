@@ -3,6 +3,7 @@ import StrandDesign
 
 /// Standard scrollable screen container: large title + quiet subtitle + a centered, width-limited
 /// content column on the grouped background.
+// Every screen uses this wrapper so titles, padding and max content width are identical.
 struct ScreenScaffold<Content: View>: View {
     let title: String
     var subtitle: String? = nil
@@ -42,6 +43,7 @@ struct ComingSoon: View {
 }
 
 /// A reusable "what shows now vs what needs an import" note for empty / pending data states.
+// Standard empty-state note explaining what appears once data exists.
 struct DataPendingNote: View {
     let title: String
     let message: String

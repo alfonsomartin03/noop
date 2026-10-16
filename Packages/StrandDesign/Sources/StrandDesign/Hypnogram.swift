@@ -197,12 +197,14 @@ public struct Hypnogram: View {
 
     // MARK: Geometry
 
+    // Stage -> vertical row: awake at the top, deep at the bottom.
     private func rowY(_ rank: Int, in totalHeight: CGFloat) -> CGFloat {
         let usable = totalHeight
         let step = usable / CGFloat(rowCount)
         return step * (CGFloat(rank) + 0.5)
     }
 
+    // Each interval becomes a horizontal band positioned by time (x) and stage (y).
     private func bandRect(for interval: SleepInterval, in size: CGSize) -> CGRect {
         let x0 = min(size.width, max(0, CGFloat((interval.start - origin) / span) * size.width))
         let x1 = min(size.width, max(0, CGFloat((interval.end - origin) / span) * size.width))
@@ -211,6 +213,7 @@ public struct Hypnogram: View {
         return CGRect(x: x0, y: y - thickness / 2, width: max(2, x1 - x0), height: thickness)
     }
 
+    // Thin vertical connectors between bands so the trace reads as one continuous staircase.
     private func risers(in size: CGSize) -> some View {
         Path { p in
             for i in 0..<(intervals.count - (intervals.isEmpty ? 0 : 1)) {

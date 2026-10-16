@@ -5,6 +5,7 @@ import Foundation
 /// This package is platform-pure: it never imports CoreBluetooth. The app layer is responsible
 /// for turning the UUID *strings* exposed here into `CBUUID` values. Keeping CBUUID out of this
 /// module lets the protocol code run on any platform (and in CLI tools / tests) unchanged.
+// WHOOP 4.0 and 5.0/MG speak a similar protocol with different UUIDs and header checksums; this enum is the one switch.
 public enum DeviceFamily: String, Sendable, CaseIterable {
     /// Whoop 4.0 — 0x07 CRC8 header check.
     case whoop4
@@ -78,6 +79,7 @@ public extension DeviceFamily {
     /// The Whoop 5.0 hello is a fully-formed type-35 (COMMAND) frame with CRC16-Modbus header and
     /// CRC32 payload trailer. Transcribed verbatim from the Goose reverse-engineering
     /// (`GooseHello.clientHelloFrameHex` = "aa0108000001e67123019101363e5c8d").
+    // Fixed handshake frame written right after connecting; only the 5.0 needs one.
     var clientHello: [UInt8]? {
         switch self {
         case .whoop4:
@@ -114,6 +116,7 @@ public enum PuffinPacketType {
 /// For every other type this defers to the schema's own `typeName`, so existing behaviour is
 /// unchanged. This guarantees the puffin types never decode as "unknown" even if the schema's
 /// PacketType enum lacks them.
+// 5.0 'puffin' packet types are aliased onto their 4.0 equivalents so the same decoders work for both.
 public func canonicalTypeName(_ t: Int, schema: Schema) -> String {
     switch t {
     case PuffinPacketType.puffinCommandResponse: return "COMMAND_RESPONSE"

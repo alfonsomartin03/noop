@@ -4,6 +4,7 @@ import Foundation
 // Phase E and WhoopStore depend on these EXACT shapes. ts is wall-clock unix seconds
 // EXCEPT inside extractStreams' inputs; the structs themselves always carry wall-clock ts.
 
+// The row types below are the compact, durable form of decoded data; ts is always wall-clock unix seconds.
 public struct HRSample: Equatable, Codable {
     public let ts: Int          // wall-clock unix seconds
     public let bpm: Int
@@ -77,6 +78,7 @@ public struct GravitySample: Equatable, Codable {
     }
 }
 
+// One bundle of every stream decoded from a batch of frames.
 public struct Streams: Equatable, Codable {
     public var hr: [HRSample]
     public var rr: [RRInterval]
@@ -101,6 +103,7 @@ public struct Streams: Equatable, Codable {
 
     // Custom decode so older fixtures (streams_golden.json / historical_golden.json) that
     // lack the new biometric keys still decode — missing arrays default to empty.
+    // Missing keys decode as empty arrays so older fixtures still load.
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         hr = try c.decodeIfPresent([HRSample].self, forKey: .hr) ?? []
@@ -118,6 +121,7 @@ extension Streams { public static let empty = Streams() }
 
 /// Map a device-epoch timestamp to wall-clock unix seconds via a pure linear offset.
 /// Assumes strap clock and wall clock tick at the same rate (no skew/drift). Port of _to_wall.
+// The strap's clock is arbitrary; one reference pair (device, wall) maps its timestamps to real time.
 private func toWall(_ deviceTs: Int?, _ deviceClockRef: Int, _ wallClockRef: Int) -> Int? {
     guard let deviceTs = deviceTs else { return nil }
     return wallClockRef + (deviceTs - deviceClockRef)
@@ -128,6 +132,7 @@ private func toWall(_ deviceTs: Int?, _ deviceClockRef: Int, _ wallClockRef: Int
 /// HR/R-R are taken ONLY from REALTIME_DATA (type 40). REALTIME_RAW_DATA (type 43) also
 /// carries an HR byte but streams alongside type-40 during raw collection, so routing both
 /// would double-count HR for the same instants. CRC-failed and non-ok frames are skipped.
+// Live path: HR/RR come only from REALTIME_DATA, since the raw packet repeats the same heartbeat and would double count.
 public func extractStreams(_ parsed: [ParsedFrame],
                            deviceClockRef: Int, wallClockRef: Int) -> Streams {
     var out = Streams()
@@ -168,6 +173,7 @@ public func extractStreams(_ parsed: [ParsedFrame],
 /// Append a BatterySample from a parsed frame's battery_pct/battery_mV/battery_charging
 /// fields (no-op when neither soc nor mv is present). charging is a real Bool only when the
 /// frame reported it (BATTERY_LEVEL events); command responses leave it nil.
+// Battery rows are added only when a percentage or millivolt value was present.
 func appendBattery(_ out: inout Streams, ts: Int, p: [String: ParsedValue]) {
     let soc = p["battery_pct"]?.doubleValue
     let mv = p["battery_mV"]?.intValue
@@ -185,6 +191,7 @@ func appendBattery(_ out: inout Streams, ts: Int, p: [String: ParsedValue]) {
 /// 4-byte-longer 5.0 header, i.e. `@10 / @14 / @16 / @17 / @18`. It matches the observed 32-byte frames
 /// (8 header + 20 payload + 4 CRC32) and must be confirmed against a real strap (timestamps should step ~1 s,
 /// heart rate should be steady and plausible).
+// 5.0 realtime layout is inferred from 4.0 shifted by the longer header, so verify against a real strap.
 public struct Whoop5Realtime: Equatable, Sendable {
     public let timestamp: UInt32
     public let subseconds: UInt16
@@ -231,6 +238,7 @@ public struct Whoop5HistoricalRecord: Equatable, Sendable {
     }
 }
 
+// Sanity checks (plausible timestamp, RR range, unit-length gravity) reject misaligned or garbage records.
 public func decodeWhoop5Historical(_ frame: [UInt8]) -> Whoop5HistoricalRecord? {
     guard frame.count >= 8 + 112 + 4, frame[8] == 47, frame[9] == 0x12,
           verifyFrame(frame, family: .whoop5).ok else { return nil }

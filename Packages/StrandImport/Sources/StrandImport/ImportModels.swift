@@ -4,6 +4,7 @@ import Foundation
 
 /// Where a normalized row originated. Mirrors the `dataSource.kind` provenance
 /// described in the Strand design spec (§5).
+// The kinds of file the app can import.
 public enum DataSourceKind: String, Sendable, Codable, Equatable, CaseIterable {
     case appleHealth
     case whoopExport
@@ -16,6 +17,7 @@ public enum DataSourceKind: String, Sendable, Codable, Equatable, CaseIterable {
 /// Timestamps are normalized to UTC `Date`s while the original UTC offset (in
 /// minutes) is preserved in `tzOffsetMin`, matching the `hkSample` table shape
 /// in the design spec (§5).
+// One Apple Health record (heart rate, steps, ...). tzOffsetMin preserves the local time zone it was recorded in.
 public struct HealthSample: Sendable, Equatable, Hashable {
     /// HealthKit type identifier, stripped of the `HKQuantityTypeIdentifier` /
     /// `HKCategoryTypeIdentifier` prefix (e.g. `HeartRate`, `SleepAnalysis`).
@@ -61,6 +63,7 @@ public struct HealthSample: Sendable, Equatable, Hashable {
     /// Dedupe key per the spec: `type+startDate+endDate+sourceName+value`.
     /// Records nested in a `<Correlation>` also appear at top level; collapsing
     /// on this key removes the duplicates.
+    // Identity of a sample (type + time + source + value), so re-importing the same export adds nothing new.
     public var dedupeKey: String {
         let v = valueString ?? value.map { String($0) } ?? ""
         return "\(type)|\(start.timeIntervalSince1970)|\(end.timeIntervalSince1970)|\(sourceName ?? "")|\(v)"
@@ -110,6 +113,7 @@ public struct HealthWorkout: Sendable, Equatable {
 
 /// The canonical sleep stages Strand recognises from Apple Health
 /// `HKCategoryValueSleepAnalysis*` values.
+// Apple Health sleep categories. Older exports use a single 'Asleep'; newer ones split core/deep/REM.
 public enum SleepStage: String, Sendable, Equatable, CaseIterable {
     case inBed
     case asleepUnspecified   // legacy "Asleep"
@@ -122,6 +126,7 @@ public enum SleepStage: String, Sendable, Equatable, CaseIterable {
     /// Map a raw HealthKit `SleepAnalysis` category value string to a stage.
     /// Accepts both the modern `HKCategoryValueSleepAnalysis…` form and the
     /// legacy numeric/short forms.
+    // Accepts both the HealthKit constant names and plain/numeric forms found in different export versions.
     public static func from(rawValue raw: String) -> SleepStage {
         switch raw {
         case "HKCategoryValueSleepAnalysisInBed", "InBed", "0":
@@ -173,6 +178,7 @@ public struct SleepStageInterval: Sendable, Equatable {
 /// stored in **kcal** (Whoop's CSV `(cal)` is actually kcal). Timestamps are the
 /// raw `YYYY-MM-DD HH:MM:SS` strings parsed against `cycleTimezone` into UTC
 /// `Date`s, with the offset preserved in `tzOffsetMin`.
+// One physiological cycle (a day) from the WHOOP export; nearly every field is optional because exports have gaps.
 public struct WhoopCycleRow: Sendable, Equatable {
     /// Cycle start (UTC). The primary key for a Whoop day.
     public var cycleStart: Date?
@@ -216,6 +222,7 @@ public struct WhoopCycleRow: Sendable, Equatable {
 
 /// One row of `sleeps.csv` — per sleep or nap. Adds the `Nap` boolean over the
 /// daily cycle summary.
+// One sleep from the export; naps are flagged with isNap.
 public struct WhoopSleepRow: Sendable, Equatable {
     public var cycleStart: Date?
     public var sleepOnset: Date?
@@ -248,6 +255,7 @@ public struct WhoopSleepRow: Sendable, Equatable {
 // MARK: - Whoop workout (workouts.csv)
 
 /// One row of `workouts.csv`. GPS / distance / altitude columns are optional.
+// One workout from the export, including zone percentages.
 public struct WhoopWorkoutRow: Sendable, Equatable {
     public var cycleStart: Date?
     public var workoutStart: Date?
@@ -300,6 +308,7 @@ public struct WhoopJournalRow: Sendable, Equatable {
 
 /// Lightweight summary of an import: how many normalized rows were produced and
 /// the overall date span they cover.
+// Lightweight stats shown to the user after an import.
 public struct ImportSummary: Sendable, Equatable {
     public var sourceKind: DataSourceKind
     public var recordCount: Int

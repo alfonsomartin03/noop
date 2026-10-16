@@ -15,6 +15,7 @@ import WhoopStore
 /// Sandbox-safe: relies on the `com.apple.security.files.user-selected.read-write` entitlement and
 /// security-scoped access on the panel-returned URLs. Every path is best-effort — failures surface
 /// as a `.failure` result and never crash.
+// Whole-database backup: everything lives in one SQLite file, so export/import is a file copy (after flushing the WAL).
 enum DataBackup {
 
     // MARK: - Result
@@ -93,6 +94,7 @@ enum DataBackup {
     /// backup over the live database path (removing the `-wal`/`-shm` siblings). The store stays
     /// open, so the swapped-in file only takes effect after a relaunch — the caller informs the user.
     @MainActor
+    // Safety order: validate the file, keep a timestamped copy of the current DB, then swap. A relaunch is needed because the old file is still open.
     static func runImport() async -> BackupResult {
         let dbPath: String
         do { dbPath = try StorePaths.defaultDatabasePath() }
@@ -171,6 +173,7 @@ enum DataBackup {
     }
 
     /// Read the first 16 bytes and check for the SQLite magic header.
+    // Checks the 16-byte SQLite magic header so a random file can't replace the database.
     private static func isSQLiteFile(at url: URL) -> Bool {
         guard let handle = try? FileHandle(forReadingFrom: url) else { return false }
         defer { try? handle.close() }

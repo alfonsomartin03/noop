@@ -10,6 +10,7 @@ import StrandAnalytics
 /// WHOOP's cloud — for any day the strap collected raw data with NOOP connected, NOOP scores it
 /// itself rather than relying on the values WHOOP computed in the imported CSV.
 @MainActor
+// Turns raw strap streams into recovery/strain/sleep/workouts on-device and stores them under a separate '-noop' device id.
 final class IntelligenceEngine: ObservableObject {
     private let repo: Repository
     private let profile: ProfileStore
@@ -36,6 +37,7 @@ final class IntelligenceEngine: ObservableObject {
     /// Compute on-device scores for each of the last `maxDays` that actually has raw HR data.
     /// Personal baselines (HRV / resting HR) are folded from the imported history, so even the first
     /// live night can be scored against your norm.
+    // Per day: read a window of raw streams -> AnalyticsEngine.analyzeDay -> collect daily rows, sleep sessions and workouts -> save once at the end.
     func analyzeRecent(maxDays: Int = 21) async {
         guard let store = await repo.storeHandle() else { note = "No on-device store yet."; return }
         guard let hrvCfg = Baselines.metricCfg["hrv"],
@@ -49,6 +51,7 @@ final class IntelligenceEngine: ObservableObject {
 
         // Baselines from the imported nightly history (ascending). foldHistory winsorizes outliers.
         let hist = repo.days
+        // Personal baselines come from imported history, so even the first live night can be scored against your norm.
         let hrvBase = Baselines.foldHistory(hist.map { $0.avgHrv }, cfg: hrvCfg)
         let rhrBase = Baselines.foldHistory(hist.map { $0.restingHr.map(Double.init) }, cfg: rhrCfg)
         let baselines = AnalyticsEngine.ProfileBaselines(hrv: hrvBase, restingHR: rhrBase)
@@ -60,14 +63,17 @@ final class IntelligenceEngine: ObservableObject {
         var cachedSleep: [CachedSleepSession] = []
         var detected: [WorkoutRow] = []
 
+        // Walk back one day at a time from now.
         for offset in 0..<maxDays {
             let dayStart = now - offset * 86_400
             let day = AnalyticsEngine.dayString(dayStart)
             // Read a generous window around the night that ends on `day`; the stager finds the span.
+            // Window reaches back 30 h and ahead 12 h so the night ending on this day is fully covered.
             let from = dayStart - 30 * 3_600
             let to = dayStart + 12 * 3_600
 
             let hr = (try? await store.hrSamples(deviceId: deviceId, from: from, to: to, limit: 200_000)) ?? []
+            // Skip days without real raw data (a stray sample isn't enough to score).
             guard hr.count >= 200 else { continue }   // need real raw data, not a stray sample
             let rr = (try? await store.rrIntervals(deviceId: deviceId, from: from, to: to, limit: 200_000)) ?? []
             let resp = (try? await store.respSamples(deviceId: deviceId, from: from, to: to, limit: 200_000)) ?? []
@@ -79,6 +85,7 @@ final class IntelligenceEngine: ObservableObject {
                                 sleepMin: res.daily.totalSleepMin, hrv: res.daily.avgHrv,
                                 rhr: res.daily.restingHr))
             dailies.append(res.daily)
+            // Each detected workout becomes a stored row with its zone breakdown and strain.
             for w in res.workouts {
                 let seg = hr.filter { $0.ts >= w.start && $0.ts <= w.end }
                 let zones = Dictionary(uniqueKeysWithValues: (1...5).map { ("z\($0)", w.zoneTimePct[$0] ?? 0) })
@@ -98,10 +105,12 @@ final class IntelligenceEngine: ObservableObject {
         // (Today / Recovery / Strain / Sleep / Trends), not just this screen, reads them. The
         // Repository merges these UNDER any imported "my-whoop" rows, so a real WHOOP import
         // always wins; this only fills the days the strap collected but no import covered.
+        // Computed data is kept under a separate id so it never overwrites real WHOOP-imported rows.
         let computedId = deviceId + "-noop"
         if !dailies.isEmpty { _ = try? await store.upsertDailyMetrics(dailies, deviceId: computedId) }
         // Overlapping day windows re-detect the same workout with slightly different edges; keep one
         // (the longest) per overlapping group so the Workouts page doesn't list it twice.
+        // Overlapping day windows re-detect the same workout with slightly different edges; keep the longest of each overlap.
         var uniq: [WorkoutRow] = []
         for w in detected.sorted(by: { $0.startTs < $1.startTs }) {
             if let l = uniq.last, w.startTs <= l.endTs {

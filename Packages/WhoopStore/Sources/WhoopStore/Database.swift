@@ -3,6 +3,7 @@ import GRDB
 
 extension WhoopStore {
     /// The schema migrator. v1 creates decoded-stream tables (durable) + the raw outbox.
+    // Migrations are append-only: never edit an old one, add a new vN so existing installs upgrade in place.
     static func makeMigrator() -> DatabaseMigrator {
         var migrator = DatabaseMigrator()
         migrator.registerMigration("v1") { db in
@@ -53,12 +54,14 @@ extension WhoopStore {
                 t.column("syncedAt", .integer)
             }
         }
+        // v2: key/value cursors (sync positions).
         migrator.registerMigration("v2") { db in
             try db.create(table: "cursors") { t in
                 t.column("name", .text).primaryKey()
                 t.column("value", .integer)
             }
         }
+        // v3: extra biometric streams (SpO2, skin temp, respiration, gravity).
         migrator.registerMigration("v3") { db in
             // type-47 biometric streams (mirror the existing decoded tables, PK (deviceId, ts)).
             try db.create(table: "spo2Sample") { t in
@@ -89,6 +92,7 @@ extension WhoopStore {
                 t.primaryKey(["deviceId", "ts"])
             }
         }
+        // v4: cached derived results (sleep sessions, daily metrics).
         migrator.registerMigration("v4") { db in
             // Server-derived metrics cached locally (Task 3.1: History = union(phone, server)).
             // sleepSession: one row per sleep session, natural key (deviceId, startTs).
@@ -151,6 +155,7 @@ extension WhoopStore {
                 t.add(column: "respRateBpm", .double)
             }
         }
+        // v8: journal, workouts and Apple Health daily aggregates.
         migrator.registerMigration("v8") { db in
             // Journal, workouts, and Apple-Health daily aggregates.
             // journal: one row per (deviceId, day, question) — user-answered daily prompts.

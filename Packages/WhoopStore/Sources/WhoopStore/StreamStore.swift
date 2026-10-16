@@ -13,6 +13,7 @@ extension WhoopStore {
     }
 
     /// Insert or update a device row (natural key = id).
+    // Upsert: first call sets firstSeen; later calls only refresh mac/name/lastSeen.
     public func upsertDevice(id: String, mac: String?, name: String?) async throws {
         let now = Int(Date().timeIntervalSince1970)
         try syncWrite { db in
@@ -34,6 +35,7 @@ extension WhoopStore {
     /// is intentionally NOT written here — it is unused and defaults to 0. The column is left in the
     /// schema to avoid a DROP COLUMN migration over existing data; nothing reads it.
     @discardableResult
+    // DO NOTHING on conflict makes imports/backfills idempotent: re-ingesting the same samples never duplicates rows.
     public func insert(_ streams: Streams, deviceId: String) async throws
         -> (hr: Int, rr: Int, events: Int, battery: Int,
             spo2: Int, skinTemp: Int, resp: Int, gravity: Int) {
@@ -45,6 +47,7 @@ extension WhoopStore {
             // over potentially millions of historical rows). cachedStatement persists the compiled
             // statement on the connection across insert() calls too. Each loop is guarded so empty
             // streams (the common live case) compile nothing.
+            // Same pattern for each stream below: skip empty streams, reuse one prepared statement, count rows actually inserted.
             if !streams.hr.isEmpty {
                 let stmt = try db.cachedStatement(sql: """
                     INSERT INTO hrSample (deviceId, ts, bpm) VALUES (?, ?, ?)

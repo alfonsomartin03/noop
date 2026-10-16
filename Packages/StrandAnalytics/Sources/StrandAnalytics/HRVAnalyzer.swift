@@ -75,6 +75,7 @@ public enum HRVAnalyzer {
 
     /// Task Force (1996) RMSSD over already-clean NN intervals (ms). Returns nil
     /// when fewer than 2 values (no successive differences). No filtering applied.
+    // RMSSD: root-mean-square of beat-to-beat differences; reflects short-term (parasympathetic) variability.
     public static func rmssdRaw(_ nn: [Double]) -> Double? {
         guard nn.count >= 2 else { return nil }
         var sumSq = 0.0
@@ -108,6 +109,7 @@ public enum HRVAnalyzer {
     /// beat under test). Beats with too small a neighbourhood are kept.
     ///
     /// NOTE: this replaces neurokit2's Kubios classifier (see file header).
+    // Compare each beat to the median of its neighbours (excluding itself); big jumps are ectopic/artifact beats.
     public static func rejectEctopic(_ nn: [Double]) -> [Double] {
         guard nn.count > ectopicWindowRadius else { return nn }
         var kept: [Double] = []
@@ -118,6 +120,7 @@ public enum HRVAnalyzer {
             var neighbours: [Double] = []
             neighbours.reserveCapacity(hi - lo)
             for j in lo...hi where j != i { neighbours.append(nn[j]) }
+            // Too few neighbours (edges of the series): keep the beat rather than guess.
             guard neighbours.count >= 2 else { kept.append(nn[i]); continue }
             let med = median(neighbours)
             if med <= 0 { kept.append(nn[i]); continue }
@@ -156,6 +159,7 @@ public enum HRVAnalyzer {
 
     /// Compute HRV from raw RR-interval values (ms), applying the full cleaning
     /// pipeline. Returns an empty result when fewer than `minBeats` survive.
+    // Pipeline: range filter -> ectopic rejection -> need >= minBeats -> RMSSD/SDNN/pNN50.
     public static func analyze(rawRR: [Double]) -> HRVResult {
         let nInput = rawRR.count
         let clean = cleanRR(rawRR)
@@ -169,6 +173,7 @@ public enum HRVAnalyzer {
         // pNN50 over the clean NN series.
         var nn50 = 0
         for i in 1..<clean.count where abs(clean[i] - clean[i - 1]) > 50.0 { nn50 += 1 }
+        // pNN50 = % of successive beat pairs differing by more than 50 ms.
         let pnn50 = Double(nn50) / Double(clean.count - 1) * 100.0
 
         return HRVResult(rmssd: rmssd, sdnn: sdnn, meanNN: mean, pnn50: pnn50,

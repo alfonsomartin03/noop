@@ -15,6 +15,7 @@ import Foundation
 // Both produce a `BaselineState` so RecoveryScorer can consume either uniformly.
 
 /// Per-metric configuration for the baseline model.
+// Per-metric tuning: plausible bounds, minimum spread, and how fast the baseline adapts.
 public struct MetricCfg: Equatable, Sendable {
     public let minVal: Double       // physiological lower bound (hard reject below)
     public let maxVal: Double       // physiological upper bound (hard reject above)
@@ -33,6 +34,7 @@ public struct MetricCfg: Equatable, Sendable {
 }
 
 /// Baseline status flags (cold-start → trusted → stale).
+// Lifecycle: calibrating -> provisional -> trusted; stale if nights go missing.
 public enum BaselineStatus: String, Equatable, Sendable {
     case calibrating  // fewer than MIN_NIGHTS_SEED valid nights; no score yet
     case provisional  // between seed and trust thresholds; usable, higher uncertainty
@@ -119,6 +121,7 @@ public enum Baselines {
     public static var respCfg: MetricCfg { metricCfg["resp"]! }
 
     /// Convert a half-life in nights to an EWMA smoothing factor.
+    // Half-life -> EWMA weight. After halfLife nights an old value's influence has halved.
     static func lambda(halfLife: Double) -> Double {
         1.0 - pow(0.5, 1.0 / halfLife)
     }
@@ -138,6 +141,7 @@ public enum Baselines {
     /// - `value == nil` or out-of-range: skip-and-hold (carry forward).
     /// - hard outlier (> HARD_OUTLIER_K × spread): seen but not folded.
     /// - otherwise: Winsorized EWMA center + EWMA-abs-dev spread update.
+    // Order of checks: first night, missing night, out-of-range, hard outlier, then the normal update.
     public static func update(_ state: BaselineState?, value: Double?, cfg: MetricCfg) -> BaselineState {
         let lb = lambda(halfLife: cfg.halfLifeB)
         let ls = lambda(halfLife: cfg.halfLifeS)
@@ -186,12 +190,14 @@ public enum Baselines {
         }
 
         // Step 1: Winsorized EWMA update.
+        // Winsorize: clamp extreme nights before folding so one bad night can't drag the baseline.
         let lo = state.baseline - winsorK * state.spread
         let hi = state.baseline + winsorK * state.spread
         let clamped = max(lo, min(hi, value))
         let newBaseline = lb * clamped + (1.0 - lb) * state.baseline
 
         // Spread uses the UNCLAMPED value so true deviations are tracked.
+        // Spread uses the unclamped value so genuine variability is still tracked.
         let absDev = abs(value - newBaseline)
         let newSpread = max(cfg.floorSpread, ls * absDev + (1.0 - ls) * state.spread)
         let newN = state.nValid + 1
@@ -203,6 +209,7 @@ public enum Baselines {
 
     /// Replay an ordered sequence of nightly values (oldest first) to build state.
     /// `nil` entries are treated as missing nights (skip-and-hold).
+    // Replays history oldest-first so stored nights rebuild the exact same baseline.
     public static func foldHistory(_ values: [Double?], cfg: MetricCfg) -> BaselineState {
         var state: BaselineState? = nil
         for v in values { state = update(state, value: v, cfg: cfg) }
@@ -240,6 +247,7 @@ public enum Baselines {
     ///   - values: ordered nightly values (oldest → newest); nils allowed.
     ///   - cfg: metric config (bounds + floor spread).
     ///   - window: number of trailing valid nights to use (default 30).
+    // Simple, explainable alternative: plain mean/SD of the last N valid nights.
     public static func rollingMeanSD(_ values: [Double?], cfg: MetricCfg, window: Int = 30) -> BaselineState {
         let valid = values.compactMap { v -> Double? in
             guard let v = v, cfg.minVal <= v && v <= cfg.maxVal else { return nil }
@@ -266,6 +274,7 @@ public enum Baselines {
 
         // Apply the σ floor in σ-space, then convert to internal abs-dev space.
         let sigmaFloored = max(cfg.floorSpread, sd)
+        // Stored in abs-dev units (SD / 1.253) so deviation() gives back the same sigma.
         let spreadInternal = sigmaFloored / 1.253
 
         return BaselineState(baseline: mean, spread: spreadInternal, nValid: n,

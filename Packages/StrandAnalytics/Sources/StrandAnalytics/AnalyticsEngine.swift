@@ -54,6 +54,7 @@ public enum AnalyticsEngine {
         }
     }
 
+    // Cached: DateFormatter is expensive to build. Local timezone so "today" matches what the user sees.
     private static let isoDay: DateFormatter = {
         let f = DateFormatter()
         f.locale = Locale(identifier: "en_US_POSIX")
@@ -84,6 +85,7 @@ public enum AnalyticsEngine {
     ///   - baselines: personal baselines for recovery normalization.
     ///   - maxHROverride: explicit HRmax (bpm) to use for strain/zones; nil →
     ///     Tanaka from profile.age.
+    // Order matters: sleep first (gives resting HR + HRV), then recovery (needs those), then workouts and strain.
     public static func analyzeDay(day: String,
                                   hr: [HRSample] = [],
                                   rr: [RRInterval] = [],
@@ -113,11 +115,13 @@ public enum AnalyticsEngine {
             tstS += m.tstS
             disturbances += m.disturbances
         }
+        // Efficiency is weighted by time in bed so a short nap doesn't drag down a full night.
         let efficiency = inBedS > 0 ? effWeighted / inBedS : 0.0
 
         // Daily resting HR = lowest per-session resting HR across matched sessions.
         let restingHRDaily = matched.compactMap { $0.restingHR }.min()
         // Daily avg HRV = in-bed-weighted mean of per-session avg HRV.
+        // Same in-bed weighting for HRV across multiple sleep sessions.
         let avgHRVDaily: Double? = {
             let pairs = matched.compactMap { s -> (Double, Double)? in
                 s.avgHRV.map { ($0, Double(s.end - s.start)) }
@@ -133,6 +137,7 @@ public enum AnalyticsEngine {
 
         // ── Recovery ──────────────────────────────────────────────────────────
         var recovery: Double? = nil
+        // Recovery needs HRV, resting HR and an HRV baseline; otherwise stay nil instead of guessing.
         if let hrvVal = avgHRVDaily, let rhrVal = restingHRDaily, let hrvBase = baselines.hrv {
             // Sleep-performance proxy = in-bed-weighted efficiency (0..1).
             let sleepPerf = matched.isEmpty ? nil : efficiency
@@ -147,7 +152,9 @@ public enum AnalyticsEngine {
         }
 
         // ── Workouts ──────────────────────────────────────────────────────────
+        // User override wins; otherwise Tanaka from age.
         let effMaxHR: Double? = maxHROverride ?? (profile.age > 0 ? StrainScorer.tanakaHRmax(age: profile.age) : nil)
+        // Day resting HR from sleep is the best baseline for 'elevated' HR, so pass it through.
         let workouts = WorkoutDetector.detect(
             hr: hr, gravity: gravity,
             restingHR: restingHRDaily.map(Double.init),
@@ -156,6 +163,7 @@ public enum AnalyticsEngine {
             profile: profile)
 
         // ── Strain: fitted WHOOP model = log of the workouts' weighted zone load plus a rest-day floor ──
+        // Day strain = log of summed zone load of workouts + a rest-day floor (see StrainScorer).
         let strain: Double?
         if hr.count < StrainScorer.minReadings {
             strain = nil
@@ -168,6 +176,7 @@ public enum AnalyticsEngine {
                 return StrainScorer.whoopZoneLoad(seg, maxHR: w.hrmax ?? maxForLoad, sampleDurationMin: StrainScorer.fallbackSampleMin)
             }
             // Plus sustained high-HR effort the motion gate missed (e.g. a still wrist while cycling).
+            // Catches long hard efforts that workout detection did not claim, without double counting.
             loads.append(StrainScorer.highEffortLoad(hr, maxHR: maxForLoad,
                                                      excluding: workouts.map { ($0.start, $0.end) }))
             strain = StrainScorer.dayStrain(workoutLoads: loads)
@@ -193,6 +202,7 @@ public enum AnalyticsEngine {
         _ = sleepStart; _ = sleepEnd  // available for callers wiring sleep_start/end columns
 
         // ── Cache rows ────────────────────────────────────────────────────────
+        // Rows in the shape the cache table stores, so callers can persist them directly.
         let cachedSleep = matched.map { s in
             CachedSleepSession(
                 startTs: s.start, endTs: s.end,

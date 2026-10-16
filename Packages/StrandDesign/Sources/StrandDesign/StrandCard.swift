@@ -6,6 +6,7 @@ import SwiftUI
 // mandated hover lift (shadow + translateY(-1px)) with a hairline → hairline.strong
 // border transition. Use `.strandCardHover()` to add the lift to any view.
 
+// Card container with hover lift.
 public struct StrandCard<Content: View>: View {
 
     public var padding: CGFloat
@@ -34,6 +35,7 @@ public struct StrandCard<Content: View>: View {
 
 /// The mandated hover behavior: shadow-md + translateY(-1px) and a hairline →
 /// hairline.strong border on hover. Apply to any card-like surface.
+// Hover effect: small shadow and 1pt upward shift.
 public struct StrandCardHover: ViewModifier {
     public var cornerRadius: CGFloat
     @State private var hovering = false

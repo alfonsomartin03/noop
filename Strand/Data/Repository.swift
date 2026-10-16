@@ -7,11 +7,13 @@ import StrandAnalytics
 /// Read model over the on-device WhoopStore. Opens its own handle (WAL + busy-timeout makes the
 /// two-handle BLEManager+Repository pattern safe) and publishes the dashboard caches the screens bind to.
 @MainActor
+// Read model for the UI: owns a store handle and publishes the merged dashboard data.
 final class Repository: ObservableObject {
     let deviceId: String
     /// Source id for on-device computed scores (recovery/strain/sleep derived from the raw strap
     /// streams by IntelligenceEngine). Merged UNDER the imported `deviceId` rows at read time, so a
     /// real WHOOP import always wins and the strap-only user still gets a populated dashboard.
+    // Rows computed on-device live under their own id and are merged under imported ones at read time.
     private var computedDeviceId: String { deviceId + "-noop" }
     private var store: WhoopStore?
 
@@ -36,6 +38,7 @@ final class Repository: ObservableObject {
     /// The trailing 7 days (for the week strip), oldest→newest.
     var week: [DailyMetric] { Array(days.suffix(7)) }
 
+    // Lazy open: the database is created on first use.
     private func ensureStore() async -> WhoopStore? {
         if let store { return store }
         guard let path = try? StorePaths.defaultDatabasePath() else { return nil }
@@ -58,6 +61,7 @@ final class Repository: ObservableObject {
 
     /// Reload the dashboard caches over the last `nDays`, merging imported history with the
     /// on-device computed scores so a strap-only user still gets a populated dashboard.
+    // Loads imported + computed rows, merges them, and records which days are 'official' (imported) vs NOOP estimates.
     func refresh(days nDays: Int = 4000) async {
         guard let store = await ensureStore() else { return }
         let now = Date()
@@ -70,6 +74,7 @@ final class Repository: ObservableObject {
         // Drop computed rows dated after local today: older builds keyed days in UTC, so after ~8 pm a
         // near-empty "tomorrow" row existed and shadowed the real today in `today = days.last`.
         let todayKey = Self.dayString(now)
+        // Rows dated after local today are dropped (older builds keyed days in UTC and created a bogus 'tomorrow').
         let computed = ((try? await store.dailyMetrics(deviceId: computedDeviceId, from: fromDay, to: toDay)) ?? [])
             .filter { $0.day <= todayKey }
         let impSleep = (try? await store.sleepSessions(deviceId: deviceId, from: lo, to: hi, limit: 4000)) ?? []
@@ -102,6 +107,7 @@ final class Repository: ObservableObject {
 
     /// WHOOP-imported values are treated as the more accurate source and win per FIELD; NOOP's own
     /// computed values only fill the fields (or whole days) the import doesn't have.
+    // Precedence is per field: WHOOP-imported values win, NOOP fills only what is missing.
     private static func mergeDaily(imported: [DailyMetric], computed: [DailyMetric]) -> [DailyMetric] {
         var byDay: [String: DailyMetric] = [:]
         for d in computed { byDay[d.day] = d }
@@ -120,6 +126,7 @@ final class Repository: ObservableObject {
     }
 
     /// Same precedence for sleep sessions, keyed by the day the night ends on.
+    // Sleep sessions are matched by the day the night ENDS; imported replaces computed.
     private static func mergeSleep(imported: [CachedSleepSession], computed: [CachedSleepSession]) -> [CachedSleepSession] {
         func endDay(_ s: CachedSleepSession) -> String {
             dayString(Date(timeIntervalSince1970: TimeInterval(s.endTs)))
@@ -175,6 +182,7 @@ final class Repository: ObservableObject {
     }
 
     /// All workouts (Whoop + Apple Health), newest first.
+    // Combines WHOOP + Apple workouts with NOOP-detected ones, hiding detections that overlap a real workout.
     func workoutRows(days: Int = 4000) async -> [WorkoutRow] {
         guard let store = await ensureStore() else { return [] }
         let now = Int(Date().timeIntervalSince1970)
@@ -215,5 +223,6 @@ final class Repository: ObservableObject {
         return f
     }()
 
+    // Shared formatter, created once (DateFormatter is expensive to allocate).
     static func dayString(_ d: Date) -> String { dayFormatter.string(from: d) }
 }

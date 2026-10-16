@@ -3,6 +3,7 @@ import Foundation
 /// Mirrors Python's heterogeneous parsed dict so values round-trip through JSON
 /// byte-identically to the golden output. Encodes/decodes as a BARE JSON scalar/array
 /// (not a tagged union), so golden.json's `parsed` values decode directly.
+// One decoded field. A small closed set of types so parsed frames can be stored/compared as plain JSON.
 public enum ParsedValue: Codable, Equatable {
     case int(Int)
     case double(Double)
@@ -11,6 +12,7 @@ public enum ParsedValue: Codable, Equatable {
     case bool(Bool)
     case null
 
+    // Try types from most to least specific; Bool must precede Int, or JSON true/false would decode as 1/0.
     public init(from decoder: Decoder) throws {
         let c = try decoder.singleValueContainer()
         if c.decodeNil() {
@@ -47,6 +49,7 @@ public enum ParsedValue: Codable, Equatable {
 
 public extension ParsedValue {
     var intValue: Int? { if case .int(let v) = self { return v }; return nil }
+    // Ints widen to Double, so callers can read a numeric field without caring how it was parsed.
     var doubleValue: Double? {
         switch self {
         case .double(let v): return v

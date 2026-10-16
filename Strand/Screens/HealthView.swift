@@ -9,6 +9,7 @@ import WhoopStore
 /// captioned with its in-range state. Re-skinned to the locked NOOP component
 /// system: every surface is a NoopCard, every metric is a StatTile, every chart is
 /// a ChartCard — no ad-hoc card heights or paddings.
+// Vitals: live heart-rate hero plus a grid of daily vitals.
 struct HealthView: View {
     @EnvironmentObject var repo: Repository
     @EnvironmentObject var live: LiveState
@@ -57,6 +58,7 @@ struct HealthView: View {
 
 /// Live HR hero, split into its own view so the ~1Hz HR stream only re-renders this
 /// subtree — the static vitals grid does not. Depends on `live` and `profile` only.
+// Shows the smoothed live bpm with its zone; falls back to a resting display when there is no live reading.
 private struct HeartRateSection: View {
     @EnvironmentObject var live: LiveState
     @EnvironmentObject var profile: ProfileStore
@@ -77,6 +79,7 @@ private struct HeartRateSection: View {
     }
 
     /// Current zone 1…5 from %HR-max (WHOOP/Karvonen-style bands: 50/60/70/80/90).
+    // Maps the fraction of HRmax to the zone number for the label and colour.
     private func hrZone(_ fraction: Double) -> Int {
         switch fraction {
         case ..<0.60: return 1
@@ -175,6 +178,7 @@ private struct HeartRateSection: View {
 
 /// Static vitals grid, split into its own view so it depends only on `repo` and is
 /// not re-rendered by the ~1Hz live HR stream.
+// Uniform tiles for resting HR, HRV, SpO2, skin temp and respiration.
 private struct VitalsSection: View {
     @EnvironmentObject var repo: Repository
 

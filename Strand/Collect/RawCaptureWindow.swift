@@ -5,6 +5,7 @@ import Foundation
 /// auto-expires the window so a missed stop callback can't leak raw forever.
 struct RawCaptureWindow {
     static let minSeconds: TimeInterval = 1
+    // Hard cap of 5 minutes so raw capture can never be left on indefinitely.
     static let maxSeconds: TimeInterval = 300
     static func clamp(_ s: TimeInterval) -> TimeInterval { min(max(s, minSeconds), maxSeconds) }
 

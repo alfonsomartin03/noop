@@ -8,6 +8,7 @@ import Foundation
 ///
 /// All `*Min` fields are minutes; energies are kcal; heart rates are count/min;
 /// `spo2Pct` is a 0–100 percentage; `vo2max` is mL/kg/min.
+// One row per local day, combining sample-based metrics with that night's sleep totals.
 public struct AppleDailyAggregate: Equatable, Sendable {
     /// `yyyy-MM-dd` in the sample's own UTC offset (local civil day).
     public let day: String
@@ -158,6 +159,7 @@ public enum AppleHealthAggregator {
     // MARK: - Sample daily aggregation
 
     /// Group `HealthSamples` by local day and apply the per-type reduction rules.
+    // Reduction rules differ by metric: resting HR/HRV/SpO2 are averaged, steps and energy summed, VO2max and body metrics keep the latest.
     public static func daily(samples: [HealthSample]) -> [AppleDailyAggregate] {
         // Per-day accumulators.
         struct Acc {
@@ -311,6 +313,7 @@ public enum AppleHealthAggregator {
     /// day** — the local civil day of each interval's `end`. Minutes are summed
     /// per stage; `asleep = core + deep + rem` (+ any legacy "asleep
     /// unspecified" intervals, which Apple emitted before staged sleep).
+    // Sleep is assigned to the day you WAKE UP, so a night from 11pm to 7am counts toward the morning's day.
     public static func sleepDaily(
         _ intervals: [SleepStageInterval]
     ) -> [String: (asleep: Double, deep: Double, rem: Double, core: Double, awake: Double, inBed: Double)] {
@@ -348,6 +351,7 @@ public enum AppleHealthAggregator {
 
     /// Full merge of sample-daily + sleep-daily into `[AppleDailyAggregate]`,
     /// one row per day present in either source, sorted ascending by day.
+    // Union of days from both sources, so a day with sleep but no samples (or vice versa) still appears.
     public static func aggregate(_ result: AppleHealthImportResult) -> [AppleDailyAggregate] {
         let sampleDaily = daily(samples: result.samples)
         let sleep = sleepDaily(result.sleepIntervals)
@@ -395,6 +399,7 @@ public enum AppleHealthAggregator {
     /// Flatten daily aggregates into generic `(day, key, value)` metric points
     /// for the metricSeries store. Only present (non-nil) values are emitted.
     /// Keys are stable, snake_case identifiers.
+    // Flattens to (day, key, value) rows for the generic metric store.
     public static func metricPoints(_ daily: [AppleDailyAggregate]) -> [(day: String, key: String, value: Double)] {
         var out: [(day: String, key: String, value: Double)] = []
         for d in daily {

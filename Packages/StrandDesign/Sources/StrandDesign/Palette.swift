@@ -51,6 +51,7 @@ public extension Color {
 // Semantic tokens, adaptive to light and dark mode. Surfaces follow Apple's grouped-content model:
 // a quiet background with elevated, rounded cards on top. Data colors are Apple system tones.
 
+// Every colour comes from here; views must not hardcode hex.
 public enum StrandPalette {
 
     // MARK: Surfaces — warm off-white canvas, white cards (dark mode: soft graphite)
@@ -237,6 +238,7 @@ public enum StrandPalette {
     }
 
     /// Linear-interpolate two colors in sRGB space.
+    // Linear blend between two colours; used to sample gradients at an exact score.
     static func interpolate(_ a: Color, _ b: Color, _ t: Double) -> Color {
         let ca = a.rgbaComponents
         let cb = b.rgbaComponents
@@ -253,6 +255,7 @@ public enum StrandPalette {
 
 // MARK: - Sleep stage enum (shared with Hypnogram)
 
+// Stage names used by the Hypnogram.
 public enum SleepStage: String, CaseIterable, Sendable {
     case awake
     case light
