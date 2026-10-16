@@ -67,7 +67,11 @@ final class Repository: ObservableObject {
         let lo = nowTs - nDays * 86_400, hi = nowTs + 86_400
 
         let imported = (try? await store.dailyMetrics(deviceId: deviceId, from: fromDay, to: toDay)) ?? []
-        let computed = (try? await store.dailyMetrics(deviceId: computedDeviceId, from: fromDay, to: toDay)) ?? []
+        // Drop computed rows dated after local today: older builds keyed days in UTC, so after ~8 pm a
+        // near-empty "tomorrow" row existed and shadowed the real today in `today = days.last`.
+        let todayKey = Self.dayString(now)
+        let computed = ((try? await store.dailyMetrics(deviceId: computedDeviceId, from: fromDay, to: toDay)) ?? [])
+            .filter { $0.day <= todayKey }
         let impSleep = (try? await store.sleepSessions(deviceId: deviceId, from: lo, to: hi, limit: 4000)) ?? []
         let compSleep = (try? await store.sleepSessions(deviceId: computedDeviceId, from: lo, to: hi, limit: 4000)) ?? []
 
@@ -96,11 +100,22 @@ final class Repository: ObservableObject {
         return EstimateAccuracy.compare(official: series(official), estimate: series(estimates))
     }
 
-    /// Imported daily rows win per day; computed rows fill the days the import doesn't cover.
+    /// WHOOP-imported values are treated as the more accurate source and win per FIELD; NOOP's own
+    /// computed values only fill the fields (or whole days) the import doesn't have.
     private static func mergeDaily(imported: [DailyMetric], computed: [DailyMetric]) -> [DailyMetric] {
         var byDay: [String: DailyMetric] = [:]
-        for d in computed { byDay[d.day] = d }   // computed first…
-        for d in imported { byDay[d.day] = d }   // …import overwrites, so a real WHOOP import always wins
+        for d in computed { byDay[d.day] = d }
+        for i in imported {
+            guard let c = byDay[i.day] else { byDay[i.day] = i; continue }
+            byDay[i.day] = DailyMetric(
+                day: i.day,
+                totalSleepMin: i.totalSleepMin ?? c.totalSleepMin, efficiency: i.efficiency ?? c.efficiency,
+                deepMin: i.deepMin ?? c.deepMin, remMin: i.remMin ?? c.remMin, lightMin: i.lightMin ?? c.lightMin,
+                disturbances: i.disturbances ?? c.disturbances, restingHr: i.restingHr ?? c.restingHr,
+                avgHrv: i.avgHrv ?? c.avgHrv, recovery: i.recovery ?? c.recovery, strain: i.strain ?? c.strain,
+                exerciseCount: i.exerciseCount ?? c.exerciseCount, spo2Pct: i.spo2Pct ?? c.spo2Pct,
+                skinTempDevC: i.skinTempDevC ?? c.skinTempDevC, respRateBpm: i.respRateBpm ?? c.respRateBpm)
+        }
         return byDay.values.sorted { $0.day < $1.day }
     }
 

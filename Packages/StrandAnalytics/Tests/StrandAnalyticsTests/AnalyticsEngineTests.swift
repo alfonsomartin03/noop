@@ -9,9 +9,10 @@ final class AnalyticsEngineTests: XCTestCase {
         XCTAssertEqual(StrandAnalytics.version, "0.1.0")
     }
 
-    func testDayStringUTC() {
-        // 2021-01-01 00:00:00 UTC == 1609459200.
-        XCTAssertEqual(AnalyticsEngine.dayString(1_609_459_200), "2021-01-01")
+    func testDayStringLocal() {
+        // Days are local-timezone days (matches WHOOP exports): local noon on 2021-01-01.
+        let noon = Calendar.current.date(from: DateComponents(year: 2021, month: 1, day: 1, hour: 12))!
+        XCTAssertEqual(AnalyticsEngine.dayString(Int(noon.timeIntervalSince1970)), "2021-01-01")
     }
 
     /// Build a still, low-HR night ending on a known UTC day.
