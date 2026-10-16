@@ -123,6 +123,13 @@ public enum StrainScorer {
         return load
     }
 
+    /// Fitted activity strain (0–21) of one workout's HR segment: 4.56 · ln(1 + zone load).
+    public static func activityStrain(_ hr: [HRSample], maxHR: Double) -> Double {
+        guard maxHR > 0, !hr.isEmpty else { return 0 }
+        let load = whoopZoneLoad(hr, maxHR: maxHR, sampleDurationMin: fallbackSampleMin)
+        return (min(maxStrain, whoopActivityScale * log(1.0 + load)) * 100).rounded() / 100
+    }
+
     /// Zone load of one HR segment, or nil when it is too short or maxHR is unusable.
     public static func whoopLoad(_ hr: [HRSample], maxHR: Double? = nil) -> Double? {
         let effMax = maxHR ?? Double(defaultMaxHR())

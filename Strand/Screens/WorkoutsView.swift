@@ -52,12 +52,12 @@ struct WorkoutsView: View {
                 sessionsSection(rows: windowRows)
             }
         }
-        .task {
-            guard !loaded else { return }
+        .task(id: repo.dataVersion) {
+            // Reloads when new strap data / scores land, so auto-detected workouts appear without a restart.
             let r = await repo.workoutRows()
             allRows = r
+            if !loaded { range = defaultRange(for: r) }
             loaded = true
-            range = defaultRange(for: r)
         }
         .onAppear {
             // Preview-seeded rows skip `.task`; still choose a range that has data.
@@ -314,7 +314,11 @@ struct WorkoutsView: View {
 
     /// Source badge built from the locked SourceBadge component (no custom capsule).
     private func sourceBadge(_ source: String) -> some View {
-        let isWhoop = source.lowercased().contains("whoop")
+        let s = source.lowercased()
+        if s == "noop" {
+            return SourceBadge("NOOP", tint: StrandPalette.metricRose).accessibilityLabel("Source NOOP auto-detected")
+        }
+        let isWhoop = s.contains("whoop")
         return SourceBadge(isWhoop ? "Whoop" : "Apple",
                            tint: isWhoop ? StrandPalette.accent : StrandPalette.metricCyan)
             .accessibilityLabel(isWhoop ? "Source Whoop" : "Source Apple Health")

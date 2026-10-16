@@ -58,6 +58,7 @@ final class IntelligenceEngine: ObservableObject {
         var out: [Computed] = []
         var dailies: [DailyMetric] = []
         var cachedSleep: [CachedSleepSession] = []
+        var detected: [WorkoutRow] = []
 
         for offset in 0..<maxDays {
             let dayStart = now - offset * 86_400
@@ -78,6 +79,18 @@ final class IntelligenceEngine: ObservableObject {
                                 sleepMin: res.daily.totalSleepMin, hrv: res.daily.avgHrv,
                                 rhr: res.daily.restingHr))
             dailies.append(res.daily)
+            for w in res.workouts {
+                let seg = hr.filter { $0.ts >= w.start && $0.ts <= w.end }
+                let zones = Dictionary(uniqueKeysWithValues: (1...5).map { ("z\($0)", w.zoneTimePct[$0] ?? 0) })
+                let zjson = (try? JSONSerialization.data(withJSONObject: zones)).flatMap { String(data: $0, encoding: .utf8) }
+                let maxF = w.hrmax ?? maxHR ?? 190
+                detected.append(WorkoutRow(
+                    startTs: w.start, endTs: w.end, sport: "Activity", source: "noop",
+                    durationS: w.durationS, energyKcal: w.caloriesKcal,
+                    avgHr: Int(w.avgHR.rounded()), maxHr: w.peakHR,
+                    strain: StrainScorer.activityStrain(seg, maxHR: maxF),
+                    distanceM: nil, zonesJSON: zjson, notes: "Auto-detected"))
+            }
             cachedSleep.append(contentsOf: res.cachedSleep)
         }
 
@@ -87,6 +100,15 @@ final class IntelligenceEngine: ObservableObject {
         // always wins; this only fills the days the strap collected but no import covered.
         let computedId = deviceId + "-noop"
         if !dailies.isEmpty { _ = try? await store.upsertDailyMetrics(dailies, deviceId: computedId) }
+        // Overlapping day windows re-detect the same workout with slightly different edges; keep one
+        // (the longest) per overlapping group so the Workouts page doesn't list it twice.
+        var uniq: [WorkoutRow] = []
+        for w in detected.sorted(by: { $0.startTs < $1.startTs }) {
+            if let l = uniq.last, w.startTs <= l.endTs {
+                if (w.durationS ?? 0) > (l.durationS ?? 0) { uniq[uniq.count - 1] = w }
+            } else { uniq.append(w) }
+        }
+        if !uniq.isEmpty { _ = try? await store.upsertWorkouts(uniq, deviceId: computedId) }
         if !cachedSleep.isEmpty { _ = try? await store.upsertSleepSessions(cachedSleep, deviceId: computedId) }
 
         results = out

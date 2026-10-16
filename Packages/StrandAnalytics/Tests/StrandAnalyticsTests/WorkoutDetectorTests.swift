@@ -139,3 +139,31 @@ final class WorkoutDetectorTests: XCTestCase {
         XCTAssertTrue(WorkoutDetector.detect(hr: hr, gravity: grav, age: 30).isEmpty)
     }
 }
+
+final class WorkoutDetectorHROnlyTests: XCTestCase {
+    private func series(_ segs: [(secs: Int, bpm: Int)]) -> [HRSample] {
+        var t = 1_700_000_000, out: [HRSample] = []
+        for s in segs { for _ in 0..<s.secs { out.append(HRSample(ts: t, bpm: s.bpm)); t += 1 } }
+        return out
+    }
+
+    /// Still wrist (no motion at all) but 40 min at 150 bpm: detected by the HR-only path.
+    func testStillWristSustainedEffortDetected() {
+        let hr = series([(1800, 58), (2400, 150), (1800, 58)])
+        let w = WorkoutDetector.detect(hr: hr, gravity: [], restingHR: 58, maxHR: 190, age: 30)
+        XCTAssertEqual(w.count, 1)
+        XCTAssertGreaterThan(w.first?.durationS ?? 0, 2000)
+    }
+
+    /// A 3-minute spike is not a workout.
+    func testShortSpikeIgnored() {
+        let hr = series([(1800, 58), (180, 150), (1800, 58)])
+        XCTAssertTrue(WorkoutDetector.detect(hr: hr, gravity: [], restingHR: 58, maxHR: 190, age: 30).isEmpty)
+    }
+
+    /// A brief dip between sets does not split the effort in two.
+    func testRestBetweenSetsBridged() {
+        let hr = series([(1200, 58), (900, 140), (120, 90), (900, 140), (1200, 58)])
+        XCTAssertEqual(WorkoutDetector.detect(hr: hr, gravity: [], restingHR: 58, maxHR: 190, age: 30).count, 1)
+    }
+}

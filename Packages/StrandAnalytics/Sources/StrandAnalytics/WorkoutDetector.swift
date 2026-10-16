@@ -73,6 +73,19 @@ public enum WorkoutDetector {
     public static let alignToleranceS: Double = 5.0
     public static let restingPercentile: Double = 10.0
 
+    // HR-only detector (catches cycling / rowing / lifting where the wrist barely moves). Modelled on
+    // published auto-detection approaches (WHOOP: sustained HR rise over baseline + enough duration to
+    // reject spikes; patents describe threshold-based start/end of an elevated interval, then a check).
+    /// Rolling-median window smoothing single-sample HR spikes.
+    public static let hrSmoothS: Int = 60
+    /// Smoothed HR must exceed rest + max(hrOnlyMarginBPM, hrOnlyMinHRRFrac × HRR) to count as active.
+    public static let hrOnlyMarginBPM: Double = 30.0
+    public static let hrOnlyMinHRRFrac: Double = 0.35
+    /// Minimum length of an HR-only bout (longer than the motion-gated 5 min: no motion corroboration).
+    public static let hrOnlyMinMin: Double = 10.0
+    /// Gaps up to this long inside an effort are bridged (rest between sets, a stop light, a drink).
+    public static let hrOnlyBridgeS: Int = 300
+
     // MARK: - Activity series (activity.py)
 
     public struct ActivityPoint: Equatable, Sendable {
@@ -170,6 +183,55 @@ public enum WorkoutDetector {
         return (zonePct, avgHRR)
     }
 
+    /// Rolling median of bpm over the trailing `windowS` seconds (robust to single-sample spikes).
+    static func smoothedHR(_ hr: [(ts: Int, bpm: Double)], windowS: Int) -> [Double] {
+        var out: [Double] = []
+        out.reserveCapacity(hr.count)
+        var lo = 0
+        for i in 0..<hr.count {
+            while hr[i].ts - hr[lo].ts > windowS { lo += 1 }
+            let w = hr[lo...i].map { $0.bpm }.sorted()
+            out.append(w[w.count / 2])
+        }
+        return out
+    }
+
+    /// Runs of sustained elevated HR (no motion needed), ≥ hrOnlyMinMin long after bridging short dips.
+    static func hrOnlyRuns(_ hr: [(ts: Int, bpm: Double)], restingHR: Double, maxHR: Double?) -> [(Int, Int)] {
+        guard hr.count > 1 else { return [] }
+        let hrr = max(0.0, (maxHR ?? 190.0) - restingHR)
+        let threshold = restingHR + max(hrOnlyMarginBPM, hrOnlyMinHRRFrac * hrr)
+        let sm = smoothedHR(hr, windowS: hrSmoothS)
+        var raw: [(Int, Int)] = []
+        var start: Int? = nil
+        var last = 0
+        for (i, r) in hr.enumerated() {
+            if sm[i] > threshold {
+                if start == nil { start = r.ts }
+                last = r.ts
+            } else if let s0 = start, r.ts - last > 1 {
+                raw.append((s0, last)); start = nil
+            }
+        }
+        if let s0 = start { raw.append((s0, last)) }
+        // The trailing median lags the true edges by ~half its window, so clip each run to its first/last
+        // raw sample above the threshold.
+        return unionRuns(raw, bridgeS: hrOnlyBridgeS).compactMap { r -> (Int, Int)? in
+            let hot = hr.filter { $0.ts >= r.0 && $0.ts <= r.1 && $0.bpm > threshold }
+            guard let a = hot.first?.ts, let b = hot.last?.ts else { return nil }
+            return Double(b - a) >= hrOnlyMinMin * 60.0 ? (a, b) : nil
+        }
+    }
+
+    /// Sort and merge runs whose gap is ≤ bridgeS.
+    static func unionRuns(_ runs: [(Int, Int)], bridgeS: Int) -> [(Int, Int)] {
+        var out: [(Int, Int)] = []
+        for r in runs.sorted(by: { $0.0 < $1.0 }) {
+            if let l = out.last, r.0 - l.1 <= bridgeS { out[out.count - 1].1 = max(l.1, r.1) } else { out.append(r) }
+        }
+        return out
+    }
+
     // MARK: - Public API
 
     /// Detect workouts from the 1 Hz HR + gravity store.
@@ -190,7 +252,7 @@ public enum WorkoutDetector {
                               profile: UserProfile? = nil) -> [ExerciseSession] {
         let hrSeg = cleanHR(hr)
         let motion = activitySeries(gravity)
-        if hrSeg.isEmpty || motion.isEmpty { return [] }
+        if hrSeg.isEmpty { return [] }
 
         let restHR = restingHR ?? deriveRestingHR(hrSeg)
         let hrFloor = restHR + hrMarginBPM
@@ -209,30 +271,37 @@ public enum WorkoutDetector {
         let hrBpm = hrSeg.map { $0.bpm }
         let smooth = smoothedIntensity(motion, windowS: motionSmoothS)
 
-        // Walk the gravity timeline; flag samples where BOTH gates hold.
+        // Detector 1 — motion + HR: walk the gravity timeline; flag samples where BOTH gates hold.
         var activeTs: [Int] = []
         for (p, inten) in zip(motion, smooth) {
             if inten <= motionThreshold { continue }
             guard let bpm = nearest(hrTs, hrBpm, p.ts, alignToleranceS), bpm > hrFloor else { continue }
             activeTs.append(p.ts)
         }
-        if activeTs.isEmpty { return [] }
 
         // Group contiguous active samples into runs, merging gaps < MERGE_GAP_S.
         var runs: [(Int, Int)] = []
-        var runStart = activeTs[0]
-        var prev = activeTs[0]
-        for ts in activeTs.dropFirst() {
-            if Double(ts - prev) > mergeGapS { runs.append((runStart, prev)); runStart = ts }
-            prev = ts
+        if let first = activeTs.first {
+            var runStart = first
+            var prev = first
+            for ts in activeTs.dropFirst() {
+                if Double(ts - prev) > mergeGapS { runs.append((runStart, prev)); runStart = ts }
+                prev = ts
+            }
+            runs.append((runStart, prev))
         }
-        runs.append((runStart, prev))
+        // Onset latency tolerance equal to the smoothing window (same rule as before).
+        runs = runs.filter { Double($0.1 - $0.0) >= minExerciseMin * 60.0 - motionSmoothS }
 
-        let minDurS = minExerciseMin * 60.0
+        // Detector 2 — HR only: sustained smoothed HR well above rest, regardless of wrist motion.
+        let hrOnly = hrOnlyRuns(hrSeg, restingHR: restHR, maxHR: effMaxHR)
+
+        // Union both detectors' runs; overlapping or nearly-touching runs become one workout.
+        runs = unionRuns(runs + hrOnly, bridgeS: Int(mergeGapS))
+        if runs.isEmpty { return [] }
+
         var sessions: [ExerciseSession] = []
         for (start, end) in runs {
-            // Onset latency tolerance equal to the smoothing window.
-            if Double(end - start) < minDurS - motionSmoothS { continue }
             let window = hrSeg.filter { $0.ts >= start && $0.ts <= end }
             if window.isEmpty { continue }
             let bpms = window.map { $0.bpm }

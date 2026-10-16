@@ -166,6 +166,18 @@ final class Repository: ObservableObject {
         let lo = now - days * 86_400, hi = now + 86_400
         var rows = (try? await store.workouts(deviceId: deviceId, from: lo, to: hi, limit: 5000)) ?? []
         rows += (try? await store.workouts(deviceId: "apple-health", from: lo, to: hi, limit: 5000)) ?? []
+        // NOOP auto-detected workouts fill in what no import covers: hide any that overlap a real
+        // WHOOP/Apple workout, and collapse re-detections of the same session (edges shift a little
+        // between analysis windows).
+        let detected = ((try? await store.workouts(deviceId: deviceId + "-noop", from: lo, to: hi, limit: 5000)) ?? [])
+            .sorted { $0.startTs < $1.startTs }
+        var kept: [WorkoutRow] = []
+        for w in detected where !rows.contains(where: { w.startTs < $0.endTs && $0.startTs < w.endTs }) {
+            if let l = kept.last, w.startTs <= l.endTs {
+                if (w.durationS ?? 0) > (l.durationS ?? 0) { kept[kept.count - 1] = w }
+            } else { kept.append(w) }
+        }
+        rows += kept
         return rows.sorted { $0.startTs > $1.startTs }
     }
 
