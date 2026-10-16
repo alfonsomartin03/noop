@@ -26,11 +26,12 @@ public final class BLEManager: NSObject, ObservableObject {
     static let whoop5Service = CBUUID(string: DeviceFamily.whoop5.serviceUUIDString)
     static let whoop5CmdWriteChar = CBUUID(string: DeviceFamily.whoop5.commandCharacteristicUUIDString)
 
-    /// UserDefaults key: when true (the default) NOOP stores strap history but never acknowledges it,
-    /// so the strap does not delete anything. The strap discards a chunk only once an app acks it.
+    /// UserDefaults key: when true NOOP stores strap history but never acknowledges it, so the strap
+    /// does not delete anything — but it also stops after the first chunk (~50 records), because the
+    /// strap only sends the next chunk once the previous one is acked. Default false: ack after save.
     static let keepDataOnStrapKey = "noop.keepDataOnStrap"
     static var keepDataOnStrap: Bool {
-        UserDefaults.standard.object(forKey: keepDataOnStrapKey) as? Bool ?? true
+        UserDefaults.standard.object(forKey: keepDataOnStrapKey) as? Bool ?? false
     }
 
     static let restoreID = "com.openwhoop.ble.central"
@@ -137,6 +138,8 @@ public final class BLEManager: NSObject, ObservableObject {
     private var whoop5HistoryAutomatic = false
     /// Auto-pull runs once per connection.
     private var whoop5AutoPullDone = false
+    private var historyEndLogged = 0
+    private var historySeenTs = Set<Int>()
     private var historyIdleWork: DispatchWorkItem?
     private var historyMetaSeen: [String] = []
     private var historyDecoded: [Whoop5HistoricalRecord] = []
@@ -356,7 +359,8 @@ public final class BLEManager: NSObject, ObservableObject {
         .reportVersionInfo:  { _ in [] },
         .getClock:           { _ in [] },
         .getDataRange:       { _ in [] },
-        .sendHistoricalData: { _ in [] },   // history pull (safe mode only — see pullWhoop5History)
+        .sendHistoricalData: { _ in [] },   // history pull (see pullWhoop5History)
+        .historicalDataResult: { $0 },      // HISTORY_END ack: [0x01] + end_data (see ackWhoop5HistoryChunk)
     ]
     private var whoop5SkippedLogged = Set<UInt8>()
 
@@ -389,6 +393,7 @@ public final class BLEManager: NSObject, ObservableObject {
         send(.getClock, payload: [])
         send(.reportVersionInfo, payload: [])
         autoPullWhoop5History()
+        startBackfillTimer()   // 5.0 re-pulls every backfillIntervalSeconds too (the 4.0 handshake that starts it never runs here)
     }
 
     /// Pull whatever the strap has stored as soon as the 5.0 link is up, so the user never has to
@@ -408,6 +413,7 @@ public final class BLEManager: NSObject, ObservableObject {
             }
             UserDefaults.standard.set(now, forKey: BLEManager.backfillLastAtKey)
             self.log("History: auto-pulling stored data on connect")
+            self.send(.getDataRange, payload: [])   // gives the Today progress strip its total span
             self.pullWhoop5History(automatic: true)
         }
     }
@@ -617,7 +623,8 @@ public final class BLEManager: NSObject, ObservableObject {
     /// (persisted) and starts the offload.
     func requestSync(_ trigger: BackfillTrigger) {
         guard BLEManager.shouldRunPeriodicBackfill(
-            connected: state.connected, bonded: state.bonded, backfilling: backfilling) else { return }
+            connected: state.connected, bonded: state.bonded || (family == .whoop5 && didBond),
+            backfilling: backfilling || whoop5HistoryActive) else { return }
         let now = Date().timeIntervalSince1970
         let last = UserDefaults.standard.object(forKey: BLEManager.backfillLastAtKey) as? Double
         guard BackfillPolicy.shouldRun(trigger: trigger, now: now, lastBackfillAt: last) else {
@@ -625,6 +632,7 @@ public final class BLEManager: NSObject, ObservableObject {
             return
         }
         UserDefaults.standard.set(now, forKey: BLEManager.backfillLastAtKey)
+        if family == .whoop5 { pullWhoop5History(automatic: true); return }
         beginBackfill()
     }
 
@@ -722,6 +730,9 @@ public final class BLEManager: NSObject, ObservableObject {
         state.historySummary = nil
         state.historyFrames = 0
         state.historyBusy = true
+        state.syncSavedRows = 0
+        state.syncNewestTs = nil
+        historySeenTs = []
         state.historyStatus = "Requesting stored data…"
         log("History: SAFE-MODE pull started (no acknowledgement will be sent; the strap keeps its data)")
         guard let p = peripheral, let ch = cmdCharacteristic else { endWhoop5History("not connected"); return }
@@ -766,6 +777,7 @@ public final class BLEManager: NSObject, ObservableObject {
         log("History: decoded \(base)")
         Task { @MainActor in
             if let n = await collector?.persistDecodedHistory(Streams(hr: hr, rr: rr, gravity: grav)) {
+                state.syncSavedRows += n
                 state.historySummary = base + " · saved (\(n) new heart-rate rows)"
                 state.lastSyncedAt = Date().timeIntervalSince1970
                 UserDefaults.standard.set(state.lastSyncedAt, forKey: "lastSyncedAt")
@@ -778,6 +790,39 @@ public final class BLEManager: NSObject, ObservableObject {
         }
     }
 
+    /// HISTORY_END on 5.0: persist the records accumulated since the last END, then ack so the strap
+    /// sends the next chunk (without the ack it stops after the first ~50 records). The ack is only
+    /// sent once the chunk is durably saved, and never when "Never delete data from the strap" is on.
+    /// end_data layout is the 4.0's (metadata.data[10:18]) shifted by the 5.0's 4 extra header bytes
+    /// → frame[21..<29]; unverified on 5.0 hardware, so the frame is logged on the first few chunks.
+    private func commitWhoop5HistoryChunk(_ frame: [UInt8], type: UInt8) {
+        let recs = historyDecoded
+        historyDecoded = []
+        let endData: [UInt8]? = (type == 49 && frame.count >= 29 + 4) ? Array(frame[21..<29]) : nil
+        if historyEndLogged < 3 {
+            historyEndLogged += 1
+            log("History: END frame len=\(frame.count) hex=\(hex(frame)) → end_data=\(endData.map(hex) ?? "n/a")")
+        }
+        let hr = recs.filter { (30...220).contains($0.heartRate) }.map { HRSample(ts: $0.timestamp, bpm: $0.heartRate) }
+        let rr = recs.flatMap { r in r.rr.map { RRInterval(ts: r.timestamp, rrMs: $0) } }
+        let grav = recs.compactMap { r in r.gravity.map { GravitySample(ts: r.timestamp, x: $0.x, y: $0.y, z: $0.z) } }
+        Task { @MainActor in
+            if !recs.isEmpty {
+                guard let n = await collector?.persistDecodedHistory(Streams(hr: hr, rr: rr, gravity: grav)) else {
+                    log("History: chunk NOT saved (store unavailable) — not acknowledging")
+                    return
+                }
+                state.syncSavedRows += n
+                state.lastSyncedAt = Date().timeIntervalSince1970
+                UserDefaults.standard.set(state.lastSyncedAt, forKey: "lastSyncedAt")
+                onStoredDataChanged?()
+            }
+            guard !BLEManager.keepDataOnStrap, let endData else { return }
+            send(.historicalDataResult, payload: [0x01] + endData, writeType: .withResponse)
+            log("History: chunk saved (\(recs.count) records) — acked")
+        }
+    }
+
     /// Called for every complete 5.0 frame while a pull is active.
     private func captureWhoop5HistoryFrame(_ frame: [UInt8], on characteristic: CBCharacteristic) {
         guard whoop5HistoryActive, frame.count > 12 else { return }
@@ -786,12 +831,20 @@ public final class BLEManager: NSObject, ObservableObject {
         guard [47, 52, 49, 56, 48, 53, 54, 50, 55].contains(type) else { return }
         armHistoryIdle()
         state.historyFrames += 1
-        if type == 47, let rec = decodeWhoop5Historical(frame) { historyDecoded.append(rec) }
+        if type == 47, let rec = decodeWhoop5Historical(frame) {
+            // The strap re-sends an unacked chunk on retry; the DB also enforces uniqueness
+            // (deviceId, ts), this just avoids decoding/writing the same second twice in one pull.
+            if historySeenTs.insert(rec.timestamp).inserted {
+                historyDecoded.append(rec)
+                if rec.timestamp > (state.syncNewestTs ?? 0) { state.syncNewestTs = rec.timestamp }
+            }
+        }
         if type == 49 || type == 56 {
             let kind = type == 49 ? Int(frame[10]) : (Int(frame[10]) | Int(frame[11]) << 8)
             let name = kind == 1 ? "START" : kind == 2 ? "END" : kind == 3 ? "COMPLETE" : "kind\(kind)"
             historyMetaSeen.append(name)
             log("History: metadata \(name) (frame \(state.historyFrames))")
+            if name == "END" { commitWhoop5HistoryChunk(frame, type: type) }
             if name == "COMPLETE" { endWhoop5History("strap reported HISTORY_COMPLETE") }
         } else if state.historyFrames <= 3 || state.historyFrames % 50 == 0 {
             log("History: frame \(state.historyFrames) type=\(type) len=\(frame.count) on \(characteristic.uuid.uuidString.prefix(8))")
@@ -820,6 +873,7 @@ public final class BLEManager: NSObject, ObservableObject {
         let desc = found.map { "body+\($0.0)=\(f.string(from: Date(timeIntervalSince1970: TimeInterval($0.1))))" }
         log("History: data range response body=\(end - 13) bytes; timestamps: \(desc.isEmpty ? "none recognised" : desc.joined(separator: " | "))")
         if let lo = found.map({ $0.1 }).min(), let hi = found.map({ $0.1 }).max() {
+            if hi > lo { state.syncRangeLo = lo; state.syncRangeHi = hi }
             state.historyRange = lo == hi ? f.string(from: Date(timeIntervalSince1970: TimeInterval(lo)))
                 : "\(f.string(from: Date(timeIntervalSince1970: TimeInterval(lo)))) → \(f.string(from: Date(timeIntervalSince1970: TimeInterval(hi))))"
         }

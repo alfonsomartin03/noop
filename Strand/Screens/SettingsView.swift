@@ -166,7 +166,7 @@ struct SettingsView: View {
 
     // MARK: - Keep data on strap
 
-    @AppStorage(BLEManager.keepDataOnStrapKey) private var keepDataOnStrap = true
+    @AppStorage(BLEManager.keepDataOnStrapKey) private var keepDataOnStrap = false
 
     private var keepDataCard: some View {
         SettingsSection(

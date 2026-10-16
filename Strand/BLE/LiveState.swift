@@ -32,6 +32,12 @@ public final class LiveState: ObservableObject {
     @Published public var historyFrames: Int = 0               // history-related frames captured this pull
     @Published public var historyCaptureFile: String? = nil    // local file the raw frames were saved to
     @Published public var historyBusy: Bool = false
+    /// Offload progress (drives the Today progress strip): rows saved this pull, newest record time
+    /// reached, and the span the strap says it holds (unix s) so progress = (newest-lo)/(hi-lo).
+    @Published public var syncSavedRows: Int = 0
+    @Published public var syncNewestTs: Int? = nil
+    @Published public var syncRangeLo: Int? = nil
+    @Published public var syncRangeHi: Int? = nil
     @Published public var historySummary: String? = nil        // what the decoded records contained / were saved
     /// True when macOS holds a pairing the strap has forgotten (CBError 14, "Peer removed pairing
     /// information"). Auto-retry stops; the user must forget the strap in System Settings and re-pair.

@@ -97,6 +97,32 @@ public enum StrainScorer {
         return (value * 100).rounded() / 100
     }
 
+    /// Sustained high-intensity effort the motion gate misses (cycling, rowing, lifting: wrist barely
+    /// moves while HR is high). Runs of HR ≥ 70 % HRmax lasting ≥ `minHighHRRunS`, bridging gaps of up
+    /// to `mergeGapS`, outside `excluding` (already-counted workout ranges). Returns their zone load.
+    public static let minHighHRRunS = 300
+    public static func highEffortLoad(_ hr: [HRSample], maxHR: Double,
+                                      excluding: [(start: Int, end: Int)]) -> Double {
+        guard maxHR > 0 else { return 0 }
+        let sorted = hr.sorted { $0.ts < $1.ts }
+        let hot = sorted.filter { s in
+            Double(s.bpm) / maxHR >= 0.7 && !excluding.contains { s.ts >= $0.start && s.ts <= $0.end }
+        }
+        guard !hot.isEmpty else { return 0 }
+        var load = 0.0
+        var run: [HRSample] = [hot[0]]
+        func flush() {
+            if let f = run.first, let l = run.last, l.ts - f.ts >= minHighHRRunS {
+                load += whoopZoneLoad(run, maxHR: maxHR, sampleDurationMin: fallbackSampleMin)
+            }
+        }
+        for h in hot.dropFirst() {
+            if h.ts - run[run.count - 1].ts > 150 { flush(); run = [h] } else { run.append(h) }
+        }
+        flush()
+        return load
+    }
+
     /// Zone load of one HR segment, or nil when it is too short or maxHR is unusable.
     public static func whoopLoad(_ hr: [HRSample], maxHR: Double? = nil) -> Double? {
         let effMax = maxHR ?? Double(defaultMaxHR())

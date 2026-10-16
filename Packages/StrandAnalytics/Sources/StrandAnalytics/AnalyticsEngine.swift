@@ -160,10 +160,16 @@ public enum AnalyticsEngine {
         if hr.count < StrainScorer.minReadings {
             strain = nil
         } else {
-            let loads: [Double] = workouts.compactMap { w in
+            // Workout segments can be shorter than minReadings (min bout is 5 min), so use the raw zone
+            // load rather than whoopLoad (which returned nil and silently dropped them).
+            let maxForLoad = effMaxHR ?? Double(StrainScorer.defaultMaxHR())
+            var loads: [Double] = workouts.map { w in
                 let seg = hr.filter { $0.ts >= w.start && $0.ts <= w.end }
-                return StrainScorer.whoopLoad(seg, maxHR: w.hrmax ?? effMaxHR)
+                return StrainScorer.whoopZoneLoad(seg, maxHR: w.hrmax ?? maxForLoad, sampleDurationMin: StrainScorer.fallbackSampleMin)
             }
+            // Plus sustained high-HR effort the motion gate missed (e.g. a still wrist while cycling).
+            loads.append(StrainScorer.highEffortLoad(hr, maxHR: maxForLoad,
+                                                     excluding: workouts.map { ($0.start, $0.end) }))
             strain = StrainScorer.dayStrain(workoutLoads: loads)
         }
 

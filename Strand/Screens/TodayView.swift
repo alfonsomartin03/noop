@@ -24,6 +24,7 @@ struct TodayView: View {
             VStack(alignment: .leading, spacing: NoopMetrics.sectionGap) {
                 PairingResetNotice()
                 ConnectionStrip()
+                SyncProgressStrip()
                 if repo.today?.recovery == nil {
                     StrandNotice(
                         symbol: "sparkles",
@@ -378,6 +379,43 @@ private struct ConnectionStrip: View {
                 }
                 Spacer()
                 Button("Connect") { model.scan() }.buttonStyle(.strandPrimary)
+            }
+            .padding(NoopMetrics.cardPadding)
+            .strandSurface()
+        }
+    }
+}
+
+/// Shown only while the strap is offloading stored data: rows saved so far plus a progress bar
+/// across the span the strap reports holding (indeterminate until that span is known).
+private struct SyncProgressStrip: View {
+    @EnvironmentObject var live: LiveState
+
+    private var fraction: Double? {
+        guard let lo = live.syncRangeLo, let hi = live.syncRangeHi, hi > lo, let n = live.syncNewestTs else { return nil }
+        return min(1, max(0, Double(n - lo) / Double(hi - lo)))
+    }
+
+    var body: some View {
+        if live.historyBusy {
+            HStack(spacing: 12) {
+                Image(systemName: "arrow.triangle.2.circlepath")
+                    .font(.system(size: 16, weight: .semibold)).foregroundStyle(StrandPalette.textSecondary)
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        Text("Syncing from your WHOOP").font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(StrandPalette.textPrimary)
+                        Spacer()
+                        if let f = fraction {
+                            Text("\(Int(f * 100))%").font(.system(size: 12, weight: .semibold).monospacedDigit())
+                                .foregroundStyle(StrandPalette.textSecondary)
+                        }
+                    }
+                    if let f = fraction { ProgressView(value: f) } else { ProgressView().progressViewStyle(.linear) }
+                    Text("\(live.syncSavedRows.formatted()) new readings saved"
+                         + (live.syncNewestTs.map { " · up to \(Date(timeIntervalSince1970: TimeInterval($0)).formatted(date: .omitted, time: .shortened))" } ?? ""))
+                        .font(.system(size: 12)).foregroundStyle(StrandPalette.textSecondary)
+                }
             }
             .padding(NoopMetrics.cardPadding)
             .strandSurface()
