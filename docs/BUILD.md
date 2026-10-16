@@ -40,7 +40,7 @@ Strand/
 │   ├── StrandImport/           # WHOOP CSV + Apple Health importers
 │   └── StrandDesign/           # SwiftUI design system (palette, components, charts)
 ├── Tools/
-│   └── Backfill/               # `swift run backfill` — re-runs importers into the on-device DB
+│   └── reverse_engineer/       # analyze_export.py — fits score formulas to a WHOOP export
 └── Fixtures/                   # Sample data for tests
 ```
 
@@ -201,14 +201,6 @@ The on-device SQLite database lives inside the app sandbox container:
 ~/Library/Containers/com.noopapp.noop/Data/.../whoop.sqlite
 ```
 
-`Tools/Backfill` is a small executable that re-runs the WHOOP CSV / Apple Health import mapping
-directly against that database — useful after changing importer logic:
-
-```bash
-cd Tools/Backfill
-swift run backfill
-```
-
 ---
 
 ## iOS (planned — packages are ready)
@@ -266,30 +258,6 @@ There is currently no iOS app target; adding one is mostly app-layer wiring, not
    Because the design system (`StrandDesign`) already bridges `NSColor`/`UIColor` behind
    `#if canImport(AppKit) / #elseif canImport(UIKit)`, the palette, fonts, and most components carry
    over without edits.
-
----
-
-## Android (planned)
-
-A native Android client is planned as a separate, Kotlin/Gradle module rather than a port of the
-Swift app. When present, it lives under **`android/`** with its own `README`.
-
-Expected toolchain:
-
-| Tool            | Version |
-|-----------------|---------|
-| JDK             | 17      |
-| Android Studio  | current stable (with Android SDK) |
-| Build system    | Gradle (Android Gradle Plugin) |
-
-The Android app re-implements the same wire protocol against Android's BLE stack (the protocol
-facts in `WhoopProtocol/Resources/whoop_protocol.json` are language-agnostic). Build and run
-instructions live in **`android/README.md`** — open the `android/` directory in Android Studio, let
-Gradle sync, and run on a device with Bluetooth (an emulator cannot reach a physical strap).
-
-> The `android/` directory may not yet exist in your checkout. Until it lands, the macOS app above is
-> the reference implementation and the shared packages define the protocol, storage, analytics, and
-> import behavior any future client must match.
 
 ---
 

@@ -14,6 +14,7 @@ final class StrainScorerTests: XCTestCase {
         XCTAssertEqual(StrainScorer.defaultMaxHR(age: 30), 190)
     }
 
+    // The theoretical daily maximum maps to exactly 21.
     func testTrimpToStrainCeilingMapsTo21() {
         // Edwards 24 h ceiling TRIMP = 7200 → strain exactly 21.0 with D = 7201.
         XCTAssertEqual(StrainScorer.trimpToStrain(7200), 21.0, accuracy: 1e-9)
@@ -32,6 +33,7 @@ final class StrainScorerTests: XCTestCase {
         XCTAssertEqual(s!, 9.3, accuracy: 1e-2)
     }
 
+    // Pins the WHOOP-fitted model to known outputs so future tuning is a conscious change.
     func testWhoopFittedActivityStrain() {
         // 10 min at 97% HRmax = zone 5: load = 10 * 1.875 = 18.75 → 4.56 * ln(19.75) = 13.6.
         XCTAssertEqual(StrainScorer.strain(hr(185, 600), maxHR: 190, restingHR: 60)!, 13.6, accuracy: 0.01)
@@ -66,6 +68,7 @@ final class StrainScorerTests: XCTestCase {
         XCTAssertNil(StrainScorer.strain(hr(150, 600), maxHR: 50, restingHR: 60))
     }
 
+    // More time in a zone must never lower strain.
     func testStrainMonotonicInZoneTime() {
         // More time at high intensity → higher strain. Compare 600 vs 1200 z5 samples.
         let short = StrainScorer.strain(hr(185, 600), maxHR: 190, restingHR: 60)!
@@ -86,6 +89,7 @@ final class StrainScorerTests: XCTestCase {
         XCTAssertLessThanOrEqual(s, 21.0)
     }
 
+    // Observed peak is trusted only when it exceeds the age formula.
     func testEstimateHRmaxObservedVsTanaka() {
         // Thin history but known age → tanaka.
         let (v1, src1) = StrainScorer.estimateHRmax([150, 160, 170], age: 30)

@@ -66,6 +66,7 @@ final class WidgetSnapshotTests: XCTestCase {
         .background(StrandPalette.surfaceBase)
     }
 
+    // Renders the widget grid to PNG for eyeballing; not a pixel-diff assertion.
     func testRenderSnapshots() throws {
         guard let dir = ProcessInfo.processInfo.environment["STRAND_SNAPSHOT_DIR"] else { throw XCTSkip("no dir") }
         for (name, dark) in [("light", false), ("dark", true)] {

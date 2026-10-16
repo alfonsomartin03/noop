@@ -16,6 +16,7 @@ final class AnalyticsEngineTests: XCTestCase {
     }
 
     /// Build a still, low-HR night ending on a known UTC day.
+    // Builds synthetic gravity/HR/RR streams for one still, low-HR night so sleep detection has something to find.
     private func night(endDay: String, hours: Int) -> (start: Int, end: Int,
                                                        hr: [HRSample], rr: [RRInterval],
                                                        gravity: [GravitySample]) {
@@ -64,6 +65,7 @@ final class AnalyticsEngineTests: XCTestCase {
         XCTAssertEqual(result.cachedSleep[0].restingHr, 50)
     }
 
+    // Without a usable HRV baseline recovery must be nil rather than a guess.
     func testAnalyzeDayColdStartRecoveryNil() {
         // No baselines supplied → recovery is nil (cold-start gate).
         let day = "2021-06-16"
@@ -75,6 +77,7 @@ final class AnalyticsEngineTests: XCTestCase {
         XCTAssertNil(result.recovery)
     }
 
+    // With baselines supplied, the same night yields a 0-100 recovery.
     func testAnalyzeDayWithBaselinesProducesRecovery() {
         let day = "2021-06-17"
         let n = night(endDay: day, hours: 7)

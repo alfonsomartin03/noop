@@ -7,7 +7,7 @@
 <p align="center"><b>Your strap. Your data. Your machine. No cloud, no subscription.</b></p>
 
 <p align="center">
-  <img alt="Platforms" src="https://img.shields.io/badge/platforms-macOS%20%C2%B7%20Android%20%C2%B7%20iOS-18C98B?style=flat-square">
+  <img alt="Platforms" src="https://img.shields.io/badge/platforms-macOS%20%C2%B7%20iOS-18C98B?style=flat-square">
   <img alt="Offline by design" src="https://img.shields.io/badge/offline-by%20design-18C98B?style=flat-square">
   <img alt="No subscription" src="https://img.shields.io/badge/subscription-none-2FE6A8?style=flat-square">
   <img alt="WHOOP 4 and 5" src="https://img.shields.io/badge/WHOOP-4.0%20%26%205.0-8B9690?style=flat-square">
@@ -29,8 +29,6 @@ Pre-built apps you can run right now:
 | Platform | Build | Notes |
 |---|---|---|
 | **macOS** | `NOOP.app` (see [Releases](../../releases)) | Apple Silicon + Intel. Drag to Applications. |
-| **Android** | `NOOP-full.apk` (see [Releases](../../releases)) | The full app. `minSdk 26` (Android 8+). Sideload — enable "install unknown apps". |
-| **Android (demo)** | `NOOP-demo.apk` | Preloaded with sample data so you can explore every screen with no strap. Installs alongside the full app. |
 | **iOS** | — | The shared library is iOS-ready; the app is on the roadmap. |
 
 Prefer to build it yourself? See [`docs/BUILD.md`](docs/BUILD.md).
@@ -154,14 +152,13 @@ wizard** (`Strand/Onboarding/OnboardingWizard.swift`).
 ## Platform status
 
 NOOP's logic lives in cross-platform Swift packages, and the same protocol,
-storage, analytics, and scoring is ported to Kotlin on Android. Both apps pair
+storage, analytics, and scoring is shared. The app pairs
 with the strap and **score recovery, strain and sleep on your own device** — no
 import required.
 
 | Platform | Status |
 |---|---|
 | **macOS** | ✅ Full app (`Strand/`, SwiftUI, macOS 13+). Pairs over BLE, offloads the strap's history, and scores recovery / strain / sleep on-device. The complete feature set above runs here. |
-| **Android** | ✅ Full app (`android/`, Jetpack Compose, Android 8+). Pairs over BLE, persists and scores on-device, and imports WHOOP / Apple Health / Health Connect. Grab the APK from [Releases](../../releases). |
 | **iOS** | 🟡 Libraries ready. Every package declares `.iOS(.v16)` and UI-framework code is guarded with `#if canImport(UIKit)` / `AppKit`; an iOS app target is planned. |
 
 ### What to expect when you start
@@ -193,7 +190,7 @@ Packages/
   StrandAnalytics/       HRV / recovery / strain / sleep / correlation math
   StrandImport/          WHOOP CSV + Apple Health importers
   StrandDesign/          SwiftUI design system (palette, components, charts)
-Tools/Backfill/          CLI tool for backfilling decoded data
+Tools/reverse_engineer/  Script used to fit the score formulas to a WHOOP export
 Fixtures/                sample WHOOP export for tests
 ```
 

@@ -32,20 +32,6 @@ playground.xcworkspace
 *.app/
 NOOP.app/
 
-# ── Android (Gradle / Studio) ───────────────────────────────────
-android/.gradle/
-android/build/
-android/app/build/
-android/captures/
-android/local.properties
-android/.idea/
-android/*.iml
-android/app/release/
-*.apk
-*.aab
-*.keystore
-*.jks
-
 # ── IDE / editor ────────────────────────────────────────────────
 .idea/
 .vscode/
@@ -55,9 +41,6 @@ android/app/release/
 *.log
 .env
 secrets.*
-android/local.properties
-android/keystore.properties
-android/noop-release.jks
 
 # ── Personal data — NEVER publish (real WHOOP/Apple Health exports) ──
 Fixtures/
@@ -68,3 +51,4 @@ export.xml
 export.zip
 *whoop_export*.zip
 *apple_health*.zip
+__pycache__/

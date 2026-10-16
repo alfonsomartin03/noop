@@ -99,7 +99,7 @@ Packages/                       Cross-platform Swift packages (iOS 16+ / macOS 1
 ├── StrandImport/               WHOOP CSV + Apple Health importers
 └── StrandDesign/               SwiftUI design system (palette, components, charts)
 
-Tools/Backfill/                 CLI offload/replay tool
+Tools/reverse_engineer/         Script used to fit the score formulas to a WHOOP export
 ```
 
 The app target (`Strand/`) is the **macOS reference implementation**. iOS and Android apps are

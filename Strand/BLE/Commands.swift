@@ -7,6 +7,7 @@ import WhoopProtocol
 /// This is intentionally a *subset*: destructive / dangerous commands
 /// (reboot, firmware load, force-trim, ship-mode, power-cycle, fuel-gauge reset, BLE DFU)
 /// are deliberately EXCLUDED so the in-app command sender can never brick or wipe the device.
+// Whitelist of commands the app may send. Destructive ones (reboot, firmware, wipe) are deliberately absent so a bug can't brick the strap.
 public enum WhoopCommand: UInt8, CaseIterable {
     case toggleRealtimeHR      = 3
     /// TOGGLE_GENERIC_HR_PROFILE: turn the strap's standard Bluetooth heart-rate broadcast (0x180D)
@@ -45,6 +46,7 @@ public enum WhoopCommand: UInt8, CaseIterable {
     /// raw flood that otherwise eats BLE airtime and dominates the strap's flash (blocking dense
     /// biometric retention + disconnected operation). Safe/reversible (just a data stream). Verified
     /// on-device: 2.1/s → 0/s, and it persists across reconnect.
+    // Turning this off on connect stops the constant raw-data stream that otherwise hogs Bluetooth airtime and strap storage.
     case sendR10R11Realtime    = 63
 
     // MARK: Alarm commands (confirmed for interoperability)
@@ -120,6 +122,7 @@ public enum WhoopCommand: UInt8, CaseIterable {
     /// - `len` = (3 + payload.count) + 4  (inner type+seq+cmd+payload, plus the 4 envelope bytes)
     /// - `crc8` is over the 2 length bytes only
     /// - `crc32` (zlib) is over the inner `[type][seq][cmd][payload]`
+    // Wire format: 0xAA | length | crc8(length) | type | seq | cmd | payload | crc32. See WhoopProtocol/Framing for the 5.0 variant.
     public func frame(seq: UInt8, payload: [UInt8] = [0x00]) -> [UInt8] {
         let inner: [UInt8] = [Self.commandType, seq, rawValue] + payload
         let length = UInt16(inner.count + 4)

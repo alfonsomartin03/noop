@@ -42,6 +42,7 @@ final class ReassemblerTests: XCTestCase {
         XCTAssertEqual(out, [a, b])
     }
 
+    // Bytes before the first 0xAA are discarded.
     func testLeadingGarbageIsSkipped() {
         let a = frameFromPayload([0x09], type: 40)
         let r = Reassembler()
@@ -57,6 +58,7 @@ final class ReassemblerTests: XCTestCase {
     }
 }
 
+// 5.0 frames use a different length field and +8 total size.
 final class ReassemblerWhoop5Tests: XCTestCase {
     func testWhoop5HelloSplitAcrossFragmentsReassembles() {
         let hello = DeviceFamily.whoop5ClientHello
@@ -80,6 +82,7 @@ final class ReassemblerWhoop5Tests: XCTestCase {
     }
 }
 
+// The frame builder must reproduce the known-good captured hello byte-for-byte.
 final class Whoop5CommandFramingTests: XCTestCase {
     func testBuilderReproducesStaticClientHello() {
         // payload of the Goose CLIENT_HELLO: type 35, seq 1, 0x91, 0x01 (already 4-byte aligned)
@@ -122,6 +125,7 @@ final class Whoop5RealtimeTests: XCTestCase {
     }
 }
 
+// Checks the decoded stored-record layout and its sanity filters.
 final class Whoop5HistoricalTests: XCTestCase {
     private func record(ts: UInt32, hr: UInt8, rr: [UInt16], g: (Float, Float, Float)) -> [UInt8] {
         var p = [UInt8](repeating: 0, count: 112)

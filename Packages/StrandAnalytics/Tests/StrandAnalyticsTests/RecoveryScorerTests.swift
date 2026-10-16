@@ -5,12 +5,14 @@ import WhoopProtocol
 final class RecoveryScorerTests: XCTestCase {
 
     /// A usable (trusted) baseline with a given mean and σ (Gaussian).
+    // Test helper: a baseline state with a given mean and spread.
     private func baseline(mean: Double, sigma: Double, nValid: Int = 14) -> BaselineState {
         // spread is internal abs-dev units; deviation() multiplies by 1.253 → σ.
         BaselineState(baseline: mean, spread: sigma / 1.253, nValid: nValid,
                       nightsSinceUpdate: 0, status: nValid >= 14 ? .trusted : .provisional)
     }
 
+    // A night exactly at your baseline should score near the ~58% population average.
     func testRecoveryAtBaselineNearPopulationMean() {
         // HRV at baseline, RHR at baseline, no resp, sleepPerf at center → Z≈0 → ~60%.
         let r = RecoveryScorer.recovery(
@@ -52,6 +54,7 @@ final class RecoveryScorerTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(r, 0.0)
     }
 
+    // Too few baseline nights => no score.
     func testColdStartReturnsNil() {
         let coldHRV = BaselineState(baseline: 50, spread: 5, nValid: 2,
                                     nightsSinceUpdate: 0, status: .calibrating)
@@ -61,6 +64,7 @@ final class RecoveryScorerTests: XCTestCase {
         XCTAssertNil(r)
     }
 
+    // Missing respiration drops that term and the others' weights are rescaled.
     func testRespTermDropAndRenormalize() {
         // With resp present vs nil but everything else equal at baseline, the score
         // stays near population mean either way (no driver pushes Z off zero).

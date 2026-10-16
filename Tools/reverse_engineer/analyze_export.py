@@ -17,6 +17,7 @@ c = pd.read_csv(D + "physiological_cycles.csv").rename(columns={
 c["cs"] = pd.to_datetime(c["cs"]); c = c.sort_values("cs").reset_index(drop=True)
 c["prev_strain"] = c.strain.shift(1)
 
+# Robust z-score vs a trailing EWMA baseline, mirroring the baselines used on-device.
 def z(series, span=20):
     dev = series - series.ewm(span=span, min_periods=7, adjust=False).mean().shift(1)
     sd = dev.abs().shift(1).ewm(span=span, min_periods=7, adjust=False).mean() * 1.253
@@ -24,6 +25,7 @@ def z(series, span=20):
 
 def mae(a, b): return float(np.nanmean(np.abs(a - b)))
 
+# Section 1: how sleep efficiency / performance / need / debt relate to each other.
 print("== Sleep arithmetic")
 print(" efficiency = asleep/in-bed        MAE %.2f pts" % mae(c.eff, 100 * c.asleep / c.inbed))
 c["hvn"] = np.minimum(1, c.asleep / c.need)
@@ -40,6 +42,7 @@ d = pd.DataFrame({"debt": c.debt, "dp": c.debt.shift(1), "sp": c.sf.shift(1)}).d
 A = np.c_[d.dp, d.sp, np.ones(len(d))]; k = np.linalg.lstsq(A, d.debt, rcond=None)[0]
 print(" debt = %.2f*prev debt + %.2f*prev shortfall + %.1f   MAE %.1f min" % (*k, mae(d.debt, A @ k)))
 
+# Section 2: fit recovery as a logistic of HRV and resting-HR z-scores.
 print("== Recovery = logistic(a*z(ln HRV) + b*z(-RHR) + c), EWMA span-20 baselines")
 c["lnhrv"] = np.log(c.hrv)
 X = np.c_[z(c.lnhrv), z(-c.rhr)]; y = c.rec.values; ok = ~np.isnan(X).any(1) & ~np.isnan(y)
@@ -47,6 +50,7 @@ f = lambda p: 100 / (1 + np.exp(-(X[ok] @ p[:2] + p[2]))) - y[ok]
 r = least_squares(f, [.5, .2, 0]); res = f(r.x)
 print(" a=%.3f b=%.3f c=%.3f  MAE %.2f  R2 %.3f" % (*r.x, np.abs(res).mean(), 1 - (res**2).sum() / ((y[ok] - y[ok].mean())**2).sum()))
 
+# Section 3: fit activity strain as k * ln(1 + weighted zone minutes).
 print("== Strain = k*ln(1 + sum_z w_z * minutes_in_zone_z)")
 w = pd.read_csv(D + "workouts.csv")
 for i in range(1, 6): w[f"m{i}"] = w["Duration (min)"] * w[f"HR Zone {i} %"] / 100
