@@ -163,11 +163,13 @@ public enum SleepStager {
         let half = windowSize(grav.map { $0.ts }) / 2
         var flags: [Bool] = []
         flags.reserveCapacity(n)
+        // Prefix count of still samples so each window is O(1) instead of re-scanning ~15 min of samples per record.
+        var stillPrefix = [Int](repeating: 0, count: n + 1)
+        for j in 0..<n { stillPrefix[j + 1] = stillPrefix[j] + (deltas[j] < gravityStillThresholdG ? 1 : 0) }
         for i in 0..<n {
             let lo = max(0, i - half)
             let hi = min(n, i + half + 1)
-            var stillCount = 0
-            for j in lo..<hi where deltas[j] < gravityStillThresholdG { stillCount += 1 }
+            let stillCount = stillPrefix[hi] - stillPrefix[lo]
             flags.append(Double(stillCount) / Double(hi - lo) >= stillFraction)
         }
         return flags

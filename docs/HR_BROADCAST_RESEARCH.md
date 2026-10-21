@@ -7,7 +7,10 @@ Goal: let NOOP switch the strap's standard Bluetooth heart-rate broadcast (servi
 - The strap does not report the current state; the WHOOP app resends "on" periodically. The strap emits `BLE_HR_PROFILE_ENABLED(24)` / `BLE_HR_PROFILE_DISABLED(25)` events when it changes.
 - Status: implemented in NOOP (Live screen switch). Not yet tested on a 4.0 strap.
 
-## WHOOP 5.0 / MG — NOT documented, NOT implemented
+## WHOOP 5.0 — VERIFIED (2026-10-21, live on owner's strap)
+Command 14 with payload `[0x01]` in the normal 5.0 command frame returns `result=1`, an EVENT follows, and the first standard 0x2A37 packet arrives within seconds. Exposed only through the user's "Heart-rate broadcast" switch (never auto-sent). Off-path (`[0x00]`) not yet observed.
+
+## (Historical notes, before verification) WHOOP 5.0 / MG — was undocumented
 - Public sources checked ([Cracking the WHOOP 5.0 over Bluetooth](https://judes.club/writing/cracking-the-whoop-5-bluetooth-protocol/), [Rudra5417/whoop5-protocol](https://github.com/Rudra5417/whoop5-protocol), [b-nnett/goose](https://github.com/b-nnett/goose), [vishk23/noop](https://github.com/vishk23/noop)) give the 5.0 frame format but no HR-broadcast command. One source lists SET_CONFIG feature flags `make_hrfm_visible` and `hr_ch_switching`, with no description of what they do.
 - Known 5.0 framing: `AA 01`, length u16 LE, two role bytes, CRC-16/MODBUS over the first 6 bytes, then `[0x23][seq][cmd][b3][payload]` padded to 4 bytes, then CRC-32. Commands must be written with response to `fd4b0002`. NOOP already builds these frames (`buildWhoop5CommandFrame`).
 - Whether command 14 exists on 5.0 with a `[state]` payload is **unknown**. NOOP does not send it; a guessed command is not sent to a 5.0 strap.

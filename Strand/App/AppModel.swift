@@ -30,6 +30,8 @@ final class AppModel: ObservableObject {
     /// Every screen should show THIS, not the raw per-beat value (which swings with HRV).
     @Published var bpm: Int?
     private var hrWindow: [(t: Date, v: Double)] = []
+    private var analysisDebounce: Task<Void, Never>?
+    private var lastDataVersionBump = Date.distantPast
     private var hrCancellables = Set<AnyCancellable>()
 
     // Wiring order: live state -> BLE engine -> repository -> analytics, then the refresh hooks below.
@@ -43,8 +45,17 @@ final class AppModel: ObservableObject {
         // When new strap data lands: show raw rows immediately, recompute scores, then refresh the UI again.
         ble.onStoredDataChanged = { [weak self] in
             guard let self else { return }
-            Task { @MainActor in
-                self.repo.dataVersion += 1                       // stored HR shows at once
+            // A pull saves dozens of chunks per second. Re-scoring 21 days after each one pinned the CPU, so show raw rows
+            // at a throttled rate and run the (expensive) scoring once, after the chunks stop arriving.
+            let nowT = Date()
+            if nowT.timeIntervalSince(self.lastDataVersionBump) > 2 {
+                self.lastDataVersionBump = nowT
+                self.repo.dataVersion += 1                       // stored HR shows promptly
+            }
+            self.analysisDebounce?.cancel()
+            self.analysisDebounce = Task { @MainActor [weak self] in
+                try? await Task.sleep(nanoseconds: 8_000_000_000)   // quiet period after the last chunk
+                guard let self, !Task.isCancelled else { return }
                 await self.intelligence.analyzeRecent()          // then scores catch up (refreshes the repo)
                 await self.repo.refresh()
                 self.repo.dataVersion += 1

@@ -43,6 +43,7 @@ final class IntelligenceEngine: ObservableObject {
         guard let hrvCfg = Baselines.metricCfg["hrv"],
               let rhrCfg = Baselines.metricCfg["resting_hr"] else { return }
 
+        guard !computing else { return }   // never overlap two full re-scores
         computing = true
         defer { computing = false }
 
@@ -79,8 +80,11 @@ final class IntelligenceEngine: ObservableObject {
             let resp = (try? await store.respSamples(deviceId: deviceId, from: from, to: to, limit: 200_000)) ?? []
             let grav = (try? await store.gravitySamples(deviceId: deviceId, from: from, to: to, limit: 200_000)) ?? []
 
-            let res = AnalyticsEngine.analyzeDay(day: day, hr: hr, rr: rr, resp: resp, gravity: grav,
-                                                 profile: up, baselines: baselines, maxHROverride: maxHR)
+            // Pure CPU work on value arrays: run it off the main thread so the UI stays responsive while scoring.
+            let res = await Task.detached(priority: .utility) {
+                AnalyticsEngine.analyzeDay(day: day, hr: hr, rr: rr, resp: resp, gravity: grav,
+                                           profile: up, baselines: baselines, maxHROverride: maxHR)
+            }.value
             out.append(Computed(day: day, recovery: res.recovery, strain: res.strain,
                                 sleepMin: res.daily.totalSleepMin, hrv: res.daily.avgHrv,
                                 rhr: res.daily.restingHr))

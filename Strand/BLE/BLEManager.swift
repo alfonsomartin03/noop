@@ -19,6 +19,9 @@ public final class BLEManager: NSObject, ObservableObject {
     static let dataNotifyChar  = CBUUID(string: "61080005-8d6d-82b8-614a-1c8cb0f8dcc6") // data (frag)
     static let heartRateService = CBUUID(string: "180D")
     static let heartRateChar    = CBUUID(string: "2A37") // HR + R-R (works unbonded)
+    /// Opt-in (default off): subscribe to 2A37 ourselves. Off keeps the broadcast exclusively available to other devices.
+    static let hrBroadcastKey = "hrBroadcastLastSet"
+    static var listensToBroadcast: Bool { UserDefaults.standard.bool(forKey: "listenToHRBroadcast") }
     static let batteryService   = CBUUID(string: "180F")
     static let batteryChar      = CBUUID(string: "2A19")
 
@@ -359,6 +362,7 @@ public final class BLEManager: NSObject, ObservableObject {
     /// Everything else (alarm, haptics, historical, raw streams) stays blocked: payloads differ or are unverified.
     private static let whoop5Allowed: [WhoopCommand: (_ payload: [UInt8]) -> [UInt8]] = [
         .toggleRealtimeHR:   { $0.isEmpty ? [0] : [$0[0]] },   // [1] on / [0] off
+        .toggleGenericHRProfile: { $0.isEmpty ? [0] : [$0[0]] },   // verified live on a 5.0: result=1, then 0x2A37 packets flow
         .reportVersionInfo:  { _ in [] },
         .getClock:           { _ in [] },
         .getDataRange:       { _ in [] },
@@ -395,6 +399,10 @@ public final class BLEManager: NSObject, ObservableObject {
         log("WHOOP 5.0: sending read-only probe (GET_CLOCK, REPORT_VERSION_INFO)")
         send(.getClock, payload: [])
         send(.reportVersionInfo, payload: [])
+        // Show the last broadcast choice the user made (the strap can't be asked); display only, nothing is sent.
+        if state.hrBroadcast == nil, let last = UserDefaults.standard.object(forKey: BLEManager.hrBroadcastKey) as? Bool {
+            state.hrBroadcast = last
+        }
         autoPullWhoop5History()
         startBackfillTimer()   // 5.0 re-pulls every backfillIntervalSeconds too (the 4.0 handshake that starts it never runs here)
     }
@@ -579,8 +587,12 @@ public final class BLEManager: NSObject, ObservableObject {
     /// Turn the strap's standard HR broadcast on/off (WHOOP 4.0). The strap answers with a
     /// BLE_HR_PROFILE_ENABLED/DISABLED event, which updates `state.hrBroadcast`.
     public func setHRBroadcast(_ on: Bool) {
-        guard family != .whoop5 else { log("HR broadcast: not supported on WHOOP 5.0 yet"); return }
-        send(.toggleGenericHRProfile, payload: [on ? 0x01 : 0x00])
+        // Never sent automatically: the broadcast is for OTHER devices (bike computers, watches), so only the user's toggle changes it.
+        // The strap can't report its current state and only emits an event on a real change, so track the user's choice
+        // here (optimistic) and remember it; a later BLE_HR_PROFILE_ENABLED/DISABLED event still overrides it.
+        state.hrBroadcast = on
+        UserDefaults.standard.set(on, forKey: BLEManager.hrBroadcastKey)
+        send(.toggleGenericHRProfile, payload: [on ? 0x01 : 0x00], writeType: .withResponse)
     }
 
     // Timers use DispatchSource on the main queue and are cancelled on disconnect to avoid leaks.
@@ -606,6 +618,9 @@ public final class BLEManager: NSObject, ObservableObject {
         }
         guard !backfilling else { return }            // never poke the strap mid-offload
         if wantsRealtime { send(.toggleRealtimeHR, payload: [0x01]) }   // re-arm so it can't lapse
+        // The strap can't report its broadcast state and the official app re-sends "on" periodically, so keep it armed
+        // while the user has it switched on (only ever the user's own choice).
+        if state.hrBroadcast == true { send(.toggleGenericHRProfile, payload: [0x01], writeType: .withResponse) }
         keepAliveTick += 1
         if keepAliveTick % 2 == 0 {                                          // ~every 60s
             send(.getBatteryLevel, payload: [])
@@ -869,12 +884,26 @@ public final class BLEManager: NSObject, ObservableObject {
     private func logWhoop5DataRange(_ frame: [UInt8]) {
         let end = min((Int(frame[2]) | Int(frame[3]) << 8) + 8 - 4, frame.count)
         guard end > 13 else { return }
+        func word(_ off: Int) -> Int? {
+            let o = 13 + off
+            guard o + 4 <= end else { return nil }
+            return Int(frame[o]) | Int(frame[o+1]) << 8 | Int(frame[o+2]) << 16 | Int(frame[o+3]) << 24
+        }
+        // A real stored-data time is after 2020 and never in the future. Scanning every byte offset also matched
+        // counters/IDs elsewhere in the reply (they showed up as dates like 2030 or 2034), so read the two fields that
+        // were stable across connects (body+33 = oldest stored, body+41 = newest) and only fall back to a scan.
+        let now = Int(Date().timeIntervalSince1970)
+        let plausible: (Int) -> Bool = { $0 >= 1_577_836_800 && $0 <= now + 86_400 }
         var found: [(Int, Int)] = []
-        var o = 13
-        while o + 4 <= end {
-            let w = Int(frame[o]) | Int(frame[o+1]) << 8 | Int(frame[o+2]) << 16 | Int(frame[o+3]) << 24
-            if w >= 1_600_000_000 && w <= 2_100_000_000 { found.append((o - 13, w)) }
-            o += 1
+        if let lo = word(33), let hi = word(41), plausible(lo), plausible(hi), lo <= hi {
+            found = [(33, lo), (41, hi)]
+        } else {
+            var o = 13
+            while o + 4 <= end {
+                let w = Int(frame[o]) | Int(frame[o+1]) << 8 | Int(frame[o+2]) << 16 | Int(frame[o+3]) << 24
+                if plausible(w) { found.append((o - 13, w)) }
+                o += 1
+            }
         }
         let f = DateFormatter(); f.dateStyle = .medium; f.timeStyle = .short
         let desc = found.map { "body+\($0.0)=\(f.string(from: Date(timeIntervalSince1970: TimeInterval($0.1))))" }
@@ -1177,7 +1206,15 @@ extension BLEManager: CBPeripheralDelegate {
                  BLEManager.dataNotifyChar,
                  BLEManager.heartRateChar,
                  BLEManager.batteryChar:
-                if c.uuid == BLEManager.heartRateChar { heartRateCharacteristic = c }
+                if c.uuid == BLEManager.heartRateChar {
+                    // The standard HR broadcast belongs to OTHER devices (bike computers, watches). A strap serves it to
+                    // one listener, so NOOP stays off it unless the user opts in; our HR/R-R come from the WHOOP data channel.
+                    guard BLEManager.listensToBroadcast else {
+                        log("Leaving standard heart-rate broadcast (2A37) free for other devices")
+                        break
+                    }
+                    heartRateCharacteristic = c
+                }
                 peripheral.setNotifyValue(true, for: c)
                 if c.uuid == BLEManager.batteryChar {
                     // Notify-only fires on CHANGE; read once now so the level shows immediately.
@@ -1420,6 +1457,8 @@ extension BLEManager: CBPeripheralDelegate {
                     if frame.count > 12, parsed.typeName == "COMMAND_RESPONSE" {
                         // metadata only: [8]=type [9]=seq [10]=responded-to cmd [11]=origin seq [12]=result code
                         log("RX 5.0 cmd-response to=\(frame[10]) originSeq=\(frame[11]) result=\(frame[12]) len=\(frame.count) crc=\(chk.ok)")
+                    } else if parsed.typeName == "EVENT", let ev = parsed.parsed["event"]?.stringValue {
+                        log("RX 5.0 EVENT \(ev)")
                     } else if rxFrameCount <= 20 {
                         log("RX 5.0 on \(characteristic.uuid.uuidString.prefix(8)): type=\(parsed.typeName) len=\(frame.count) hdrCRC=\(chk.crc8OK.map(String.init) ?? "?") crc32=\(chk.crc32OK.map(String.init) ?? "?")")
                     }

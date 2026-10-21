@@ -62,25 +62,24 @@ struct LiveStatusCard: View {
                     step("Bluetooth link", state: live.connected ? .done : .pending(phase == .disconnected))
                     step("Secure pairing", state: live.bonded ? .done : (live.connected ? .active : .pending(false)))
                     step("Heart-rate service",
-                         state: live.hrPackets > 0 ? .done : (live.bonded ? .active : .pending(false)),
+                         state: live.heartRate != nil || live.hrPackets > 0 ? .done : (live.bonded ? .active : .pending(false)),
                          detail: live.hrPackets > 0 ? "\(live.hrPackets) readings"
-                               : (live.hrSubscribed ? "subscribed · no readings yet" : (live.bonded ? "subscribing…" : nil)))
+                               : (live.heartRate != nil ? "via WHOOP channel · broadcast left free for other devices"
+                                  : (live.bonded ? "waiting for first reading…" : nil)))
                     step("Strap data channel",
                          state: live.strapFrames > 0 ? .done : (live.bonded ? .active : .pending(false)),
                          detail: live.strapFrames > 0 ? "\(live.strapFrames) frames" : nil)
                 }
                 if live.connected {
-                    let supported = live.bonded && live.family != "whoop5"
+                    let supported = live.bonded
                     Toggle(isOn: Binding(get: { live.hrBroadcast ?? (live.hrPackets > 0) },
                                          set: { model.setHRBroadcast($0) })) {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Heart-rate broadcast").font(.system(size: 13))
                                 .foregroundStyle(StrandPalette.textPrimary)
-                            Text(live.family == "whoop5"
-                                 ? "Not available for WHOOP 5.0 / MG yet. Turn it on in the WHOOP app."
-                                 : (live.bonded
-                                    ? "Lets NOOP read live heart rate over Bluetooth. While on, other nearby apps can read it too."
-                                    : "Available once the strap is paired."))
+                            Text(live.bonded
+                                 ? "Shares live heart rate over standard Bluetooth so other devices (bike computers, watches, apps) can read it. NOOP doesn't need it for its own data."
+                                 : "Available once the strap is paired.")
                                 .font(.system(size: 11)).foregroundStyle(StrandPalette.textSecondary)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
