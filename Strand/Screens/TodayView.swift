@@ -7,171 +7,190 @@ import Foundation
 
 // MARK: - Today — the home dashboard
 //
-// A calm grid of widgets: recovery (hero), sleep, strain, live heart rate, then the supporting
-// vitals. Each widget shows one primary number; tapping opens the detailed screen. Everything
-// else (workouts, other sources) sits below or behind a disclosure. Data loading is unchanged.
+// A week strip plus four squares: Recovery, Sleep, Strain and live Heart rate. Each square shows the basics for the
+// picked day; tapping Recovery, Sleep or Strain opens its full breakdown in place (TodayDetailViews.swift).
 
-// Home dashboard: recovery/sleep/strain widgets with 14-day sparklines, then live strap status and recent workouts.
+// Home dashboard: week strip, then the four squares; a tapped square swaps in its detail page under the same strip.
 struct TodayView: View {
     @EnvironmentObject var repo: Repository
+    @EnvironmentObject var profile: ProfileStore
     @Environment(\.navigate) private var navigate
 
     // 14-day sparkline series, keyed by metric key. Loaded once in .task.
     @State private var sparks: [String: [Double]] = [:]
-    @State private var workouts: [WorkoutRow] = []
+    /// Day picked in the calendar strip (yyyy-MM-dd); nil follows the newest day with data.
+    @State private var selectedDay: String?
+    /// Which square is open, or nil for the dashboard.
+    @State private var detail: TodayDetail?
+    /// Apple Health steps for the picked day, when imported (the strap itself doesn't count steps).
+    @State private var steps: Int?
+    /// The picked day's strap heart-rate samples, summarised once per load.
+    @State private var dayStats: DayHRStats?
+    /// The night's main sleep session (longest one ending on the picked day), for the stage graph.
+    @State private var night: CachedSleepSession?
+
+    private var byDay: [String: DailyMetric] {
+        Dictionary(repo.days.map { ($0.day, $0) }, uniquingKeysWith: { _, b in b })
+    }
+    private var activeDay: String { selectedDay ?? repo.today?.day ?? Repository.dayString(Date()) }
+    /// The metrics for the picked day; every score card below reads this instead of "latest".
+    private var shown: DailyMetric? { byDay[activeDay] }
 
     var body: some View {
         ScreenScaffold(title: greetingWord, subtitle: dateLine) {
-            VStack(alignment: .leading, spacing: NoopMetrics.sectionGap) {
+            // One uniform gap between the notices, week strip and cards (the scaffold's section gap is too loose here).
+            VStack(alignment: .leading, spacing: NoopMetrics.gap) {
                 PairingResetNotice()
                 ConnectionStrip()
                 SyncProgressStrip()
-                if repo.today?.recovery == nil {
-                    StrandNotice(
-                        symbol: "sparkles",
-                        title: "Your scores are building",
-                        message: "Live heart rate works from the strap right away. Recovery, strain and sleep build over your next few nights of wear. To see your history now, import your WHOOP export under Import & Export."
-                    )
+                WeekStrip(activeDay: activeDay, byDay: byDay) { selectedDay = $0 }
+                if let detail {
+                    detailPage(detail).transition(.opacity)
+                } else {
+                    if shown?.recovery == nil {
+                        StrandNotice(
+                            symbol: "sparkles",
+                            title: "Your scores are building",
+                            message: "Live heart rate works from the strap right away. Recovery, strain and sleep build over your next few nights of wear. To see your history now, import your WHOOP export in Settings → Data."
+                        )
+                    }
+                    dashboard.transition(.opacity)
                 }
-                dashboard
-                activitySection
             }
+            .animation(.easeInOut(duration: 0.2), value: detail)
         }
-        .task(id: "\(repo.today?.day ?? "")-\(repo.dataVersion)") { await loadAll() }
+        .task(id: "\(activeDay)-\(repo.dataVersion)") { await loadAll() }
+    }
+
+    private func open(_ d: TodayDetail) { detail = d }
+    private func close() { detail = nil }
+
+    @ViewBuilder
+    private func detailPage(_ d: TodayDetail) -> some View {
+        switch d {
+        case .recovery: RecoveryDetailView(day: shown, days: repo.days, official: repo.isOfficial(activeDay), back: close)
+        case .sleep:    SleepDetailView(day: shown, days: repo.days, back: close)
+        case .strain:   StrainDetailView(day: shown, dayKey: activeDay, days: repo.days, back: close)
+        }
     }
 
     // MARK: Widgets
 
+    /// Recovery, Sleep and Strain are the page: three large cards. Heart rate sits below as a full-width day view.
     @ViewBuilder
     private var dashboard: some View {
-        let d = repo.today
-        WidgetGrid(minColumn: 190) {
-            recoveryWidget(d)
-            sleepWidget(d)
-
-            StrandWidget("Strain", symbol: "flame.fill", tint: StrandPalette.strain033,
-                         action: { navigate(.workouts) }) {
-                VStack(alignment: .leading, spacing: 8) {
-                    WidgetValue(d?.strain.map { String(format: "%.1f", $0) }, unit: "/ 21")
-                    Spacer(minLength: 0)
-                    meter(d?.strain.map { $0 / 21 } ?? 0, tint: d?.strain.map { StrandPalette.strainColor($0) } ?? StrandPalette.strain033)
-                    WidgetCaption(d?.strain.map { strainWord($0) } ?? "No data yet")
-                }
+        let d = shown
+        VStack(alignment: .leading, spacing: NoopMetrics.gap) {
+            // A plain row (not the packing grid) so the gap to the heart-rate card below is exactly one card gap.
+            HStack(alignment: .top, spacing: NoopMetrics.gap) {
+                recoveryWidget(d).frame(maxWidth: .infinity)
+                sleepWidget(d).frame(maxWidth: .infinity)
+                strainWidget(d).frame(maxWidth: .infinity)
             }
-
-            LiveHeartRateWidget(version: repo.dataVersion) { navigate(.live) }
-
-            metricWidget("HRV", "waveform.path.ecg", StrandPalette.metricPurple,
-                         value: d?.avgHrv.map { "\(Int($0.rounded()))" }, unit: "ms",
-                         series: sparks["hrv"], to: .health)
-            metricWidget("Resting heart rate", "heart.fill", StrandPalette.metricRose,
-                         value: d?.restingHr.map { "\($0)" }, unit: "bpm",
-                         series: sparks["rhr"], to: .health)
-            metricWidget("Respiratory rate", "lungs.fill", StrandPalette.accent,
-                         value: d?.respRateBpm.map { String(format: "%.1f", $0) } ?? latestOptional("resp_rate", decimals: 1),
-                         unit: "br/min", series: sparks["resp_rate"], to: .health)
-            metricWidget("Blood oxygen", "drop.fill", StrandPalette.metricCyan,
-                         value: d?.spo2Pct.map { String(format: "%.0f", $0) }, unit: "%",
-                         series: sparks["spo2"], to: .health)
-
-            StrandWidget("Skin temperature", symbol: "thermometer.medium", tint: StrandPalette.metricAmber,
-                         action: { navigate(.health) }) {
-                VStack(alignment: .leading, spacing: 4) {
-                    WidgetValue(d?.skinTempDevC.map { String(format: "%+.1f", $0) }, unit: "°C")
-                    Spacer(minLength: 0)
-                    WidgetCaption(d?.skinTempDevC == nil ? "No data yet" : "Compared with your baseline")
-                }
-            }
-
-            BatteryWidget { navigate(.live) }
-
+            .frame(height: 410)
+            HeartRateDayCard(day: activeDay, metric: d, days: repo.days, stats: dayStats) { navigate(.live) }
+                .frame(height: 340)
         }
         .redacted(reason: repo.loaded ? [] : .placeholder)
     }
 
+    /// Recovery card: big ring, state word, and the two numbers that drive it most (HRV and resting HR).
     private func recoveryWidget(_ d: DailyMetric?) -> some View {
         let score = d?.recovery
         let tint = score.map { StrandPalette.recoveryColor($0) } ?? StrandPalette.textTertiary
-        return StrandWidget("Recovery", symbol: "circle.dotted.circle", tint: tint, size: .large,
-                            action: { navigate(.trends) }) {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack(alignment: .center, spacing: 20) {
-                    ProgressRing(fraction: (score ?? 0) / 100, tint: tint, lineWidth: 14) {
-                        VStack(spacing: 0) {
-                            Text(score.map { "\(Int($0.rounded()))" } ?? "—")
-                                .font(.system(size: 40, weight: .semibold).monospacedDigit())
-                                .foregroundStyle(score == nil ? StrandPalette.textTertiary : StrandPalette.textPrimary)
-                            if score != nil {
-                                Text("%").font(.system(size: 13, weight: .medium)).foregroundStyle(StrandPalette.textSecondary)
-                            }
-                        }
-                    }
-                    .frame(width: 132, height: 132)
-
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(synthesisWord(score))
-                            .font(.system(size: 22, weight: .semibold))
-                            .foregroundStyle(StrandPalette.textPrimary)
-                        Text(synthesisDetail(d))
-                            .font(.system(size: 13)).foregroundStyle(StrandPalette.textSecondary)
-                            .fixedSize(horizontal: false, vertical: true)
+        return StrandWidget("Recovery", symbol: "circle.dotted.circle", tint: tint, action: { open(.recovery) }) {
+            VStack(spacing: 12) {
+                ProgressRing(fraction: (score ?? 0) / 100, tint: tint, lineWidth: 14) {
+                    VStack(spacing: 0) {
+                        Text(score.map { "\(Int($0.rounded()))" } ?? "—")
+                            .font(.system(size: 46, weight: .bold).monospacedDigit())
+                            .foregroundStyle(score == nil ? StrandPalette.textTertiary : StrandPalette.textPrimary)
+                        if score != nil { Text("%").font(.system(size: 12, weight: .semibold)).foregroundStyle(StrandPalette.textSecondary) }
                     }
                 }
+                .frame(width: 150, height: 150)
+                Text(synthesisWord(score)).font(.system(size: 24, weight: .bold)).foregroundStyle(tint)
                 Spacer(minLength: 0)
-                WidgetSpark(sparks["recovery"] ?? [], tint: tint).frame(height: 44)
-                Text(scoreSourceLine(d)).font(.system(size: 11)).foregroundStyle(StrandPalette.textTertiary)
+                VStack(spacing: 6) {
+                    chip("HRV", d?.avgHrv.map { "\(Int($0.rounded())) ms" }, StrandPalette.metricPurple)
+                    chip("Resting HR", d?.restingHr.map { "\($0) bpm" }, StrandPalette.metricRose)
+                }
             }
+            .frame(maxWidth: .infinity)
         }
     }
 
-    /// One plain line saying where today's scores come from.
-    private func scoreSourceLine(_ d: DailyMetric?) -> String {
-        guard let d else { return "Last 14 days" }
-        return repo.isOfficial(d.day) ? "WHOOP score · last 14 days" : "NOOP estimate · last 14 days"
-    }
-
+    /// Sleep card: hours asleep as the headline, efficiency, the stage split and sleep need.
     private func sleepWidget(_ d: DailyMetric?) -> some View {
-        StrandWidget("Sleep", symbol: "bed.double.fill", tint: StrandPalette.sleepLight, size: .medium,
-                     action: { navigate(.sleep) }) {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(alignment: .firstTextBaseline) {
-                    WidgetValue(d?.totalSleepMin == nil ? nil : sleepValue(d))
-                    Spacer()
-                    if let eff = d?.efficiency {
-                        Text(String(format: "%.0f%% efficiency", eff))
-                            .font(.system(size: 12)).foregroundStyle(StrandPalette.textSecondary)
-                    }
-                }
+        let tint = StrandPalette.sleepLight
+        return StrandWidget("Sleep", symbol: "bed.double.fill", tint: tint, action: { open(.sleep) }) {
+            VStack(alignment: .leading, spacing: 10) {
+                Text(d?.totalSleepMin == nil ? "—" : sleepValue(d))
+                    .font(.system(size: 46, weight: .bold).monospacedDigit())
+                    .foregroundStyle(d?.totalSleepMin == nil ? StrandPalette.textTertiary : StrandPalette.textPrimary)
+                    .lineLimit(1).minimumScaleFactor(0.6)
+                Text(d?.totalSleepMin == nil ? "No sleep recorded for this day" : "asleep")
+                    .font(.system(size: 13, weight: .medium)).foregroundStyle(StrandPalette.textSecondary)
                 Spacer(minLength: 0)
                 if d?.totalSleepMin != nil {
-                    SleepStageBar(deep: d?.deepMin, rem: d?.remMin, light: d?.lightMin)
-                } else {
-                    WidgetCaption("No sleep recorded yet")
+                    if let tl = SleepTimeline.intervals(session: night, day: d) {
+                        // The same stage-over-the-night staircase as the Sleep tab.
+                        Hypnogram(intervals: tl.intervals, height: 84, showsStageAxis: false,
+                                  nightStart: night.map { Date(timeIntervalSince1970: TimeInterval($0.startTs)) },
+                                  timeZone: night.map { ZoneTimeline.shared.zone(forSpan: $0.startTs, $0.endTs) } ?? .autoupdatingCurrent)
+                        if tl.estimated {
+                            Text("Stage order estimated from totals").font(.system(size: 10))
+                                .foregroundStyle(StrandPalette.textTertiary)
+                        }
+                    } else {
+                        SleepStageBar(deep: d?.deepMin, rem: d?.remMin, light: d?.lightMin)
+                    }
+                }
+                VStack(spacing: 6) {
+                    chip("Efficiency", d?.efficiency.map { String(format: "%.0f%%", $0) }, StrandPalette.statusPositive)
+                    chip("Restorative", d?.totalSleepMin == nil ? nil : DayMath.hm((d?.deepMin ?? 0) + (d?.remMin ?? 0)), StrandPalette.sleepDeep)
                 }
             }
         }
     }
 
-    private func metricWidget(_ title: String, _ symbol: String, _ tint: Color, value: String?, unit: String?,
-                              series: [Double]?, to destination: NavItem) -> some View {
-        StrandWidget(title, symbol: symbol, tint: tint, action: { navigate(destination) }) {
-            VStack(alignment: .leading, spacing: 6) {
-                WidgetValue(value, unit: unit)
+    /// Strain card: ring out of 21, then what the strap measured that day (active time, energy, steps if imported).
+    private func strainWidget(_ d: DailyMetric?) -> some View {
+        let v = d?.strain
+        let tint = v.map { StrandPalette.strainColor($0) } ?? StrandPalette.strain033
+        return StrandWidget("Strain", symbol: "flame.fill", tint: tint, action: { open(.strain) }) {
+            VStack(spacing: 12) {
+                ProgressRing(fraction: (v ?? 0) / 21, tint: tint, lineWidth: 14) {
+                    VStack(spacing: 0) {
+                        Text(v.map { String(format: "%.1f", $0) } ?? "—")
+                            .font(.system(size: 44, weight: .bold).monospacedDigit())
+                            .foregroundStyle(v == nil ? StrandPalette.textTertiary : StrandPalette.textPrimary)
+                        Text("of 21").font(.system(size: 12, weight: .semibold)).foregroundStyle(StrandPalette.textSecondary)
+                    }
+                }
+                .frame(width: 150, height: 150)
+                Text(v.map { strainWord($0) } ?? "No data").font(.system(size: 22, weight: .bold)).foregroundStyle(tint)
                 Spacer(minLength: 0)
-                if value == nil { WidgetCaption("No data yet") }
-                else { WidgetSpark(series ?? [], tint: tint).frame(height: 36) }
+                VStack(spacing: 6) {
+                    chip("Active", dayStats.flatMap { $0.isEmpty ? nil : DayMath.hm($0.activeMin) }, StrandPalette.statusPositive)
+                    chip("Energy", dayStats?.kcal.map { "\(Int($0.rounded())) kcal" }, StrandPalette.metricAmber)
+                    if let steps { chip("Steps", steps.formatted(), StrandPalette.accent) }
+                }
             }
+            .frame(maxWidth: .infinity)
         }
     }
 
-    private func meter(_ fraction: Double, tint: Color) -> some View {
-        GeometryReader { geo in
-            ZStack(alignment: .leading) {
-                Capsule().fill(tint.opacity(0.16))
-                Capsule().fill(tint).frame(width: max(6, geo.size.width * min(1, max(0, fraction))))
-            }
+    /// Full-width rounded label + value pill used under a card's headline.
+    private func chip(_ label: String, _ value: String?, _ tint: Color) -> some View {
+        HStack(spacing: 8) {
+            Circle().fill(tint).frame(width: 8, height: 8).shadow(color: tint.opacity(0.8), radius: 3)
+            Text(label).font(.system(size: 12, weight: .semibold)).foregroundStyle(StrandPalette.textSecondary)
+            Spacer(minLength: 4)
+            Text(value ?? "—").font(.system(size: 14, weight: .bold).monospacedDigit()).foregroundStyle(StrandPalette.textPrimary)
         }
-        .frame(height: 8)
+        .padding(.horizontal, 12).padding(.vertical, 7)
+        .background(StrandPalette.surfaceInset, in: Capsule())
     }
 
     private func strainWord(_ v: Double) -> String {
@@ -183,51 +202,18 @@ struct TodayView: View {
         }
     }
 
-    // MARK: Activity
-
-    @ViewBuilder
-    private var activitySection: some View {
-        if !workouts.isEmpty {
-            VStack(alignment: .leading, spacing: NoopMetrics.gap) {
-                SectionHeader("Activity", trailing: workouts.isEmpty ? nil : "\(workouts.count) workouts")
-                WidgetGrid(minColumn: 190) {
-                    ForEach(Array(workouts.prefix(6).enumerated()), id: \.offset) { _, w in
-                        StrandWidget(w.sport, symbol: "figure.run", tint: StrandPalette.strainColor(w.strain ?? 8),
-                                     action: { navigate(.workouts) }) {
-                            VStack(alignment: .leading, spacing: 4) {
-                                WidgetValue(workoutDuration(w))
-                                Spacer(minLength: 0)
-                                WidgetCaption(workoutCaption(w))
-                                if let kcal = w.energyKcal { WidgetCaption("\(Int(kcal.rounded())) kcal") }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    /// Latest value of a loaded series as a display string, or nil when there is none.
-    private func latestOptional(_ key: String, decimals: Int) -> String? {
-        guard let last = sparks[key]?.last else { return nil }
-        return decimals == 0 ? intString(last) : String(format: "%.\(decimals)f", last)
-    }
-
     // MARK: - Loading
 
-    // Fills the sparkline cache once per data refresh; each series is fetched by key from the metric store.
+    // Per picked day: the strap's stored heart-rate samples (summarised once) and Apple Health steps if imported.
     private func loadAll() async {
-        // 14-day sparklines — Whoop.
-        sparks["recovery"]        = await sparkValues("recovery", source: "my-whoop", window: 14)
-        sparks["strain"]          = await sparkValues("strain", source: "my-whoop", window: 14)
-        sparks["sleep_total_min"] = await sparkValues("sleep_total_min", source: "my-whoop", window: 14)
-        sparks["hrv"]             = await sparkValues("hrv", source: "my-whoop", window: 14)
-        sparks["rhr"]             = await sparkValues("rhr", source: "my-whoop", window: 14)
-        sparks["spo2"]            = await sparkValues("spo2", source: "my-whoop", window: 14)
-
-        sparks["resp_rate"] = await sparkValues("resp_rate", source: "my-whoop", window: 14)
-
-        workouts = await repo.workoutRows()
+        let key = activeDay
+        if let r = DayMath.range(key) {
+            let samples = await repo.hrSamples(from: r.from, to: r.to, limit: 200_000)
+            dayStats = DayHRStats(hr: samples, profile: profile, restingHR: byDay[key]?.restingHr)
+            night = SleepTimeline.pick(repo.sleeps, range: r, day: byDay[key])
+        }
+        let apple = await repo.appleDailyRows().first { $0.day == key }
+        steps = apple?.steps
     }
 
     /// Trailing-window values for a metric, with the sparse-data fallback:
@@ -277,9 +263,7 @@ struct TodayView: View {
         let f = DateFormatter()
         f.locale = Locale(identifier: "en_US_POSIX")
         f.dateFormat = "EEEE, d MMMM"
-        if let day = repo.today?.day, let date = Self.dayParser.date(from: day) {
-            return f.string(from: date)
-        }
+        if let date = WeekStrip.date(activeDay) { return f.string(from: date) }
         return f.string(from: Date())
     }
 
@@ -365,6 +349,92 @@ struct TodayView: View {
     }()
 }
 
+
+// MARK: - Week calendar strip
+
+/// Seven day tiles (Monday first) for the week containing the picked day. The picked tile glows blue; a dot under each
+/// day shows its recovery colour, or stays empty when the strap recorded nothing. Arrows page by week.
+private struct WeekStrip: View {
+    let activeDay: String
+    let byDay: [String: DailyMetric]
+    let pick: (String) -> Void
+
+    private static let cal: Calendar = { var c = Calendar(identifier: .gregorian); c.firstWeekday = 2; return c }()
+    private static let parser: DateFormatter = {
+        let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX"); f.dateFormat = "yyyy-MM-dd"; return f
+    }()
+
+    static func date(_ day: String) -> Date? { parser.date(from: day) }
+    static func string(_ d: Date) -> String { parser.string(from: d) }
+
+    /// The seven yyyy-MM-dd strings of the week (Mon…Sun) that contains `day`.
+    static func days(inWeekOf day: String) -> [String] {
+        guard let d = date(day), let start = cal.dateInterval(of: .weekOfYear, for: d)?.start else { return [] }
+        return (0..<7).compactMap { cal.date(byAdding: .day, value: $0, to: start) }.map(string)
+    }
+
+    private var week: [String] { Self.days(inWeekOf: activeDay) }
+    private var todayString: String { Self.string(Date()) }
+
+    private func shiftWeek(_ delta: Int) {
+        guard let d = Self.date(activeDay), let moved = Self.cal.date(byAdding: .day, value: 7 * delta, to: d) else { return }
+        let target = Self.string(moved)
+        pick(target > todayString ? todayString : target)
+    }
+
+    var body: some View {
+        HStack(spacing: NoopMetrics.gap / 2) {
+            arrow("chevron.left") { shiftWeek(-1) }
+            ForEach(week, id: \.self) { day in tile(day) }
+            arrow("chevron.right") { shiftWeek(1) }
+                .opacity((week.last ?? "") >= todayString ? 0.3 : 1)
+                .disabled((week.last ?? "") >= todayString)
+        }
+    }
+
+    private func arrow(_ symbol: String, _ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol).font(.system(size: 13, weight: .bold))
+                .foregroundStyle(StrandPalette.accentInk).frame(width: 26, height: 44)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func tile(_ day: String) -> some View {
+        let date = Self.date(day)
+        let selected = day == activeDay
+        let isFuture = day > todayString
+        let rec = byDay[day]?.recovery
+        let label = date.map { Self.cal.shortWeekdaySymbols[Self.cal.component(.weekday, from: $0) - 1].uppercased() } ?? ""
+        let num = date.map { Self.cal.component(.day, from: $0) } ?? 0
+        return Button { pick(day) } label: {
+            VStack(spacing: 4) {
+                Text(label).font(.system(size: 10, weight: .bold)).tracking(0.5)
+                    .foregroundStyle(selected ? Color.white.opacity(0.85) : StrandPalette.textTertiary)
+                Text("\(num)").font(.system(size: 20, weight: .bold).monospacedDigit())
+                    .foregroundStyle(selected ? Color.white : StrandPalette.textPrimary)
+                Circle()
+                    .fill(rec.map { StrandPalette.recoveryColor($0) } ?? (byDay[day] != nil ? StrandPalette.textTertiary : Color.clear))
+                    .frame(width: 6, height: 6)
+            }
+            .frame(maxWidth: .infinity).padding(.vertical, 10)
+            .background {
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(selected
+                          ? AnyShapeStyle(LinearGradient(colors: [StrandPalette.accentHover, StrandPalette.accent],
+                                                         startPoint: .top, endPoint: .bottom))
+                          : AnyShapeStyle(StrandPalette.surfaceRaised))
+            }
+            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .strokeBorder(selected ? Color.white.opacity(0.25) : StrandPalette.hairline, lineWidth: 0.5))
+            .shadow(color: selected ? StrandPalette.accent.opacity(0.55) : .clear, radius: 14, y: 4)
+            .opacity(isFuture ? 0.35 : 1)
+        }
+        .buttonStyle(.plain)
+        .disabled(isFuture)
+    }
+}
+
 // MARK: - Live widgets (isolated so the ~1 Hz stream only re-renders these small views)
 
 /// Shown only when the strap is not connected: a single quiet line with a Connect action.
@@ -429,33 +499,99 @@ private struct SyncProgressStrip: View {
     }
 }
 
-private struct LiveHeartRateWidget: View {
+/// Heart rate for the picked day: the day's curve from the strap, the live reading when the day is today, and a few
+/// plain-language insights computed from the same samples.
+private struct HeartRateDayCard: View {
     @EnvironmentObject var live: LiveState
     @EnvironmentObject var model: AppModel
-    @EnvironmentObject var repo: Repository
-    let version: Int
-    let open: () -> Void
-    @State private var today: [HRSample] = []
+    let day: String
+    let metric: DailyMetric?
+    let days: [DailyMetric]
+    let stats: DayHRStats?
+    let openLive: () -> Void
 
-    private var latest: HRSample? { today.last }
+    private var isToday: Bool { day == Repository.dayString(Date()) }
+
     var body: some View {
-        StrandWidget("Heart rate", symbol: "heart.fill", tint: StrandPalette.metricRose, size: .medium, action: open) {
-            VStack(alignment: .leading, spacing: 6) {
-                WidgetValue((model.bpm ?? latest?.bpm).map(String.init), unit: "bpm")
-                Spacer(minLength: 0)
-                WidgetSpark(today.map { Double($0.bpm) }, tint: StrandPalette.metricRose).frame(height: 36)
-                WidgetCaption(caption)
+        StrandWidget("Heart rate", symbol: "heart.fill", tint: StrandPalette.metricRose, trailing: isToday ? "Live" : nil, action: openLive) {
+            HStack(alignment: .top, spacing: 24) {
+                VStack(alignment: .leading, spacing: 10) {
+                    headline
+                    Spacer(minLength: 0)
+                    ForEach(insights.prefix(5)) { ins in
+                        HStack(alignment: .top, spacing: 8) {
+                            Image(systemName: ins.icon).font(.system(size: 11, weight: .bold)).foregroundStyle(ins.tint).frame(width: 16)
+                            Text(ins.text).font(.system(size: 12)).foregroundStyle(StrandPalette.textSecondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                }
+                .frame(width: 300, alignment: .leading)
+                chart.frame(maxWidth: .infinity)
             }
         }
-        .task(id: version) { today = Self.downsample(await repo.todayHeartRate(), to: 240) }
     }
 
-    private var caption: String {
-        if model.bpm != nil { return "Live from your strap" }
-        guard let latest, !today.isEmpty else { return live.phase.title }
-        let bpms = today.map(\.bpm)
-        let t = Date(timeIntervalSince1970: TimeInterval(latest.ts)).formatted(date: .omitted, time: .shortened)
-        return "Today \(bpms.min()!)–\(bpms.max()!) · avg \(bpms.reduce(0, +) / bpms.count) · last \(t)"
+    // MARK: Headline numbers
+
+    @ViewBuilder private var headline: some View {
+        if isToday, let bpm = model.bpm {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text("\(bpm)").font(.system(size: 52, weight: .bold).monospacedDigit()).foregroundStyle(StrandPalette.metricRose)
+                    .shadow(color: StrandPalette.metricRose.opacity(0.5), radius: 10)
+                Text("bpm now").font(.system(size: 13, weight: .medium)).foregroundStyle(StrandPalette.textSecondary)
+            }
+        } else if let avg = stats?.average {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text("\(avg)").font(.system(size: 52, weight: .bold).monospacedDigit()).foregroundStyle(StrandPalette.textPrimary)
+                Text("bpm average").font(.system(size: 13, weight: .medium)).foregroundStyle(StrandPalette.textSecondary)
+            }
+        } else {
+            Text("—").font(.system(size: 52, weight: .bold)).foregroundStyle(StrandPalette.textTertiary)
+        }
+        if let s = stats, !s.isEmpty, let lo = s.low, let hi = s.peak {
+            HStack(spacing: 8) {
+                stat("Low", "\(lo.bpm)", StrandPalette.metricCyan)
+                stat("Avg", s.average.map(String.init) ?? "—", StrandPalette.textPrimary)
+                stat("Peak", "\(hi.bpm)", StrandPalette.statusCritical)
+            }
+        }
+    }
+
+    private func stat(_ label: String, _ value: String, _ tint: Color) -> some View {
+        VStack(spacing: 1) {
+            Text(value).font(.system(size: 17, weight: .bold).monospacedDigit()).foregroundStyle(tint)
+            Text(label).font(.system(size: 10, weight: .semibold)).foregroundStyle(StrandPalette.textTertiary)
+        }
+        .frame(maxWidth: .infinity).padding(.vertical, 6)
+        .background(StrandPalette.surfaceInset, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+
+    // MARK: Chart
+
+    private static let gradient = Gradient(colors: [StrandPalette.metricCyan, StrandPalette.metricRose, StrandPalette.statusCritical])
+
+    @ViewBuilder private var chart: some View {
+        if let s = stats, s.samples.count > 1 {
+            let pts = Self.downsample(s.samples, to: 320)
+            VStack(alignment: .leading, spacing: 6) {
+                Sparkline(values: pts.map { Double($0.bpm) }, gradient: Self.gradient, lineWidth: 2.5, showsArea: true,
+                          showsHead: false, showsHover: true,
+                          valueFormat: { "\(Int($0.rounded())) bpm" },
+                          indexLabel: { i in pts.indices.contains(i) ? DayMath.clock(pts[i].ts) : "" })
+                HStack {
+                    Text(DayMath.clock(pts.first!.ts)); Spacer(); Text(DayMath.clock(pts.last!.ts))
+                }
+                .font(.system(size: 10)).foregroundStyle(StrandPalette.textTertiary)
+            }
+        } else {
+            VStack(spacing: 8) {
+                Image(systemName: "heart.slash").font(.system(size: 22)).foregroundStyle(StrandPalette.textTertiary)
+                Text("No heart-rate samples stored for this day").font(.system(size: 13)).foregroundStyle(StrandPalette.textSecondary)
+                Text("They arrive when the strap syncs.").font(.system(size: 11)).foregroundStyle(StrandPalette.textTertiary)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
     }
 
     private static func downsample(_ s: [HRSample], to n: Int) -> [HRSample] {
@@ -463,31 +599,46 @@ private struct LiveHeartRateWidget: View {
         let step = Double(s.count) / Double(n)
         return (0..<n).map { s[Int(Double($0) * step)] }
     }
-}
 
-private struct BatteryWidget: View {
-    @EnvironmentObject var live: LiveState
-    let open: () -> Void
-    private var pct: Int? { live.batteryPct.map { Int($0.rounded()) } }
-    private var symbol: String {
-        guard let p = pct else { return "battery.0percent" }
-        switch p {
-        case ..<13: return "battery.0percent"
-        case ..<38: return "battery.25percent"
-        case ..<63: return "battery.50percent"
-        case ..<88: return "battery.75percent"
-        default:    return "battery.100percent"
-        }
-    }
-    private var tint: Color { (pct ?? 100) < 20 ? StrandPalette.statusCritical : StrandPalette.statusPositive }
-    var body: some View {
-        StrandWidget("Strap battery", symbol: symbol, tint: tint, action: open) {
-            VStack(alignment: .leading, spacing: 4) {
-                WidgetValue(pct.map(String.init), unit: "%")
-                Spacer(minLength: 0)
-                WidgetCaption(live.connected ? (live.bonded ? "Connected" : "Connecting…") : "Not connected")
+    // MARK: Insights
+
+    private struct Insight: Identifiable { let id = UUID(); let icon: String; let text: String; let tint: Color }
+
+    private var insights: [Insight] {
+        var out: [Insight] = []
+        if let rhr = metric?.restingHr {
+            let base = DayMath.baseline(days, before: day) { $0.restingHr.map(Double.init) }
+            if let base {
+                let d = Double(rhr) - base
+                let rel = abs(d) < 1 ? "in line with your 30-day average"
+                    : "\(Int(abs(d).rounded())) bpm \(d < 0 ? "below" : "above") your 30-day average"
+                out.append(Insight(icon: d <= 0.5 ? "arrow.down.heart.fill" : "arrow.up.heart.fill",
+                                   text: "Resting HR \(rhr) bpm, \(rel).",
+                                   tint: d <= 0.5 ? StrandPalette.statusPositive : StrandPalette.statusWarning))
+            } else {
+                out.append(Insight(icon: "heart.fill", text: "Resting HR \(rhr) bpm.", tint: StrandPalette.metricRose))
             }
         }
+        if let s = stats, !s.isEmpty {
+            if let hi = s.peak {
+                let pct = Int((Double(hi.bpm) / max(s.zoneSet.maxHR, 1) * 100).rounded())
+                out.append(Insight(icon: "bolt.heart.fill", text: "Peaked at \(hi.bpm) bpm at \(DayMath.clock(hi.ts)), \(pct)% of your max.",
+                                   tint: StrandPalette.statusCritical))
+            }
+            if let lo = s.low {
+                out.append(Insight(icon: "moon.zzz.fill", text: "Lowest was \(lo.bpm) bpm at \(DayMath.clock(lo.ts)).", tint: StrandPalette.metricCyan))
+            }
+            out.append(Insight(icon: "flame.fill",
+                               text: s.elevatedMin >= 1 ? "Elevated (Zone 3+) for \(DayMath.hm(s.elevatedMin))."
+                                                        : "No time in Zone 3 or higher, a calm day for your heart.",
+                               tint: StrandPalette.strain033))
+            let hours = s.coveredS / 3600
+            out.append(Insight(icon: hours >= 20 ? "checkmark.circle.fill" : "exclamationmark.circle.fill",
+                               text: hours >= 20 ? String(format: "Heart rate recorded for %.0f h of the day.", hours)
+                                                 : String(format: "Only %.1f h recorded. Gaps mean the strap was off or hasn't synced yet.", hours),
+                               tint: hours >= 20 ? StrandPalette.statusPositive : StrandPalette.statusWarning))
+        }
+        return out
     }
 }
 
@@ -519,6 +670,7 @@ private struct BatteryWidget: View {
 
     return TodayView()
         .environmentObject(repo)
+        .environmentObject(ProfileStore())
         .frame(width: 920, height: 940)
         .preferredColorScheme(.dark)
 }

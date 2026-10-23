@@ -5,7 +5,7 @@ import WhoopProtocol
 //
 // Ported from server/ingest/app/analysis/exercise.py (+ activity.py, calories.py).
 //
-// A workout is a SUSTAINED window (≥ MIN_EXERCISE_MIN) of elevated HR (above
+// A workout is HR held above the bottom of Zone 1 for a sustained window (formerly: above
 // resting + HR_MARGIN_BPM) AND sustained motion (gravity-derived intensity above
 // MOTION_THRESHOLD). Both gates must hold for a sample to count as active.
 //
@@ -92,16 +92,17 @@ public enum WorkoutDetector {
     /// Resting HR is estimated as this percentile of the day's HR when the caller gives none.
     public static let restingPercentile: Double = 10.0
 
-    // HR-only detector (catches cycling / rowing / lifting where the wrist barely moves). Modelled on
-    // published auto-detection approaches (WHOOP: sustained HR rise over baseline + enough duration to
-    // reject spikes; patents describe threshold-based start/end of an elevated interval, then a check).
+    // Workout trigger: heart rate held above the bottom of Zone 1 (50% of HRmax) for a sustained stretch.
+    // Wrist motion is deliberately NOT a trigger: arm movement at a desk or while walking made it far too eager.
     /// Rolling-median window smoothing single-sample HR spikes.
     public static let hrSmoothS: Int = 60
-    /// Smoothed HR must exceed rest + max(hrOnlyMarginBPM, hrOnlyMinHRRFrac × HRR) to count as active.
-    public static let hrOnlyMarginBPM: Double = 30.0
-    public static let hrOnlyMinHRRFrac: Double = 0.35
-    /// Minimum length of an HR-only bout (longer than the motion-gated 5 min: no motion corroboration).
-    public static let hrOnlyMinMin: Double = 10.0
+    /// Zone 1 floor as a fraction of HRmax; smoothed HR must exceed it to count as active.
+    public static let zone1Floor: Double = 0.50
+    /// Once an effort has started it continues until smoothed HR falls this many bpm below the Zone 1 floor,
+    /// so cardiac drift or an easy descent does not chop a session.
+    public static let exitBelowFloorBPM: Double = 5.0
+    /// HR must stay above the Zone 1 floor for at least this long (minutes) to count as a workout.
+    public static let hrOnlyMinMin: Double = 15.0
     /// Gaps up to this long inside an effort are bridged (rest between sets, a stop light, a drink).
     public static let hrOnlyBridgeS: Int = 300
     /// Hysteresis: once an effort has started it continues while smoothed HR stays above
@@ -112,9 +113,6 @@ public enum WorkoutDetector {
     /// (a café stop mid-ride, a red-light queue, refilling a bottle).
     public static let longBridgeS: Int = 1500
     public static let longEffortMin: Double = 15.0
-    /// Efforts at least this long are endurance sessions: zone 1+ time is enough to qualify them.
-    public static let enduranceMin: Double = 30.0
-    public static let enduranceMinZ1Plus: Double = 0.60
 
     // MARK: - Activity series (activity.py)
 
@@ -243,13 +241,9 @@ public enum WorkoutDetector {
     /// (7) drop runs that are too short.
     static func hrOnlyRuns(_ hr: [(ts: Int, bpm: Double)], restingHR: Double, maxHR: Double?) -> [(Int, Int)] {
         guard hr.count > 1 else { return [] }
-        let hrr = max(0.0, (maxHR ?? 190.0) - restingHR)   // heart-rate reserve; 190 if HRmax unknown
-        // Threshold scales with fitness/HRR but never drops below a fixed bpm margin.
-        // Example: rest 55, HRmax 190 → HRR 135 → margin max(30, 47) = 47 → enter above 102 bpm.
-        let margin = max(hrOnlyMarginBPM, hrOnlyMinHRRFrac * hrr)
-        let threshold = restingHR + margin
-        // Lower "stay in" line (hysteresis): easier to remain in a workout than to start one.
-        let exitThreshold = restingHR + margin * hrOnlyExitFrac
+        // Entry line = bottom of Zone 1 (e.g. HRmax 190 → 95 bpm); 190 is assumed when HRmax is unknown.
+        let threshold = (maxHR ?? 190.0) * zone1Floor
+        let exitThreshold = threshold - exitBelowFloorBPM
         let sm = smoothedHR(hr, windowS: hrSmoothS)
         var raw: [(Int, Int)] = []
         var start: Int? = nil   // start ts of the run being built (nil = not in a run)
@@ -321,7 +315,6 @@ public enum WorkoutDetector {
         if hrSeg.isEmpty { return [] }
 
         let restHR = restingHR ?? deriveRestingHR(hrSeg)
-        let hrFloor = restHR + hrMarginBPM   // detector 1's minimum HR for an "active" sample
 
         // HRmax: caller value wins; otherwise estimated (observed peak / Tanaka by age).
         // nil means unknown, in which case zone math and the intensity gate are skipped.
@@ -335,38 +328,8 @@ public enum WorkoutDetector {
             hrmaxSource = src
         }
 
-        // Parallel arrays so nearest() can binary-search timestamps.
-        let hrTs = hrSeg.map { $0.ts }
-        let hrBpm = hrSeg.map { $0.bpm }
-        let smooth = smoothedIntensity(motion, windowS: motionSmoothS)
-
-        // Detector 1 — motion + HR: walk the gravity timeline; flag samples where BOTH gates hold.
-        var activeTs: [Int] = []   // timestamps where the wrist is moving AND HR is above the floor
-        for (p, inten) in zip(motion, smooth) {
-            if inten <= motionThreshold { continue }
-            guard let bpm = nearest(hrTs, hrBpm, p.ts, alignToleranceS), bpm > hrFloor else { continue }
-            activeTs.append(p.ts)
-        }
-
-        // Group contiguous active samples into runs, merging gaps < MERGE_GAP_S.
-        var runs: [(Int, Int)] = []   // (start, end) timestamps of candidate workouts
-        if let first = activeTs.first {
-            var runStart = first
-            var prev = first
-            for ts in activeTs.dropFirst() {
-                if Double(ts - prev) > mergeGapS { runs.append((runStart, prev)); runStart = ts }
-                prev = ts
-            }
-            runs.append((runStart, prev))
-        }
-        // Onset latency tolerance equal to the smoothing window (same rule as before).
-        runs = runs.filter { Double($0.1 - $0.0) >= minExerciseMin * 60.0 - motionSmoothS }
-
-        // Detector 2 — HR only: sustained smoothed HR well above rest, regardless of wrist motion.
-        let hrOnly = hrOnlyRuns(hrSeg, restingHR: restHR, maxHR: effMaxHR)
-
-        // Union both detectors' runs (a ride picked up by both, or split by a short pause, becomes one); overlapping or nearly-touching runs become one workout.
-        runs = unionRuns(runs + hrOnly, bridgeS: Int(mergeGapS))
+        // Trigger: smoothed HR above the Zone 1 floor for hrOnlyMinMin, short dips bridged.
+        let runs = hrOnlyRuns(hrSeg, restingHR: restHR, maxHR: effMaxHR)
         if runs.isEmpty { return [] }
 
         // --- Build a session (stats + intensity gate) for each candidate run ---
@@ -383,16 +346,6 @@ public enum WorkoutDetector {
             var avgHRR: Double? = nil
             if let m = effMaxHR, m > restHR {
                 (zonePct, avgHRR) = boutIntensity(window, restingHR: restHR, maxHR: m)
-            }
-
-            // Intensity qualification: require ≥ MIN_INTENSITY_Z2PLUS in zone 2+.
-            if !zonePct.isEmpty {
-                let z2plus = (2...5).reduce(0.0) { $0 + (zonePct[$1] ?? 0.0) } / 100.0
-                let z1plus = z2plus + (zonePct[1] ?? 0.0) / 100.0
-                // Long steady endurance work (easy/Z2 riding) lives mostly in zone 1, so it qualifies on
-                // zone 1+ time; short bouts still need real zone 2+ intensity.
-                let endurance = Double(end - start) >= enduranceMin * 60.0 && z1plus >= enduranceMinZ1Plus
-                if z2plus < minIntensityZ2Plus && !endurance { continue }
             }
 
             // Calories only when the caller supplied a body profile.
@@ -467,6 +420,35 @@ public enum Calories {
         let eeKjMin = c.workoutHR * min(hr, hrmax) + c.workoutWeight * weightKg
             + c.workoutAge * age + c.workoutAlpha
         return max(0.0, eeKjMin) / workoutDivisor
+    }
+
+    /// Estimate kcal over a whole day of irregularly spaced HR samples. Each sample is credited with the time until
+    /// the next one (capped at `maxGapS`, so a gap while the strap was off or unsynced adds nothing), using the same
+    /// resting/active split as `estimateBoutCalories`.
+    public static func estimateDayCalories(_ hrSamples: [HRSample],
+                                           profile: UserProfile,
+                                           hrmax: Double?,
+                                           restingHR: Double?,
+                                           maxGapS: Double = 60) -> Double {
+        let sorted = hrSamples.sorted { $0.ts < $1.ts }
+        guard !sorted.isEmpty else { return 0 }
+        let weightKg = profile.weightKg > 0 ? profile.weightKg : 70.0
+        let heightCm = profile.heightCm > 0 ? profile.heightCm : 170.0
+        let age = profile.age > 0 ? profile.age : 30.0
+        let coeffs = resolveCoeffs(profile.sex)
+        let effHRmax = hrmax ?? 220.0
+        let effResting = restingHR ?? 60.0
+        let activeThreshold = effResting + activeHRRFraction * (effHRmax - effResting)
+        let restingRate = restingKcalPerS(coeffs, weightKg: weightKg, heightCm: heightCm, age: age)
+
+        var total = 0.0
+        for i in 0..<sorted.count {
+            let dt = i + 1 < sorted.count ? min(Double(sorted[i + 1].ts - sorted[i].ts), maxGapS) : 1.0
+            guard dt > 0 else { continue }
+            let bpm = Double(sorted[i].bpm)
+            total += (bpm < activeThreshold ? restingRate : activeKcalPerS(coeffs, hr: bpm, hrmax: effHRmax, weightKg: weightKg, age: age)) * dt
+        }
+        return total
     }
 
     /// Estimate (kcal, kJ) for a workout bout. Each HR sample = 1 second of data.

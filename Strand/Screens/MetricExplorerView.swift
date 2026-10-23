@@ -308,7 +308,7 @@ struct MetricDetailView: View {
                 rangeBar(effectiveRange: effRange, windowed: win, windowFellBack: fellBack)
                 if loaded && series.isEmpty {
                     // ONLY genuine empty state: no data in the entire history.
-                    ComingSoon(what: "Import your history first. A WHOOP export under Import & Export fills every metric you can explore here in about a minute.")
+                    ComingSoon(what: "Import your history first. A WHOOP export in Settings → Data fills every metric you can explore here in about a minute.")
                 } else if !loaded {
                     ComingSoon(what: "Reading your \(metric.title.lowercased())…")
                 } else {

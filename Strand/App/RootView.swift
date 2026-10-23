@@ -1,187 +1,172 @@
 import SwiftUI
+import AppKit
 import StrandDesign
 
-// Every sidebar destination; icon and grouping live here so adding a screen is one case.
+/// The three primary destinations. Everything else is reached from a card (detail view / sheet) or a segment.
 enum NavItem: String, CaseIterable, Identifiable, Hashable {
-    case today = "Today"
-    case live = "Live"
-    case sleep = "Sleep"
-    case workouts = "Workouts"
-    case health = "Vitals"
+    case overview = "Overview"
     case trends = "Trends"
-    case explore = "Data Explorer"
-    case dataSources = "Import & Export"
     case settings = "Settings"
 
     var id: String { rawValue }
     var icon: String {
         switch self {
-        case .today: return "square.grid.2x2.fill"
-        case .live: return "waveform.path.ecg"
-        case .sleep: return "bed.double.fill"
-        case .workouts: return "figure.run"
-        case .health: return "heart.text.square.fill"
+        case .overview: return "square.grid.2x2.fill"
         case .trends: return "chart.xyaxis.line"
-        case .explore: return "tablecells"
-        case .dataSources: return "externaldrive.fill"
         case .settings: return "gearshape.fill"
         }
     }
-
-    // Sidebar organisation: what the strap records, then the stored data itself, then settings.
-    static let collected: [NavItem] = [.today, .live, .sleep, .workouts, .health, .trends]
-    static let data: [NavItem] = [.explore, .dataSources]
-    static let footer: [NavItem] = [.settings]
 }
 
-/// Lets any screen jump to another destination (e.g. a widget opening its detail view).
-// Environment hook so any screen can switch tabs (e.g. a widget opening its detail view).
+/// Where a card can send the user: a primary tab, or the live-strap sheet (a contextual detail, not a destination).
+enum NavTarget { case overview, trends, settings, live }
+
 private struct NavigateKey: EnvironmentKey {
-    static let defaultValue: (NavItem) -> Void = { _ in }
+    static let defaultValue: (NavTarget) -> Void = { _ in }
 }
 extension EnvironmentValues {
-    var navigate: (NavItem) -> Void {
+    var navigate: (NavTarget) -> Void {
         get { self[NavigateKey.self] }
         set { self[NavigateKey.self] = newValue }
     }
 }
 
-// Sidebar + detail shell. Observes only Repository so ~1 Hz heart-rate updates don't re-render the whole window.
+// Shell: one persistent content area with a floating pill. Observes only Repository so ~1 Hz heart-rate updates
+// don't re-render the whole window (the battery badge owns its own LiveState subscription).
 struct RootView: View {
-    // Observe only Repository (changes on data refresh, not the ~1 Hz HR/frame stream). The live
-    // status row is isolated into SidebarStatus so HR/frame ticks don't re-render the whole shell.
     @EnvironmentObject var repo: Repository
-    @State private var selection: NavItem? = .today
+    @State private var selection: NavItem = .overview
+    @State private var showLive = false
 
     var body: some View {
-        NavigationSplitView {
-            VStack(spacing: 0) {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 4) {
-                        sectionLabel("Collected")
-                        ForEach(NavItem.collected) { SidebarRow(item: $0, selection: $selection) }
-                        sectionLabel("Your data").padding(.top, 14)
-                        ForEach(NavItem.data) { SidebarRow(item: $0, selection: $selection) }
-                        sectionLabel("App").padding(.top, 14)
-                        ForEach(NavItem.footer) { SidebarRow(item: $0, selection: $selection) }
-                    }
-                    .padding(.horizontal, 10).padding(.top, 14)
-                }
-
-                SidebarStatus { selection = .settings }.padding(.horizontal, 12).padding(.vertical, 12)
-            }
-            .background(StrandPalette.surfaceInset.opacity(0.6))
-            .navigationSplitViewColumnWidth(min: 200, ideal: 222, max: 260)
-        } detail: {
-            detail
+        ZStack(alignment: .bottom) {
+            content
                 .id(selection)
                 .transition(.opacity)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(StrandPalette.surfaceBase.ignoresSafeArea())
-                .animation(StrandMotion.respecting(.easeOut(duration: 0.2)), value: selection)
+                // Reserve room under scrolling content so the pill never covers the last card.
+                .safeAreaInset(edge: .bottom, spacing: 0) { Color.clear.frame(height: 84) }
+                .overlay(alignment: .topTrailing) {
+                    BatteryBadge { selection = .settings }.padding(.top, 14).padding(.trailing, 20)
+                }
+            FloatingNav(selection: $selection)
+                .padding(.bottom, 18)
         }
+        .animation(StrandMotion.respecting(.easeOut(duration: 0.2)), value: selection)
         .tint(StrandPalette.accentInk)
-        .environment(\.navigate) { selection = $0 }
+        .environment(\.navigate) { target in
+            switch target {
+            case .overview: selection = .overview
+            case .trends: selection = .trends
+            case .settings: selection = .settings
+            case .live: showLive = true
+            }
+        }
+        .sheet(isPresented: $showLive) { LiveSheet { showLive = false } }
         .task { await repo.refresh() }
     }
 
-    private func sectionLabel(_ title: String) -> some View {
-        Text(title)
-            .font(.system(size: 11, weight: .semibold))
-            .foregroundStyle(StrandPalette.textTertiary)
-            .padding(.horizontal, 10).padding(.bottom, 2)
-    }
-
-    @ViewBuilder private var detail: some View {
-        switch selection ?? .today {
-        case .today: TodayView()
-        case .live: LiveView()
-        case .sleep: SleepView()
-        case .workouts: WorkoutsView()
-        case .health: HealthView()
-        case .trends: TrendsView()
-        case .explore: MetricExplorerView()
-        case .dataSources: DataSourcesView()
-        case .settings: SettingsView()
+    @ViewBuilder private var content: some View {
+        switch selection {
+        case .overview: TodayView()
+        case .trends: TrendsHub()
+        case .settings: SettingsHub()
         }
     }
 }
 
-/// One sidebar destination: icon + label, pastel capsule when selected, soft hover.
-private struct SidebarRow: View {
-    let item: NavItem
-    @Binding var selection: NavItem?
-    @State private var hovering = false
-    private var selected: Bool { (selection ?? .today) == item }
+/// The live strap view as a contextual sheet with a single, obvious way back.
+private struct LiveSheet: View {
+    let close: () -> Void
+    var body: some View {
+        LiveView()
+            .frame(minWidth: 760, minHeight: 640)
+            .overlay(alignment: .topTrailing) {
+                Button("Done", action: close).buttonStyle(.strandSecondary).keyboardShortcut(.cancelAction).padding(16)
+            }
+    }
+}
+
+/// Compact floating pill: three icons, the active one expands to show its name.
+private struct FloatingNav: View {
+    @Binding var selection: NavItem
+    @Namespace private var ns
 
     var body: some View {
-        Button { selection = item } label: {
-            HStack(spacing: 10) {
-                Image(systemName: item.icon)
-                    .font(.system(size: 13, weight: .medium))
-                    .frame(width: 20)
-                    .foregroundStyle(selected ? StrandPalette.accentInk : StrandPalette.textSecondary)
-                Text(item.rawValue)
-                    .font(.system(size: 13, weight: selected ? .semibold : .regular))
-                    .foregroundStyle(selected ? StrandPalette.textPrimary : StrandPalette.textSecondary)
-                Spacer(minLength: 0)
+        HStack(spacing: 4) {
+            ForEach(NavItem.allCases) { item in
+                let on = item == selection
+                Button { select(item) } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: item.icon).font(.system(size: 15, weight: .semibold))
+                        if on { Text(item.rawValue).font(.system(size: 13, weight: .semibold)).transition(.opacity) }
+                    }
+                    .foregroundStyle(on ? StrandPalette.accentInk : StrandPalette.textSecondary)
+                    .padding(.horizontal, on ? 16 : 14).frame(height: 40)
+                    .background {
+                        if on { Capsule().fill(StrandPalette.accentMuted).matchedGeometryEffect(id: "active", in: ns) }
+                    }
+                    .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .keyboardShortcut(KeyEquivalent(Character(String(NavItem.allCases.firstIndex(of: item)! + 1))), modifiers: .command)
+                .accessibilityLabel(item.rawValue)
+                .accessibilityAddTraits(on ? .isSelected : [])
+                .help(item.rawValue)
             }
-            .padding(.horizontal, 10).padding(.vertical, 7)
-            .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(selected ? StrandPalette.accentMuted : (hovering ? StrandPalette.hairline : Color.clear))
-            )
-            .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         }
-        .buttonStyle(.plain)
-        .onHover { hovering = $0 }
-        .animation(StrandMotion.respecting(.easeOut(duration: 0.15)), value: selected)
-        .animation(StrandMotion.respecting(.easeOut(duration: 0.15)), value: hovering)
-        .accessibilityAddTraits(selected ? .isSelected : [])
+        .padding(6)
+        .background(.regularMaterial, in: Capsule())
+        .overlay(Capsule().strokeBorder(StrandPalette.hairline, lineWidth: 0.5))
+        .shadow(color: .black.opacity(0.12), radius: 10, y: 3)
+        .animation(StrandMotion.respecting(.spring(response: 0.3, dampingFraction: 0.85)), value: selection)
+    }
+
+    private func select(_ item: NavItem) {
+        guard item != selection else { return }
+        NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
+        selection = item
     }
 }
 
-/// Isolated live-status row — owns the LiveState observation so the rest of RootView does not
-/// re-render on the ~1 Hz HR / frame stream.
-// Isolated view: owns the LiveState subscription so only this small row updates on live ticks.
-private struct SidebarStatus: View {
+/// Strap charge at the top of every screen: a battery glyph that fills and changes colour with the level, plus the %.
+/// Its own view so the strap's frequent updates only re-render this badge, never the whole window.
+private struct BatteryBadge: View {
     @EnvironmentObject var live: LiveState
     let open: () -> Void
-    var body: some View {
-        Button(action: open) { content }
-            .buttonStyle(.plain)
-            .help("Open strap connection settings")
-            .accessibilityLabel("WHOOP strap, \(subtitle). Open connection settings")
-    }
 
-    private var content: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "applewatch.side.right")
-                .font(.system(size: 15, weight: .medium))
-                .foregroundStyle(StrandPalette.ink(statusColor))
-                .frame(width: 22)
-            VStack(alignment: .leading, spacing: 1) {
-                Text("WHOOP").font(.system(size: 12, weight: .semibold)).foregroundStyle(StrandPalette.textPrimary)
-                Text(subtitle).font(.system(size: 11)).foregroundStyle(StrandPalette.textSecondary)
-            }
-            Spacer(minLength: 0)
-            Circle().fill(statusColor).frame(width: 7, height: 7)
+    private var pct: Int? { live.connected ? live.batteryPct.map { Int($0.rounded()) } : nil }
+    private var tint: Color {
+        guard let p = pct else { return StrandPalette.textTertiary }
+        return p < 20 ? StrandPalette.statusCritical : p < 50 ? StrandPalette.statusWarning : StrandPalette.statusPositive
+    }
+    private var symbol: String {
+        guard let p = pct else { return "battery.0percent" }
+        switch p {
+        case ..<13: return "battery.0percent"
+        case ..<38: return "battery.25percent"
+        case ..<63: return "battery.50percent"
+        case ..<88: return "battery.75percent"
+        default:    return "battery.100percent"
         }
-        .padding(.horizontal, 12).padding(.vertical, 10)
-        .background(StrandPalette.surfaceRaised, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
-            .strokeBorder(StrandPalette.hairline, lineWidth: 0.5))
-        .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
-    private var statusColor: Color {
-        live.bonded ? StrandPalette.statusPositive
-            : live.connected ? StrandPalette.statusWarning
-            : StrandPalette.textTertiary
+    var body: some View {
+        Button(action: open) { chip }.buttonStyle(.plain)
     }
-    private var subtitle: String {
-        let base = live.bonded ? "Connected" : live.connected ? "Connecting…" : "Not connected"
-        if let pct = live.batteryPct, live.connected { return "\(base) · \(Int(pct))%" }
-        return base
+
+    private var chip: some View {
+        HStack(spacing: 6) {
+            Image(systemName: symbol).font(.system(size: 16, weight: .semibold)).foregroundStyle(tint)
+                            Text(pct.map { "\($0)%" } ?? "—").font(.system(size: 13, weight: .bold).monospacedDigit())
+                .foregroundStyle(pct == nil ? StrandPalette.textTertiary : StrandPalette.textPrimary)
+        }
+        .padding(.horizontal, 12).padding(.vertical, 6)
+        .background(StrandPalette.surfaceRaised, in: Capsule())
+        .overlay(Capsule().strokeBorder(StrandPalette.hairline, lineWidth: 0.5))
+        .help(pct.map { "WHOOP strap battery: \($0)%" } ?? (live.connected ? "Reading strap battery…" : "Strap not connected"))
+        .accessibilityLabel(pct.map { "Strap battery \($0) percent" } ?? "Strap battery unknown")
     }
 }
+

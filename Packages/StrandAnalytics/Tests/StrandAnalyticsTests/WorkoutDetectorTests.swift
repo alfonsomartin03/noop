@@ -176,10 +176,19 @@ final class WorkoutDetectorHROnlyTests: XCTestCase {
         XCTAssertGreaterThan(w.first?.durationS ?? 0, 2 * 3600)
     }
 
-    /// A 15-min zone-1 jog is still not a workout (endurance leniency is for long efforts only).
-    func testShortZone1EffortStillRejected() {
-        let hr = series([(1800, 55), (900, 125), (1800, 55)])
-        XCTAssertTrue(WorkoutDetector.detect(hr: hr, gravity: [], restingHR: 55, maxHR: 190, age: 30).isEmpty)
+    /// Above the Zone 1 floor (95 bpm) for only 10 min is not a workout; 20 min is.
+    func testSustainedTimeAboveZone1FloorRequired() {
+        let short = series([(1800, 55), (600, 125), (1800, 55)])
+        XCTAssertTrue(WorkoutDetector.detect(hr: short, gravity: [], restingHR: 55, maxHR: 190, age: 30).isEmpty)
+        let long = series([(1800, 55), (1200, 125), (1800, 55)])
+        XCTAssertEqual(WorkoutDetector.detect(hr: long, gravity: [], restingHR: 55, maxHR: 190, age: 30).count, 1)
+    }
+
+    /// Wrist motion alone (HR below the Zone 1 floor) never triggers a workout.
+    func testMotionAloneDoesNotTrigger() {
+        let hr = series([(1800, 55), (1800, 85), (1800, 55)])
+        let grav = (0..<5400).map { GravitySample(ts: 1_700_000_000 + $0, x: Double($0 % 2) * 0.5, y: 0, z: 1) }
+        XCTAssertTrue(WorkoutDetector.detect(hr: hr, gravity: grav, restingHR: 55, maxHR: 190, age: 30).isEmpty)
     }
 
     /// A 22-min stop (HR back near rest) between two 45-min legs is still one ride.

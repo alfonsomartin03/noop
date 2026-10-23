@@ -34,14 +34,41 @@ final class IntelligenceEngine: ObservableObject {
         self.repo = repo; self.profile = profile; self.deviceId = deviceId
     }
 
+    /// Bump when scoring rules change: the app then wipes its own derived rows and re-scores all history once.
+    static let scoringVersion = 2
+    private static let scoringVersionKey = "scoringVersionApplied"
+
+    /// Re-score everything from the raw strap data. Only NOOP's own derived rows (the "-noop" id) are wiped;
+    /// WHOOP imports and raw samples are never touched.
+    func recomputeAll(maxDays: Int = 730) async {
+        guard !computing, let store = await repo.storeHandle() else { return }
+        try? await store.deleteDerived(deviceId: deviceId + "-noop")
+        await analyzeRecent(maxDays: maxDays)
+        UserDefaults.standard.set(Self.scoringVersion, forKey: Self.scoringVersionKey)
+    }
+
+    /// Runs the full re-score once per scoring version (first launch after an update to the rules).
+    func recomputeIfRulesChanged() async {
+        if UserDefaults.standard.integer(forKey: Self.scoringVersionKey) < Self.scoringVersion { await recomputeAll() }
+    }
+
     /// Compute on-device scores for each of the last `maxDays` that actually has raw HR data.
     /// Personal baselines (HRV / resting HR) are folded from the imported history, so even the first
     /// live night can be scored against your norm.
     // Per day: read a window of raw streams -> AnalyticsEngine.analyzeDay -> collect daily rows, sleep sessions and workouts -> save once at the end.
+    /// Personal HRV / resting-HR baselines folded from the nightly history (ascending). Shared with the diagnostics
+    /// panel so both show the same numbers. NOTE: the history mixes imported WHOOP nights and NOOP's own, which are
+    /// measured by different methods; the panel reports how many of each so the offset is visible.
+    static func baselines(from hist: [DailyMetric]) -> AnalyticsEngine.ProfileBaselines? {
+        guard let hrvCfg = Baselines.metricCfg["hrv"], let rhrCfg = Baselines.metricCfg["resting_hr"] else { return nil }
+        return AnalyticsEngine.ProfileBaselines(
+            hrv: Baselines.foldHistory(hist.map { $0.avgHrv }, cfg: hrvCfg),
+            restingHR: Baselines.foldHistory(hist.map { $0.restingHr.map(Double.init) }, cfg: rhrCfg))
+    }
+
     func analyzeRecent(maxDays: Int = 21) async {
         guard let store = await repo.storeHandle() else { note = "No on-device store yet."; return }
-        guard let hrvCfg = Baselines.metricCfg["hrv"],
-              let rhrCfg = Baselines.metricCfg["resting_hr"] else { return }
+        guard let baselines = Self.baselines(from: repo.days) else { return }
 
         guard !computing else { return }   // never overlap two full re-scores
         computing = true
@@ -50,13 +77,6 @@ final class IntelligenceEngine: ObservableObject {
         let up = UserProfile(weightKg: profile.weightKg, heightCm: profile.heightCm,
                              age: Double(profile.age), sex: profile.sex)
 
-        // Baselines from the imported nightly history (ascending). foldHistory winsorizes outliers.
-        let hist = repo.days
-        // Personal baselines come from imported history, so even the first live night can be scored against your norm.
-        let hrvBase = Baselines.foldHistory(hist.map { $0.avgHrv }, cfg: hrvCfg)
-        let rhrBase = Baselines.foldHistory(hist.map { $0.restingHr.map(Double.init) }, cfg: rhrCfg)
-        let baselines = AnalyticsEngine.ProfileBaselines(hrv: hrvBase, restingHR: rhrBase)
-
         let maxHR = profile.hrMaxOverride > 0 ? Double(profile.hrMaxOverride) : nil
         let now = Int(Date().timeIntervalSince1970)
         var out: [Computed] = []
@@ -64,18 +84,26 @@ final class IntelligenceEngine: ObservableObject {
         var cachedSleep: [CachedSleepSession] = []
         var detected: [WorkoutRow] = []
 
-        // Walk back one day at a time from now.
-        for offset in 0..<maxDays {
-            let dayStart = now - offset * 86_400
-            let day = AnalyticsEngine.dayString(dayStart)
-            // Read a generous window around the night that ends on `day`; the stager finds the span.
-            // Window reaches back 30 h and ahead 12 h so the night ending on this day is fully covered.
-            let from = dayStart - 30 * 3_600
-            let to = dayStart + 12 * 3_600
+        // Walk back one calendar day at a time from today, on the wearer's own clock: the day keys and the
+        // day boundaries come from the zone in force on each date (so DST days and trips are handled), not from
+        // "now minus k×24 h", which drifts across a clock change and mislabels days.
+        ZoneTimeline.shared.refreshFromSystem()
+        var cursor = now
+        var analyzedRanges: [(from: Int, to: Int)] = []
+        for _ in 0..<maxDays {
+            let day = AnalyticsEngine.dayString(cursor)
+            guard let range = ZoneTimeline.shared.dayRange(day) else { break }
+            cursor = range.from - 1          // previous calendar day for the next pass
+            // A night ending on this day can begin the previous evening: read from 16 h before the day starts
+            // (enough waking context for the HR reference) to the day's end. Sleep that ends today is fully inside.
+            let from = range.from - 16 * 3_600
+            let to = range.to
 
             let hr = (try? await store.hrSamples(deviceId: deviceId, from: from, to: to, limit: 200_000)) ?? []
+            // (ranges are recorded below once a day actually has raw data)
             // Skip days without real raw data (a stray sample isn't enough to score).
             guard hr.count >= 200 else { continue }   // need real raw data, not a stray sample
+            analyzedRanges.append(range)
             let rr = (try? await store.rrIntervals(deviceId: deviceId, from: from, to: to, limit: 200_000)) ?? []
             let resp = (try? await store.respSamples(deviceId: deviceId, from: from, to: to, limit: 200_000)) ?? []
             let grav = (try? await store.gravitySamples(deviceId: deviceId, from: from, to: to, limit: 200_000)) ?? []
@@ -83,7 +111,8 @@ final class IntelligenceEngine: ObservableObject {
             // Pure CPU work on value arrays: run it off the main thread so the UI stays responsive while scoring.
             let res = await Task.detached(priority: .utility) {
                 AnalyticsEngine.analyzeDay(day: day, hr: hr, rr: rr, resp: resp, gravity: grav,
-                                           profile: up, baselines: baselines, maxHROverride: maxHR)
+                                           profile: up, baselines: baselines, maxHROverride: maxHR,
+                                           dayRange: range)
             }.value
             out.append(Computed(day: day, recovery: res.recovery, strain: res.strain,
                                 sleepMin: res.daily.totalSleepMin, hrv: res.daily.avgHrv,
@@ -91,7 +120,7 @@ final class IntelligenceEngine: ObservableObject {
             dailies.append(res.daily)
             // Each detected workout becomes a stored row with its zone breakdown and strain.
             for w in res.workouts {
-                let seg = hr.filter { $0.ts >= w.start && $0.ts <= w.end }
+                let seg = HRQuality.clean(hr.filter { $0.ts >= w.start && $0.ts <= w.end })
                 let zones = Dictionary(uniqueKeysWithValues: (1...5).map { ("z\($0)", w.zoneTimePct[$0] ?? 0) })
                 let zjson = (try? JSONSerialization.data(withJSONObject: zones)).flatMap { String(data: $0, encoding: .utf8) }
                 let maxF = w.hrmax ?? maxHR ?? 190
@@ -122,6 +151,9 @@ final class IntelligenceEngine: ObservableObject {
             } else { uniq.append(w) }
         }
         if !uniq.isEmpty { _ = try? await store.upsertWorkouts(uniq, deviceId: computedId) }
+        // Replace, don't accumulate: drop the computed sessions in the re-scored span first, so a session found by
+        // an earlier version of the detector (e.g. an evening couch block) cannot linger beside the new result.
+        for r in analyzedRanges { try? await store.deleteSleepSessions(deviceId: computedId, from: r.from, to: r.to) }
         if !cachedSleep.isEmpty { _ = try? await store.upsertSleepSessions(cachedSleep, deviceId: computedId) }
 
         results = out

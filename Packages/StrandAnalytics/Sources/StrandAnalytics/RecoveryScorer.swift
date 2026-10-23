@@ -55,6 +55,10 @@ public enum RecoveryScorer {
 
     // MARK: - Resting HR
 
+    /// NOTE: this is the lowest 5-min mean HR ("floor"), NOT a resting heart rate: it sits ~5–10 bpm under a
+    /// representative sleeping HR. The app's sleep-derived resting HR is `SleepVitalsCalculator` (mean of the
+    /// lowest quartile of valid sleep windows). Kept for comparison and legacy callers.
+    ///
     /// Lowest sustained HR during the in-bed window (bpm, rounded), or nil.
     ///
     /// "Sustained" = the minimum of 5-minute non-overlapping bin means of the HR
@@ -113,23 +117,48 @@ public enum RecoveryScorer {
         return (value - mean) / sigma
     }
 
-    /// Z-score + logistic recovery score in [0, 100]. APPROXIMATE.
+    /// One driver's share of a recovery score, for diagnostics.
+    public struct Term: Equatable, Sendable {
+        public let name: String
+        public let value: Double
+        public let baselineMean: Double?
+        public let baselineSpread: Double?
+        public let z: Double
+        public let weight: Double           // nominal weight
+        public let normalizedWeight: Double // after dropping missing terms
+        /// normalizedWeight × z: this driver's exact contribution to the composite z.
+        public var contributionZ: Double { normalizedWeight * z }
+    }
+
+    public struct Breakdown: Equatable, Sendable {
+        public let terms: [Term]
+        public let compositeZ: Double
+        public let score: Double
+    }
+
+    /// Z-score + logistic recovery with every term exposed. nil when the HRV baseline is unusable or no term exists.
+    public static func breakdown(hrv: Double, rhr: Double, resp: Double?,
+                                 hrvBaseline: DriverBaseline?, rhrBaseline: DriverBaseline?,
+                                 respBaseline: DriverBaseline?, sleepPerf: Double?,
+                                 hrvBaselineUsable: Bool = true) -> Breakdown? {
+        if !hrvBaselineUsable { return nil }
+        var raw: [(String, Double, DriverBaseline?, Double, Double)] = []   // name, value, baseline, z, w
+        if let b = hrvBaseline { raw.append(("HRV (RMSSD)", hrv, b, zScore(hrv, mean: b.mean, spread: b.spread), wHRV)) }
+        if let b = rhrBaseline { raw.append(("Resting HR", rhr, b, zScore(b.mean, mean: rhr, spread: b.spread), wRHR)) }
+        if let r = resp, let b = respBaseline { raw.append(("Respiration", r, b, zScore(b.mean, mean: r, spread: b.spread), wResp)) }
+        if let sp = sleepPerf { raw.append(("Sleep efficiency", sp, nil, (sp - sleepPerfCenter) / sleepPerfScale, wSleep)) }
+        let total = raw.reduce(0) { $0 + $1.4 }
+        guard !raw.isEmpty, total > 0 else { return nil }
+        let terms = raw.map { Term(name: $0.0, value: $0.1, baselineMean: $0.2?.mean, baselineSpread: $0.2?.spread,
+                                   z: $0.3, weight: $0.4, normalizedWeight: $0.4 / total) }
+        let z = terms.reduce(0) { $0 + $1.contributionZ }
+        let score = max(0.0, min(100.0, 100.0 / (1.0 + exp(-logisticK * (z - logisticZ0)))))
+        return Breakdown(terms: terms, compositeZ: z, score: score)
+    }
+
+    /// Z-score + logistic recovery score in [0, 100]. APPROXIMATE. (See `breakdown` for the per-driver terms.)
     ///
-    /// Returns nil when the HRV baseline (dominant driver) is not yet usable, or
-    /// no valid driver is available at all.
-    ///
-    /// - Parameters:
-    ///   - hrv: tonight's HRV (RMSSD, ms).
-    ///   - rhr: tonight's resting HR (bpm).
-    ///   - resp: tonight's respiration (raw or calibrated — z is scale-invariant);
-    ///           nil drops the term.
-    ///   - hrvBaseline: HRV baseline (required for a score).
-    ///   - rhrBaseline: resting-HR baseline; nil drops the RHR term.
-    ///   - respBaseline: respiration baseline; nil drops the resp term.
-    ///   - sleepPerf: sleep-performance proxy (efficiency 0..1); nil drops the term.
-    ///   - hrvBaselineUsable: whether the HRV baseline has enough nights
-    ///     (BaselineState.usable). When false, returns nil (cold-start).
-    // Pipeline: z-score each metric vs personal baseline -> weighted average -> logistic squash to 0-100.
+    /// Returns nil when the HRV baseline (dominant driver) is not yet usable, or no valid driver is available.
     public static func recovery(hrv: Double,
                                 rhr: Double,
                                 resp: Double?,
@@ -138,37 +167,8 @@ public enum RecoveryScorer {
                                 respBaseline: DriverBaseline?,
                                 sleepPerf: Double?,
                                 hrvBaselineUsable: Bool = true) -> Double? {
-        // Cold-start gate: HRV is the dominant driver; if its baseline isn't
-        // usable, refuse to score (more honest than a fabricated value).
-        if !hrvBaselineUsable { return nil }
-
-        var terms: [(z: Double, w: Double)] = []
-
-        // HRV term: higher is better.
-        if let b = hrvBaseline {
-            terms.append((zScore(hrv, mean: b.mean, spread: b.spread), wHRV))
-        }
-        // RHR term: lower is better → (μ − x) / σ.
-        if let b = rhrBaseline {
-            terms.append((zScore(b.mean, mean: rhr, spread: b.spread), wRHR))
-        }
-        // Resp term: lower is better, optional.
-        if let r = resp, let b = respBaseline {
-            terms.append((zScore(b.mean, mean: r, spread: b.spread), wResp))
-        }
-        // Sleep-performance term: no baseline needed; centered at SLEEP_PERF_CENTER.
-        if let sp = sleepPerf {
-            terms.append(((sp - sleepPerfCenter) / sleepPerfScale, wSleep))
-        }
-
-        guard !terms.isEmpty else { return nil }
-        let totalWeight = terms.reduce(0) { $0 + $1.w }
-        guard totalWeight > 0 else { return nil }
-
-        // Weighted mean z over the terms that exist; missing inputs are dropped and weights renormalise.
-        let z = terms.reduce(0) { $0 + $1.z * $1.w } / totalWeight
-        let score = 100.0 / (1.0 + exp(-logisticK * (z - logisticZ0)))
-        return max(0.0, min(100.0, score))
+        breakdown(hrv: hrv, rhr: rhr, resp: resp, hrvBaseline: hrvBaseline, rhrBaseline: rhrBaseline,
+                  respBaseline: respBaseline, sleepPerf: sleepPerf, hrvBaselineUsable: hrvBaselineUsable)?.score
     }
 
     /// Convenience overload taking BaselineState directly. Enforces the cold-start

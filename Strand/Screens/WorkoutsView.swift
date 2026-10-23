@@ -24,6 +24,8 @@ struct WorkoutsView: View {
     @State private var allRows: [WorkoutRow]
     @State private var loaded: Bool
     @State private var range: Range = .all
+    /// The session opened for its heart-rate detail.
+    @State private var selected: WorkoutSelection?
 
     init(previewRows: [WorkoutRow]? = nil) {
         _allRows = State(initialValue: previewRows ?? [])
@@ -34,7 +36,7 @@ struct WorkoutsView: View {
         ScreenScaffold(title: "Workouts", subtitle: "Every session, threaded together.") {
             if allRows.isEmpty {
                 ComingSoon(what: loaded
-                    ? "No workouts yet. They come from your WHOOP history. Import under Import & Export to bring them in."
+                    ? "No workouts yet. They come from your WHOOP history. Import in Settings → Data to bring them in."
                     : "Loading your sessions…")
             } else {
                 // Compute the windowed rows and per-sport groups ONCE per body
@@ -54,6 +56,7 @@ struct WorkoutsView: View {
                 sessionsSection(rows: windowRows)
             }
         }
+        .sheet(item: $selected) { WorkoutDetailView(workout: $0.row) }
         // Reloads when new strap data arrives, so freshly detected workouts show up without a restart.
         .task(id: repo.dataVersion) {
             // Reloads when new strap data / scores land, so auto-detected workouts appear without a restart.
@@ -234,8 +237,11 @@ struct WorkoutsView: View {
                     sessionHeaderRow
                     Divider().overlay(StrandPalette.hairline)
                     ForEach(Array(rows.enumerated()), id: \.offset) { idx, row in
-                        sessionRow(row)
-                            .background(idx % 2 == 1
+                        Button { selected = WorkoutSelection(row: row) } label: {
+                            sessionRow(row).contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .background(idx % 2 == 1
                                         ? StrandPalette.surfaceInset.opacity(0.4)
                                         : Color.clear)
                         if idx != rows.count - 1 {

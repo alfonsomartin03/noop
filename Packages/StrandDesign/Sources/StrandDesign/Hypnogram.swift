@@ -37,14 +37,27 @@ public struct Hypnogram: View {
     /// real clock times (e.g. "23:42–00:04"); otherwise it shows elapsed time
     /// from the start of the night (e.g. "0:06–0:28").
     public var nightStart: Date?
+    /// When true, hovering scrubs minute by minute instead of snapping to whole stage bands: a crosshair follows the
+    /// cursor and the tooltip gives the clock time and the stage you were in at exactly that minute.
+    public var scrubsByMinute: Bool
+    /// Draw hourly gridlines and a time-of-day axis under the plot (needs `nightStart`).
+    public var showsTimeAxis: Bool
+    /// Time zone the night was slept in; clock labels and hour gridlines use it, not the zone the Mac is in now.
+    public var timeZone: TimeZone
 
     public init(
         intervals: [SleepInterval],
         height: CGFloat = 180,
         showsStageAxis: Bool = true,
         showsHover: Bool = true,
-        nightStart: Date? = nil
+        nightStart: Date? = nil,
+        scrubsByMinute: Bool = false,
+        showsTimeAxis: Bool = false,
+        timeZone: TimeZone = .autoupdatingCurrent
     ) {
+        self.timeZone = timeZone
+        self.scrubsByMinute = scrubsByMinute
+        self.showsTimeAxis = showsTimeAxis
         self.intervals = intervals.sorted { $0.start < $1.start }
         self.height = height
         self.showsStageAxis = showsStageAxis
@@ -54,17 +67,19 @@ public struct Hypnogram: View {
 
     /// Index of the hovered interval, or nil.
     @State private var hoverIndex: Int? = nil
+    /// Local x of the cursor in scrub mode.
+    @State private var hoverX: CGFloat? = nil
 
-    private static let clockFormatter: DateFormatter = {
-        let f = DateFormatter(); f.dateFormat = "HH:mm"; return f
-    }()
+    private var clockFormatter: DateFormatter {
+        let f = DateFormatter(); f.dateStyle = .none; f.timeStyle = .short; f.timeZone = timeZone; return f
+    }
 
     /// Format a seconds-from-origin offset either as wall-clock (if nightStart
     /// is set) or as elapsed H:MM from the start of the night.
     private func timeLabel(_ secondsFromOrigin: TimeInterval) -> String {
         if let nightStart {
             let d = nightStart.addingTimeInterval(secondsFromOrigin - origin)
-            return Hypnogram.clockFormatter.string(from: d)
+            return clockFormatter.string(from: d)
         }
         let total = Int((secondsFromOrigin - origin).rounded())
         let h = total / 3600
@@ -82,10 +97,12 @@ public struct Hypnogram: View {
     private let rowCount = 4
 
     public var body: some View {
-        HStack(spacing: 12) {
+        HStack(alignment: .top, spacing: 12) {
             if showsStageAxis { axis }
+            VStack(spacing: 8) {
             GeometryReader { geo in
                 ZStack {
+                    if showsTimeAxis { hourGrid(in: geo.size) }
                     // faint baselines per stage row
                     ForEach(0..<rowCount, id: \.self) { rank in
                         let y = rowY(rank, in: geo.size.height)
@@ -121,8 +138,28 @@ public struct Hypnogram: View {
                             .position(x: rect.midX, y: rect.midY)
                     }
 
+                    // Minute scrubber: crosshair + dot on the stage row + tooltip for the hovered minute.
+                    if scrubsByMinute, let x = hoverX, geo.size.width > 0 {
+                        let raw = origin + Double(x / geo.size.width) * span
+                        let minute = (((raw - origin) / 60).rounded(.down)) * 60 + origin
+                        let clamped = min(max(minute, origin), origin + span)
+                        let cx = CGFloat((clamped + 30 - origin) / span) * geo.size.width
+                        let iv = intervals.first { clamped + 30 >= $0.start && clamped + 30 < $0.end }
+                        CrosshairRule(x: cx, height: geo.size.height)
+                        if let iv {
+                            let color = StrandPalette.sleepStageColor(iv.stage)
+                            let y = rowY(iv.stage.bandRank, in: geo.size.height)
+                            Circle().fill(color).frame(width: 14, height: 14)
+                                .overlay(Circle().stroke(Color.white, lineWidth: 2))
+                                .position(x: cx, y: y)
+                            PositionedTooltip(
+                                anchor: CGPoint(x: cx, y: y), container: geo.size,
+                                tooltip: ChartTooltip(value: iv.stage.label, label: timeLabel(clamped), accent: color))
+                        }
+                    }
+
                     // Hover affordance: crosshair, band highlight ring, tooltip.
-                    if showsHover, let idx = hoverIndex, idx < intervals.count {
+                    if showsHover, !scrubsByMinute, let idx = hoverIndex, idx < intervals.count {
                         let interval = intervals[idx]
                         let rect = bandRect(for: interval, in: geo.size)
                         let color = StrandPalette.sleepStageColor(interval.stage)
@@ -151,13 +188,54 @@ public struct Hypnogram: View {
                     guard showsHover else { return }
                     switch phase {
                     case .active(let location):
-                        hoverIndex = intervalIndex(atX: location.x, in: geo.size)
+                        if scrubsByMinute { hoverX = location.x }
+                        else { hoverIndex = intervalIndex(atX: location.x, in: geo.size) }
                     case .ended:
-                        hoverIndex = nil
+                        hoverIndex = nil; hoverX = nil
                     }
                 }
             }
             .frame(height: height)
+            if showsTimeAxis { timeAxis.frame(height: 14) }
+            }
+        }
+    }
+
+    // MARK: Time-of-day axis
+
+    /// Whole-hour tick positions as (offset in seconds from `origin`, label); empty without a wall-clock start.
+    private var hourTicks: [(t: TimeInterval, label: String)] {
+        guard let nightStart else { return [] }
+        var cal = Calendar(identifier: .gregorian); cal.timeZone = timeZone
+        let end = nightStart.addingTimeInterval(span)
+        guard var tick = cal.nextDate(after: nightStart, matching: DateComponents(minute: 0, second: 0), matchingPolicy: .nextTime) else { return [] }
+        let stepH = span > 10 * 3600 ? 2 : 1
+        var out: [(TimeInterval, String)] = []
+        let f = DateFormatter(); f.dateFormat = "h a"; f.timeZone = timeZone
+        while tick < end {
+            out.append((origin + tick.timeIntervalSince(nightStart), f.string(from: tick)))
+            guard let next = cal.date(byAdding: .hour, value: stepH, to: tick) else { break }
+            tick = next
+        }
+        return out
+    }
+
+    private func hourGrid(in size: CGSize) -> some View {
+        Path { p in
+            for tk in hourTicks {
+                let x = CGFloat((tk.t - origin) / span) * size.width
+                p.move(to: CGPoint(x: x, y: 0)); p.addLine(to: CGPoint(x: x, y: size.height))
+            }
+        }
+        .stroke(StrandPalette.hairline.opacity(0.55), style: StrokeStyle(lineWidth: 1, dash: [3, 5]))
+    }
+
+    private var timeAxis: some View {
+        GeometryReader { geo in
+            ForEach(Array(hourTicks.enumerated()), id: \.offset) { _, tk in
+                Text(tk.label).font(.system(size: 10, weight: .medium)).foregroundStyle(StrandPalette.textTertiary)
+                    .position(x: CGFloat((tk.t - origin) / span) * geo.size.width, y: 7)
+            }
         }
     }
 
@@ -208,25 +286,29 @@ public struct Hypnogram: View {
     private func bandRect(for interval: SleepInterval, in size: CGSize) -> CGRect {
         let x0 = min(size.width, max(0, CGFloat((interval.start - origin) / span) * size.width))
         let x1 = min(size.width, max(0, CGFloat((interval.end - origin) / span) * size.width))
-        let thickness: CGFloat = 10
+        let thickness: CGFloat = max(10, size.height / CGFloat(rowCount) * 0.42)
         let y = rowY(interval.stage.bandRank, in: size.height)
         return CGRect(x: x0, y: y - thickness / 2, width: max(2, x1 - x0), height: thickness)
     }
 
-    // Thin vertical connectors between bands so the trace reads as one continuous staircase.
+    // Soft gradient connectors from one stage's colour to the next, so the night reads as one flowing ribbon.
     private func risers(in size: CGSize) -> some View {
-        Path { p in
-            for i in 0..<(intervals.count - (intervals.isEmpty ? 0 : 1)) {
-                let a = intervals[i]
-                let b = intervals[i + 1]
+        ZStack {
+            ForEach(0..<max(0, intervals.count - 1), id: \.self) { i in
+                let a = intervals[i], b = intervals[i + 1]
                 let x = CGFloat((b.start - origin) / span) * size.width
                 let ya = rowY(a.stage.bandRank, in: size.height)
                 let yb = rowY(b.stage.bandRank, in: size.height)
-                p.move(to: CGPoint(x: x, y: ya))
-                p.addLine(to: CGPoint(x: x, y: yb))
+                if abs(ya - yb) > 1 {
+                    RoundedRectangle(cornerRadius: 1.5)
+                        .fill(LinearGradient(colors: [StrandPalette.sleepStageColor(a.stage).opacity(0.75),
+                                                      StrandPalette.sleepStageColor(b.stage).opacity(0.75)],
+                                             startPoint: ya < yb ? .top : .bottom, endPoint: ya < yb ? .bottom : .top))
+                        .frame(width: 3, height: abs(yb - ya))
+                        .position(x: x, y: (ya + yb) / 2)
+                }
             }
         }
-        .stroke(StrandPalette.textTertiary.opacity(0.5), lineWidth: 2)
     }
 }
 

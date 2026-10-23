@@ -55,47 +55,47 @@ public extension Color {
 public enum StrandPalette {
 
     // MARK: Surfaces — warm off-white canvas, white cards (dark mode: soft graphite)
-    public static let surfaceBase    = Color(light: "#F8F9FB", dark: "#0F1013")
-    public static let surfaceRaised  = Color(light: "#FFFFFF", dark: "#1A1C21")
-    public static let surfaceOverlay = Color(light: "#FFFFFF", dark: "#24272D")
-    public static let surfaceInset   = Color(light: "#F0F2F6", dark: "#14161A") // wells / chart insets / segmented tracks
-    public static let hairline       = Color(light: "#2021241A", dark: "#FFFFFF14")
-    public static let hairlineStrong = Color(light: "#20212433", dark: "#FFFFFF2B")
+    public static let surfaceBase    = Color(light: "#F1F3F8", dark: "#050608")
+    public static let surfaceRaised  = Color(light: "#FFFFFF", dark: "#0F1117")
+    public static let surfaceOverlay = Color(light: "#FFFFFF", dark: "#181B23")
+    public static let surfaceInset   = Color(light: "#E8ECF3", dark: "#0A0B10")
+    public static let hairline       = Color(light: "#1018281A", dark: "#FFFFFF1A")
+    public static let hairlineStrong = Color(light: "#10182833", dark: "#FFFFFF33")
 
     // MARK: Text — soft charcoal. Secondary is a touch deeper than the #858A91 swatch so small
     // labels stay readable (≥4.5:1 on white); tertiary is the swatch itself, for hints only.
-    public static let textPrimary    = Color(light: "#202124", dark: "#F3F4F6")
-    public static let textSecondary  = Color(light: "#6B7078", dark: "#A3A8B0")
-    public static let textTertiary   = Color(light: "#858A91", dark: "#7A7F87")
+    public static let textPrimary    = Color(light: "#0E1116", dark: "#FFFFFF")
+    public static let textSecondary  = Color(light: "#5A6070", dark: "#B4B9C6")
+    public static let textTertiary   = Color(light: "#7A8090", dark: "#7C828E")
 
     /// Very soft card shadow color.
-    public static let shadow = Color(light: "#2021240D", dark: "#00000066")
+    public static let shadow = Color(light: "#1018281A", dark: "#00000099")
 
     // MARK: Glow
-    public static let glowAmbient    = Color(hex: "#D9C7FF")
+    public static let glowAmbient    = Color(hex: "#0AA2FF")
 
     // MARK: Accent — pastel blue. `accent` is a FILL (buttons, selection, rings); use `accentInk`
     // for text and icons so they stay legible on white.
-    public static let accent         = Color(hex: "#A9C9FF")
-    public static let accentHover    = Color(hex: "#9ABDF8")
-    public static let accentMuted    = Color(light: "#A9C9FF3D", dark: "#A9C9FF2E") // selected rows / chips
-    public static let accentInk      = Color(light: "#3F6FC0", dark: "#A9C9FF")
+    public static let accent         = Color(hex: "#0AA2FF")
+    public static let accentHover    = Color(hex: "#3DB6FF")
+    public static let accentMuted    = Color(light: "#0AA2FF26", dark: "#0AA2FF4D")
+    public static let accentInk      = Color(light: "#0070E0", dark: "#4DC0FF")
     /// Secondary accent — soft lavender.
-    public static let lavender       = Color(hex: "#D9C7FF")
-    public static let lavenderInk    = Color(light: "#7B5CC4", dark: "#D9C7FF")
+    public static let lavender       = Color(hex: "#B14CFF")
+    public static let lavenderInk    = Color(light: "#7A2FE0", dark: "#C98BFF")
     /// Text/icon color that sits ON a pastel accent fill.
-    public static let onAccent       = Color(hex: "#202124")
+    public static let onAccent       = Color(hex: "#FFFFFF")
     /// Focus ring color.
-    public static let focusRing      = Color(light: "#5C8FE0", dark: "#A9C9FF")
+    public static let focusRing      = Color(hex: "#0AA2FF")
     /// Opacity for dimmed/disabled sections (shared so screens don't invent their own value).
     public static let disabledOpacity: Double = 0.45
 
-    // MARK: Recovery gradient — pastel traffic light (low coral → high mint).
-    public static let recovery000 = Color(hex: "#FFB8B8") // depleted — muted coral
-    public static let recovery030 = Color(hex: "#FFD8B5") // low — soft peach
-    public static let recovery055 = Color(hex: "#FFEBB0") // moderate — butter
-    public static let recovery078 = Color(hex: "#B8E8D0") // primed — pastel mint
-    public static let recovery100 = Color(hex: "#9DDDBE") // peak — deeper mint
+    // MARK: Recovery gradient — vivid traffic light (low red → high green).
+    public static let recovery000 = Color(hex: "#FF1F5A")
+    public static let recovery030 = Color(hex: "#FF7A00")
+    public static let recovery055 = Color(hex: "#FFF200")
+    public static let recovery078 = Color(hex: "#7CFF4D")
+    public static let recovery100 = Color(hex: "#00FF85")
 
     /// Ordered gradient stops for the recovery scale (location + color).
     public static let recoveryStops: [Gradient.Stop] = [
@@ -110,10 +110,10 @@ public enum StrandPalette {
     public static let recoveryGradient = Gradient(stops: recoveryStops)
 
     // MARK: Strain ramp — peach → coral → lavender
-    public static let strain000 = Color(hex: "#FFE0BD") // light peach
-    public static let strain033 = Color(hex: "#FFC9A0") // peach
-    public static let strain066 = Color(hex: "#F7B0B0") // coral
-    public static let strain100 = Color(hex: "#C9B0F5") // lavender
+    public static let strain000 = Color(hex: "#FFF200")
+    public static let strain033 = Color(hex: "#FF8A00")
+    public static let strain066 = Color(hex: "#FF1F5A")
+    public static let strain100 = Color(hex: "#E02BFF")
 
     public static let strainStops: [Gradient.Stop] = [
         .init(color: strain000, location: 0.00),
@@ -126,34 +126,34 @@ public enum StrandPalette {
     public static let strainGradient = Gradient(stops: strainStops)
 
     // MARK: Sleep stages
-    public static let sleepAwake = Color(hex: "#FFD8B5") // peach
-    public static let sleepLight = Color(hex: "#A9C9FF") // pastel blue
-    public static let sleepDeep  = Color(hex: "#9C8CE0") // dusty periwinkle (deepest = darkest)
-    public static let sleepREM   = Color(hex: "#B8E8D0") // mint
+    public static let sleepAwake = Color(hex: "#FF8A00")
+    public static let sleepLight = Color(hex: "#0AA2FF")
+    public static let sleepDeep  = Color(hex: "#9A4DFF")
+    public static let sleepREM   = Color(hex: "#00F5E0")
 
     // MARK: HR zones
-    public static let zone1 = Color(hex: "#C7DDFF")
-    public static let zone2 = Color(hex: "#B8E8D0")
-    public static let zone3 = Color(hex: "#FFEBB0")
-    public static let zone4 = Color(hex: "#FFD8B5")
-    public static let zone5 = Color(hex: "#FFB8B8")
+    public static let zone1 = Color(hex: "#0AA2FF")
+    public static let zone2 = Color(hex: "#00FF85")
+    public static let zone3 = Color(hex: "#FFF200")
+    public static let zone4 = Color(hex: "#FF8A00")
+    public static let zone5 = Color(hex: "#FF1F5A")
 
     /// HR zones indexed 1...5; index 0 mirrors zone1 for convenience.
     public static let hrZones: [Color] = [zone1, zone1, zone2, zone3, zone4, zone5]
 
     // MARK: Status — fills (pastel) and inks (text/icon-safe) — never reused as recovery colors.
-    public static let statusPositive = Color(hex: "#B8E8D0") // success — mint
-    public static let statusWarning  = Color(hex: "#FFD8B5") // warning — peach
-    public static let statusCritical = Color(hex: "#FFB8B8") // error — coral
-    public static let statusPositiveInk = Color(light: "#2E7D5B", dark: "#B8E8D0")
-    public static let statusWarningInk  = Color(light: "#B26A1F", dark: "#FFD8B5")
-    public static let statusCriticalInk = Color(light: "#C0504D", dark: "#FFB8B8")
+    public static let statusPositive = Color(hex: "#00FF85")
+    public static let statusWarning  = Color(hex: "#FFC400")
+    public static let statusCritical = Color(hex: "#FF1F5A")
+    public static let statusPositiveInk = Color(light: "#08A040", dark: "#3DFF9A")
+    public static let statusWarningInk  = Color(light: "#B86E00", dark: "#FFD633")
+    public static let statusCriticalInk = Color(light: "#D11F3F", dark: "#FF5C85")
 
     // MARK: Per-metric accents
-    public static let metricCyan   = Color(hex: "#A8DDF0") // blood oxygen / respiration
-    public static let metricPurple = Color(hex: "#D9C7FF") // HRV
-    public static let metricAmber  = Color(hex: "#FFD8B5") // temperature / energy
-    public static let metricRose   = Color(hex: "#FFB8C8") // heart rate
+    public static let metricCyan   = Color(hex: "#00F0FF")
+    public static let metricPurple = Color(hex: "#B14CFF")
+    public static let metricAmber  = Color(hex: "#FFC400")
+    public static let metricRose   = Color(hex: "#FF2BA0")
 
     /// A text/icon-safe version of a pastel data color. In light mode it is darkened toward the
     /// charcoal text color so it reads on white; in dark mode the pastel is used as-is.

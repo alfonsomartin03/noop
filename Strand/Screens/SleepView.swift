@@ -1,6 +1,7 @@
 import SwiftUI
 import Foundation
 import StrandDesign
+import StrandAnalytics
 import WhoopStore
 
 // MARK: - SleepView
@@ -97,7 +98,7 @@ struct SleepView: View {
                         Hypnogram(intervals: intervals,
                                   height: NoopMetrics.chartHeight,
                                   showsStageAxis: true,
-                                  nightStart: night.onsetDate)
+                                  nightStart: night.onsetDate, timeZone: night.zone)
                     } else {
                         stageBar(s)
                     }
@@ -439,11 +440,11 @@ struct SleepView: View {
     /// Consistency per day from the rolling bedtime spread of the trailing window up to
     /// each night; lower spread → higher score. Reuses the same SD→score mapping.
     private var consistencySeries: Metric {
-        let cal = Calendar.current
         func bedMinutes(_ s: CachedSleepSession) -> Double {
-            let d = Date(timeIntervalSince1970: TimeInterval(s.startTs))
-            let comps = cal.dateComponents([.hour, .minute], from: d)
-            var m = Double((comps.hour ?? 0) * 60 + (comps.minute ?? 0))
+            // Bedtime on the clock of the zone the night was slept in, so a trip does not read as a 6 h swing.
+            let z = ZoneTimeline.shared.zone(forSpan: s.startTs, s.endTs)
+            let hm = ZoneTimeline.shared.hourMinute(s.startTs, in: z)
+            var m = Double(hm.hour * 60 + hm.minute)
             if m < 12 * 60 { m += 24 * 60 }   // wrap evening onsets into one continuous scale
             return m
         }
@@ -530,7 +531,7 @@ struct SleepView: View {
     @ViewBuilder
     private var emptyState: some View {
         if repo.loaded {
-            ComingSoon(what: "No nights here yet. Import your WHOOP export under Import & Export to see every night, your sleep stages and trends straight away..")
+            ComingSoon(what: "No nights here yet. Import your WHOOP export in Settings → Data to see every night, your sleep stages and trends straight away..")
         } else {
             ComingSoon(what: "Loading your sleep history…")
         }
@@ -731,16 +732,18 @@ private struct Night {
         return out
     }
 
-    var onsetText: String { Night.timeFmt.string(from: Date(timeIntervalSince1970: TimeInterval(session.startTs))) }
-    var wakeText: String { Night.timeFmt.string(from: Date(timeIntervalSince1970: TimeInterval(session.endTs))) }
-    var dateLabel: String { Night.dateFmt.string(from: Date(timeIntervalSince1970: TimeInterval(session.startTs))) }
+    /// The zone this night was slept in (in force at its midpoint).
+    var zone: TimeZone { ZoneTimeline.shared.zone(forSpan: session.startTs, session.endTs) }
+    var onsetText: String { Self.timeFmt(zone).string(from: Date(timeIntervalSince1970: TimeInterval(session.startTs))) }
+    var wakeText: String { Self.timeFmt(zone).string(from: Date(timeIntervalSince1970: TimeInterval(session.endTs))) }
+    var dateLabel: String { Self.dateFmt(zone).string(from: Date(timeIntervalSince1970: TimeInterval(session.startTs))) }
 
-    private static let timeFmt: DateFormatter = {
-        let f = DateFormatter(); f.dateFormat = "HH:mm"; return f
-    }()
-    private static let dateFmt: DateFormatter = {
-        let f = DateFormatter(); f.dateFormat = "EEE d MMM"; return f
-    }()
+    private static func timeFmt(_ z: TimeZone) -> DateFormatter {
+        let f = DateFormatter(); f.dateFormat = "HH:mm"; f.timeZone = z; return f
+    }
+    private static func dateFmt(_ z: TimeZone) -> DateFormatter {
+        let f = DateFormatter(); f.dateFormat = "EEE d MMM"; f.timeZone = z; return f
+    }
 }
 
 // MARK: - Preview

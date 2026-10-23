@@ -131,9 +131,19 @@ final class Repository: ObservableObject {
         func endDay(_ s: CachedSleepSession) -> String {
             dayString(Date(timeIntervalSince1970: TimeInterval(s.endTs)))
         }
-        var byDay: [String: CachedSleepSession] = [:]
-        for s in computed { byDay[endDay(s)] = s }
-        for s in imported { byDay[endDay(s)] = s }
+        // One session per ending day, and it must be the night: the LONGEST that day, not whichever sorts last
+        // (a later short session used to replace the night). Imported sessions still beat computed ones.
+        func longest(_ rows: [CachedSleepSession]) -> [String: CachedSleepSession] {
+            var m: [String: CachedSleepSession] = [:]
+            for s in rows {
+                let k = endDay(s)
+                if let cur = m[k], cur.endTs - cur.startTs >= s.endTs - s.startTs { continue }
+                m[k] = s
+            }
+            return m
+        }
+        var byDay = longest(computed)
+        for (k, s) in longest(imported) { byDay[k] = s }
         return byDay.values.sorted { $0.startTs < $1.startTs }
     }
 
@@ -214,15 +224,6 @@ final class Repository: ObservableObject {
             to: Self.dayString(now.addingTimeInterval(86_400)))) ?? []
     }
 
-    /// Shared formatter — created once. Hot read path (called per series window / refresh);
-    /// allocating a DateFormatter per call was a measurable waste. Read-only use is thread-safe.
-    private static let dayFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.locale = Locale(identifier: "en_US_POSIX")
-        f.dateFormat = "yyyy-MM-dd"
-        return f
-    }()
-
-    // Shared formatter, created once (DateFormatter is expensive to allocate).
-    static func dayString(_ d: Date) -> String { dayFormatter.string(from: d) }
+    /// Day key on the wearer's clock, in the zone in force at that instant (`ZoneTimeline`).
+    static func dayString(_ d: Date) -> String { ZoneTimeline.shared.dayString(Int(d.timeIntervalSince1970)) }
 }

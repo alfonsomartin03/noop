@@ -166,3 +166,26 @@ extension WhoopStore {
         }
     }
 }
+
+extension WhoopStore {
+    /// Delete every derived row (daily scores, sleep sessions, workouts) stored under `deviceId`, so a full
+    /// re-score starts clean instead of leaving rows from an older detection rule behind. Raw strap data is untouched.
+    public func deleteDerived(deviceId: String) async throws {
+        try syncWrite { db in
+            for table in ["dailyMetric", "sleepSession", "workout"] {
+                try db.execute(sql: "DELETE FROM \(table) WHERE deviceId = ?", arguments: [deviceId])
+            }
+        }
+    }
+}
+
+extension WhoopStore {
+    /// Delete the sleep sessions stored under `deviceId` that END in [from, to). Used before a re-score so sessions
+    /// found by an older rule (a different start time, a nap since rejected) do not linger next to the new ones.
+    public func deleteSleepSessions(deviceId: String, from: Int, to: Int) async throws {
+        try syncWrite { db in
+            try db.execute(sql: "DELETE FROM sleepSession WHERE deviceId = ? AND endTs >= ? AND endTs < ?",
+                           arguments: [deviceId, from, to])
+        }
+    }
+}

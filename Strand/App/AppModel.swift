@@ -3,6 +3,7 @@ import AppKit
 import Combine
 import WhoopProtocol
 import WhoopStore
+import StrandAnalytics
 
 /// Root app state: owns the live BLE connection state, the CoreBluetooth engine, the on-device
 /// store read model, and the WHOOP-export importer.
@@ -22,7 +23,7 @@ final class AppModel: ObservableObject {
     /// On-device WHOOP-style recovery/strain/sleep computation from raw strap streams.
     let intelligence: IntelligenceEngine
 
-    /// Import status surfaced to the Import & Export screen.
+    /// Import status surfaced to Settings → Data.
     @Published var importing = false
     @Published var importSummary: String?
 
@@ -36,6 +37,8 @@ final class AppModel: ObservableObject {
 
     // Wiring order: live state -> BLE engine -> repository -> analytics, then the refresh hooks below.
     init() {
+        // Log the system time zone (it follows the device's location) so each night resolves on the clock it was slept on.
+        ZoneTimeline.shared.startTracking()
         let live = LiveState()
         self.live = live
         self.ble = BLEManager(state: live, deviceId: "my-whoop")
@@ -74,6 +77,7 @@ final class AppModel: ObservableObject {
             guard let self else { return }
             await self.repo.refresh()                          // surface any imported data at once
             try? await Task.sleep(nanoseconds: 6_000_000_000)  // give the first offload a moment
+            await self.intelligence.recomputeIfRulesChanged()  // one-time full re-score after a scoring-rule change
             while !Task.isCancelled {
                 await self.intelligence.analyzeRecent()
                 try? await Task.sleep(nanoseconds: 900_000_000_000)  // 15 min, matches the offload cadence

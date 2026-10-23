@@ -50,7 +50,7 @@ struct HealthView: View {
     // MARK: - Empty state
 
     private var emptyState: some View {
-        ComingSoon(what: "No biometrics yet. Import your WHOOP export under Import & Export to fill this in.")
+        ComingSoon(what: "No biometrics yet. Import your WHOOP export in Settings → Data to fill this in.")
     }
 }
 

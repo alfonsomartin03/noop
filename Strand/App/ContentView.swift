@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Root — the sidebar shell, with the first-run onboarding/pairing wizard overlaid until complete.
+/// Root — the floating-nav shell, with the first-run onboarding/pairing wizard overlaid until complete.
 struct ContentView: View {
     // Persisted flag: onboarding shows only on first launch.
     @AppStorage("noop.onboarded") private var onboarded = false

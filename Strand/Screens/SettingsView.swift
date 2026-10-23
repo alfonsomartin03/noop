@@ -161,6 +161,16 @@ struct SettingsView: View {
                     }
                     .buttonStyle(.strandSecondary)
                     .disabled(!live.connected && !live.bonded)
+
+                    Button {
+                        Task { await model.intelligence.recomputeAll() }
+                    } label: {
+                        Label(model.intelligence.computing ? "Recalculating…" : "Recalculate all scores",
+                              systemImage: "function")
+                            .padding(.horizontal, 6)
+                    }
+                    .buttonStyle(.strandSecondary)
+                    .disabled(model.intelligence.computing)
                 }
             }
         }

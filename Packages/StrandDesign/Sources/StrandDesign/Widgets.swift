@@ -154,9 +154,9 @@ public struct StrandWidget<Content: View>: View {
             HStack(spacing: 8) {
                 Image(systemName: symbol)
                     .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(StrandPalette.ink(tint))
+                    .foregroundStyle(tint)
                     .frame(width: 24, height: 24)
-                    .background(tint.opacity(0.30), in: Circle())
+                    .background(tint.opacity(0.28), in: Circle())
                 Text(title).font(.system(size: 13, weight: .semibold)).foregroundStyle(StrandPalette.textSecondary)
                 Spacer(minLength: 4)
                 if let trailing {
@@ -257,6 +257,7 @@ public struct ProgressRing<Center: View>: View {
                 .trim(from: 0, to: max(0.001, min(1, shown)))
                 .stroke(tint, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
                 .rotationEffect(.degrees(-90))
+                .shadow(color: tint.opacity(0.65), radius: lineWidth * 0.7)   // neon glow
             center()
         }
         .padding(lineWidth / 2)

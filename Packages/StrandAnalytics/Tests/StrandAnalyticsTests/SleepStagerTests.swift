@@ -60,10 +60,10 @@ final class SleepStagerTests: XCTestCase {
     }
 
     func testDetectSleepRejectsShortBout() {
-        // Only 30 min still — below MIN_SLEEP_MIN (60) → no session.
+        // Only 20 min still — below napMinMin (30) → no session.
         let start = 2_000_000
-        let grav = stillGravity(start: start, durationS: 30 * 60)
-        let hr = hrStream(start: start, durationS: 30 * 60, bpm: 50)
+        let grav = stillGravity(start: start, durationS: 20 * 60)
+        let hr = hrStream(start: start, durationS: 20 * 60, bpm: 50)
         XCTAssertTrue(SleepStager.detectSleep(hr: hr, gravity: grav).isEmpty)
     }
 
@@ -171,5 +171,50 @@ final class SleepStagerTests: XCTestCase {
         let (rate, rrv) = SleepStager.respRateAndRRV([1, 2, 3])
         XCTAssertTrue(rate.isNaN)
         XCTAssertTrue(rrv.isNaN)
+    }
+
+    // MARK: - Night vs nap vs sedentary rest
+
+    /// Still body with one small fidget (0.05 g) every minute: quiet to a 0.01 g per-sample test, not a sleeper.
+    private func fidgetGravity(start: Int, durationS: Int) -> [GravitySample] {
+        (0..<durationS).map { GravitySample(ts: start + $0, x: ($0 % 60 == 0 && $0 > 0) ? 0.05 : 0, y: 0, z: 1.0) }
+    }
+
+    func testSedentaryRestWithLowHRIsNotSleep() {
+        let start = 5_000_000
+        let day = 3 * 3600, couch = 2 * 3600
+        let grav = activeGravity(start: start, durationS: day) + fidgetGravity(start: start + day, durationS: couch)
+        let hr = hrStream(start: start, durationS: day, bpm: 85) + hrStream(start: start + day, durationS: couch, bpm: 55)
+        XCTAssertTrue(SleepStager.detectSleep(hr: hr, gravity: grav).isEmpty)
+    }
+
+    func testNightIsMainAndShortDaySleepIsNap() {
+        let start = 6_000_000
+        let day = 4 * 3600, night = 7 * 3600, gap = 3 * 3600, nap = 45 * 60
+        var grav = activeGravity(start: start, durationS: day)
+        var hr = hrStream(start: start, durationS: day, bpm: 85)
+        grav += stillGravity(start: start + day, durationS: night)
+        hr += hrStream(start: start + day, durationS: night, bpm: 52)
+        let napStart = start + day + night
+        grav += activeGravity(start: napStart, durationS: gap)
+        hr += hrStream(start: napStart, durationS: gap, bpm: 85)
+        grav += stillGravity(start: napStart + gap, durationS: nap)
+        hr += hrStream(start: napStart + gap, durationS: nap, bpm: 62)
+        let s = SleepStager.detectSleep(hr: hr, gravity: grav)
+        XCTAssertEqual(s.map { $0.kind }, [.main, .nap])
+    }
+
+    func testShortWakeInsideNightStaysOneNight() {
+        let start = 7_000_000
+        let day = 3 * 3600, half = 3 * 3600, wake = 25 * 60
+        var grav = activeGravity(start: start, durationS: day)
+        var hr = hrStream(start: start, durationS: day, bpm: 85)
+        grav += stillGravity(start: start + day, durationS: half) + activeGravity(start: start + day + half, durationS: wake)
+            + stillGravity(start: start + day + half + wake, durationS: half)
+        hr += hrStream(start: start + day, durationS: half, bpm: 52) + hrStream(start: start + day + half, durationS: wake, bpm: 80)
+            + hrStream(start: start + day + half + wake, durationS: half, bpm: 52)
+        let s = SleepStager.detectSleep(hr: hr, gravity: grav)
+        XCTAssertEqual(s.count, 1)
+        XCTAssertEqual(s.first?.kind, .main)
     }
 }

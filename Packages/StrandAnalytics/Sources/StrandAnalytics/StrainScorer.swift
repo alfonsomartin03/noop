@@ -109,11 +109,47 @@ public enum StrainScorer {
         return load
     }
 
+    /// Longest span (s) one sample may be credited with. A longer gap is missing data (strap off, BLE drop) and earns
+    /// nothing, so gaps can never add invented load.
+    public static let maxCreditS: Double = 5
+
+    /// Zone load by TIME: each sample is credited the time to the next one (capped at `maxCreditS`), so duplicates add
+    /// nothing, gaps add nothing and the result does not depend on the sampling rate. Input is sorted internally.
+    public static func whoopZoneLoadTimed(_ hr: [HRSample], maxHR: Double) -> Double {
+        guard maxHR > 0, !hr.isEmpty else { return 0 }
+        let s = hr.sorted { $0.ts < $1.ts }
+        var load = 0.0
+        for i in s.indices {
+            let dt = i + 1 < s.count ? min(Double(s[i + 1].ts - s[i].ts), maxCreditS) : 1.0
+            guard dt > 0 else { continue }
+            let frac = Double(s[i].bpm) / maxHR
+            if let z = whoopZoneFloors.lastIndex(where: { frac >= $0 }) { load += whoopZoneWeights[z] * dt / 60.0 }
+        }
+        return load
+    }
+
+    /// Waking time over which the rest-day baseline fully accrues (a typical 16 h waking day).
+    public static let awakeDaySeconds: Double = 16 * 3600
+
+    /// Seconds of the half-open [from, to) actually covered by HR (each sample credited like the load above),
+    /// leaving out time inside `excluding` spans (sleep): the baseline is a waking-hours load.
+    public static func coveredSeconds(_ hr: [HRSample], from: Int, to: Int,
+                                      excluding: [(start: Int, end: Int)] = []) -> Double {
+        let s = hr.filter { x in x.ts >= from && x.ts < to && !excluding.contains { x.ts >= $0.start && x.ts <= $0.end } }
+            .sorted { $0.ts < $1.ts }
+        var c = 0.0
+        for i in s.indices { c += i + 1 < s.count ? min(Double(s[i + 1].ts - s[i].ts), 60) : 1 }
+        return c
+    }
+
     /// Day strain from the zone loads of the day's workouts. The floor stands in for the unmeasured
     /// all-day load, so pass workout segments only (not the whole day's HR) to avoid double counting.
     // Log-compress so strain has diminishing returns: the 10th hard hour adds far less than the 1st.
-    public static func dayStrain(workoutLoads: [Double]) -> Double {
-        let value = softCeiling(whoopDayScale * log(1.0 + whoopDayFloor + workoutLoads.reduce(0, +)))
+    // `coverage` (0…1) is the share of a full waking day the HR actually covers (sleep excluded). The rest-day floor is the all-day baseline,
+    // so it accrues with recorded time: a day that has just begun (or a strap-off day) must not start at ~4.6.
+    public static func dayStrain(workoutLoads: [Double], coverage: Double = 1.0) -> Double {
+        let floor = whoopDayFloor * max(0, min(1, coverage))
+        let value = softCeiling(whoopDayScale * log(1.0 + floor + workoutLoads.reduce(0, +)))
         return (value * 100).rounded() / 100
     }
 
@@ -136,7 +172,7 @@ public enum StrainScorer {
         // Only runs lasting >= minHighHRRunS count; shorter ones are just spikes (stairs, a sprint to the bus).
         func flush() {
             if let f = run.first, let l = run.last, l.ts - f.ts >= minHighHRRunS {
-                load += whoopZoneLoad(run, maxHR: maxHR, sampleDurationMin: fallbackSampleMin)
+                load += whoopZoneLoadTimed(run, maxHR: maxHR)
             }
         }
         for h in hot.dropFirst() {
@@ -150,7 +186,7 @@ public enum StrainScorer {
     /// Fitted activity strain (0–21) of one workout's HR segment: 4.56 · ln(1 + zone load).
     public static func activityStrain(_ hr: [HRSample], maxHR: Double) -> Double {
         guard maxHR > 0, !hr.isEmpty else { return 0 }
-        let load = whoopZoneLoad(hr, maxHR: maxHR, sampleDurationMin: fallbackSampleMin)
+        let load = whoopZoneLoadTimed(hr, maxHR: maxHR)
         return (softCeiling(whoopActivityScale * log(1.0 + load)) * 100).rounded() / 100
     }
 

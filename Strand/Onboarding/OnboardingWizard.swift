@@ -661,13 +661,13 @@ private struct ImportStep: View {
                     icon: "clock.arrow.circlepath",
                     tint: StrandPalette.accent,
                     title: "Import past data later",
-                    message: "Already have months of history? Request your data export from WHOOP, then load it under Import & Export — your ring and trends fill in instantly."
+                    message: "Already have months of history? Request your data export from WHOOP, then load it in Settings → Data — your ring and trends fill in instantly."
                 )
 
                 HStack(spacing: 8) {
                     Image(systemName: "sidebar.left")
                         .foregroundStyle(StrandPalette.textTertiary)
-                    Text("Find it in the sidebar under Import & Export.")
+                    Text("Find it under Settings → Data.")
                         .font(StrandFont.subhead)
                         .foregroundStyle(StrandPalette.textSecondary)
                 }

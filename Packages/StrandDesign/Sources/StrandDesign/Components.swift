@@ -42,6 +42,10 @@ public extension View {
     func strandSurface(cornerRadius: CGFloat = NoopMetrics.cardRadius) -> some View {
         self
             .background(StrandPalette.surfaceRaised, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            // Faint top-lit sheen so cards read as glassy tiles on the near-black canvas (invisible on white in light mode).
+            .overlay(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .fill(LinearGradient(colors: [Color.white.opacity(0.07), .clear], startPoint: .top, endPoint: .center))
+                .allowsHitTesting(false))
             .overlay(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                 .strokeBorder(StrandPalette.hairline, lineWidth: 0.5))
             .shadow(color: StrandPalette.shadow, radius: 14, y: 4)

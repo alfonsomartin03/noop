@@ -153,31 +153,64 @@ public enum HRVAnalyzer {
             if let e = windowEnd, sample.ts > e { return false }
             return true
         }
-        let raw = inWindow.map { Double($0.rrMs) }
-        return analyze(rawRR: raw)
+        return analyzeTimed(inWindow)
     }
+
+    /// Beats further apart than this (s) are not neighbours: RMSSD must never difference across a data gap.
+    public static let maxBeatGapS = 3
 
     /// Compute HRV from raw RR-interval values (ms), applying the full cleaning
     /// pipeline. Returns an empty result when fewer than `minBeats` survive.
-    // Pipeline: range filter -> ectopic rejection -> need >= minBeats -> RMSSD/SDNN/pNN50.
+    /// The values are taken as one uninterrupted beat series.
     public static func analyze(rawRR: [Double]) -> HRVResult {
-        let nInput = rawRR.count
-        let clean = cleanRR(rawRR)
-        guard clean.count >= minBeats else {
-            return .empty(nInput: nInput)
+        analyze(values: rawRR, contiguousWithPrevious: [Bool](repeating: true, count: rawRR.count))
+    }
+
+    /// Time-aware HRV for a window of timestamped intervals: successive differences are only taken between beats that
+    /// are neighbours in the recording (no beat removed between them, timestamps ≤ `maxBeatGapS` apart).
+    public static func analyzeTimed(_ rr: [RRInterval]) -> HRVResult {
+        let s = rr.sorted { $0.ts < $1.ts }
+        var contiguous = [Bool](repeating: false, count: s.count)
+        for i in s.indices.dropFirst() { contiguous[i] = s[i].ts - s[i - 1].ts <= maxBeatGapS }
+        return analyze(values: s.map { Double($0.rrMs) }, contiguousWithPrevious: contiguous)
+    }
+
+    /// Core: range filter → Malik ectopic mask → RMSSD/pNN50 over ADJACENT surviving pairs, SDNN over survivors.
+    // A rejected beat breaks the chain: the pair (i-1, i+1) around it is NOT differenced, which would be a
+    // two-interval jump and inflates RMSSD.
+    static func analyze(values: [Double], contiguousWithPrevious: [Bool]) -> HRVResult {
+        let nInput = values.count
+        // Range filter first; Malik then judges each beat against the in-range neighbours only.
+        let inRangeIdx = values.indices.filter { values[$0] >= rrMinMs && values[$0] <= rrMaxMs }
+        let inRange = inRangeIdx.map { values[$0] }
+        var keep = [Bool](repeating: false, count: values.count)
+        let kept = rejectEctopicMask(inRange)
+        for (k, idx) in inRangeIdx.enumerated() where kept[k] { keep[idx] = true }
+        let clean = values.indices.filter { keep[$0] }.map { values[$0] }
+        guard clean.count >= minBeats else { return .empty(nInput: nInput) }
+
+        var sumSq = 0.0, pairs = 0, nn50 = 0
+        for i in values.indices.dropFirst() where keep[i] && keep[i - 1] && contiguousWithPrevious[i] {
+            let d = values[i] - values[i - 1]
+            sumSq += d * d; pairs += 1
+            if abs(d) > 50 { nn50 += 1 }
         }
-        let rmssd = rmssdRaw(clean)
-        let sdnn = sdnnRaw(clean)
-        let mean = clean.reduce(0, +) / Double(clean.count)
+        guard pairs >= minBeats / 2 else { return .empty(nInput: nInput) }
+        return HRVResult(rmssd: (sumSq / Double(pairs)).squareRoot(), sdnn: sdnnRaw(clean),
+                         meanNN: clean.reduce(0, +) / Double(clean.count),
+                         pnn50: Double(nn50) / Double(pairs) * 100.0, nInput: nInput, nClean: clean.count)
+    }
 
-        // pNN50 over the clean NN series.
-        var nn50 = 0
-        for i in 1..<clean.count where abs(clean[i] - clean[i - 1]) > 50.0 { nn50 += 1 }
-        // pNN50 = % of successive beat pairs differing by more than 50 ms.
-        let pnn50 = Double(nn50) / Double(clean.count - 1) * 100.0
-
-        return HRVResult(rmssd: rmssd, sdnn: sdnn, meanNN: mean, pnn50: pnn50,
-                         nInput: nInput, nClean: clean.count)
+    /// Which beats survive Malik rejection (same rule as `rejectEctopic`, but as a mask).
+    static func rejectEctopicMask(_ nn: [Double]) -> [Bool] {
+        guard nn.count > ectopicWindowRadius else { return [Bool](repeating: true, count: nn.count) }
+        return nn.indices.map { i in
+            let lo = max(0, i - ectopicWindowRadius), hi = min(nn.count - 1, i + ectopicWindowRadius)
+            let neighbours = (lo...hi).filter { $0 != i }.map { nn[$0] }
+            guard neighbours.count >= 2 else { return true }
+            let med = median(neighbours)
+            return med <= 0 || abs(nn[i] - med) / med <= ectopicThreshold
+        }
     }
 
     // MARK: - Helpers
