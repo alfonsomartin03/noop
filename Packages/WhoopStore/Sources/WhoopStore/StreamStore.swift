@@ -60,11 +60,11 @@ extension WhoopStore {
             }
             if !streams.rr.isEmpty {
                 let stmt = try db.cachedStatement(sql: """
-                    INSERT INTO rrInterval (deviceId, ts, rrMs) VALUES (?, ?, ?)
-                    ON CONFLICT(deviceId, ts, rrMs) DO NOTHING
+                    INSERT INTO rrInterval (deviceId, ts, seq, rrMs) VALUES (?, ?, ?, ?)
+                    ON CONFLICT(deviceId, ts, seq, rrMs) DO NOTHING
                     """)
-                for r in streams.rr {
-                    try stmt.execute(arguments: [deviceId, r.ts, r.rrMs])
+                for (r, seq) in WhoopStore.sequenceRR(streams.rr) {
+                    try stmt.execute(arguments: [deviceId, r.ts, seq, r.rrMs])
                     rr += db.changesCount
                 }
             }
@@ -158,5 +158,30 @@ extension WhoopStore {
             }
             return (row["mac"], row["name"])
         }
+    }
+}
+
+extension WhoopStore {
+    /// Longest span (ms) the beats AFTER the first one in a single whole-second bucket can plausibly cover: each beat
+    /// ends inside that second, so only the first interval may reach back before it. 100 ms of slack for stamping jitter.
+    static let rrBucketSpanMs = 1_100
+
+    /// Assign each beat its position among the beats of the same second (acquisition order), and drop exact
+    /// re-deliveries of a beat inside one batch. A repeated value is a genuine beat while the bucket still fits in
+    /// one second (two 450 ms beats at 130 bpm); once a repeat would push the bucket past `rrBucketSpanMs`, it is a
+    /// retransmitted record, not physiology. Deterministic, so re-saving the same chunk maps to the same keys.
+    static func sequenceRR(_ rr: [RRInterval]) -> [(RRInterval, Int)] {
+        var buckets: [Int: [Int]] = [:]          // ts → rrMs kept so far, in order
+        var out: [(RRInterval, Int)] = []
+        out.reserveCapacity(rr.count)
+        for r in rr {
+            var b = buckets[r.ts, default: []]
+            let spanAfterFirst = b.dropFirst().reduce(0, +) + (b.isEmpty ? 0 : r.rrMs)
+            if b.contains(r.rrMs) && spanAfterFirst > rrBucketSpanMs { continue }
+            out.append((r, b.count))
+            b.append(r.rrMs)
+            buckets[r.ts] = b
+        }
+        return out
     }
 }

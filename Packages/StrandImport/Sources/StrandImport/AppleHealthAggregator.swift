@@ -407,7 +407,8 @@ public enum AppleHealthAggregator {
                 if let v = value { out.append((day: d.day, key: key, value: v)) }
             }
             add("resting_hr", d.restingHr)
-            add("hrv", d.hrvSDNN)
+            // SDNN, NOT RMSSD: a distinct key so it can never be read as (or baselined with) the WHOOP/NOOP "hrv" RMSSD.
+            add("hrv_sdnn", d.hrvSDNN)
             add("spo2", d.spo2Pct)
             add("resp_rate", d.respRate)
             add("avg_hr", d.avgHr)

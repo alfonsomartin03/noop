@@ -97,7 +97,11 @@ final class AppModel: ObservableObject {
             let v = 60_000.0 / Double(rr)
             if v >= 30, v <= 220 { inst = v }
         }
-        guard let inst else { return }
+        guard let inst else {
+            // No live reading (stream stopped): clear the smoother so a stale bpm isn't shown.
+            hrWindow.removeAll(); bpm = nil
+            return
+        }
         let now = Date()
         hrWindow.append((now, inst))
         hrWindow.removeAll { now.timeIntervalSince($0.t) > 10 }   // ~10s window
@@ -119,7 +123,7 @@ final class AppModel: ObservableObject {
 
     /// Enable the realtime stream + mark it wanted so the keep-alive re-arms it (can't lapse).
     func startRealtimeHR() { ble.startRealtime() }
-    /// Stop the realtime stream (the lightweight 0x2A37 HR keeps recording regardless).
+    /// Stop the realtime stream and clear the live reading (HR is still recorded by the strap and offloaded in history).
     func stopRealtimeHR() { ble.stopRealtime() }
     /// Turn the strap's standard heart-rate broadcast on/off (WHOOP 4.0).
     func setHRBroadcast(_ on: Bool) { ble.setHRBroadcast(on) }

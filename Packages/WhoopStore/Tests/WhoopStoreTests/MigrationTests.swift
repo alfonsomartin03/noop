@@ -26,10 +26,10 @@ final class MigrationTests: XCTestCase {
         XCTAssertEqual(cols, ["deviceId", "ts"])
     }
 
-    func testRrIntervalPrimaryKeyIncludesRrMs() async throws {
+    func testRrIntervalPrimaryKeyIncludesSeqAndRrMs() async throws {
         let store = try await WhoopStore.inMemory()
         let cols = try await store.primaryKeyColumns("rrInterval")
-        XCTAssertEqual(cols, ["deviceId", "ts", "rrMs"])
+        XCTAssertEqual(cols, ["deviceId", "ts", "seq", "rrMs"])
     }
 
     /// v5 adds a `synced` column to all 8 decoded tables.
@@ -40,6 +40,6 @@ final class MigrationTests: XCTestCase {
             let cols = try await store.columnNamesForTest(table: table)
             XCTAssertTrue(cols.contains("synced"), "\(table) missing synced column")
         }
-        XCTAssertEqual(WhoopStoreInfo.schemaVersion, 9)
+        XCTAssertEqual(WhoopStoreInfo.schemaVersion, 10)
     }
 }

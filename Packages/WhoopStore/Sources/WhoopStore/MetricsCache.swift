@@ -172,7 +172,7 @@ extension WhoopStore {
     /// re-score starts clean instead of leaving rows from an older detection rule behind. Raw strap data is untouched.
     public func deleteDerived(deviceId: String) async throws {
         try syncWrite { db in
-            for table in ["dailyMetric", "sleepSession", "workout"] {
+            for table in ["dailyMetric", "sleepSession", "workout", "metricSeries"] {
                 try db.execute(sql: "DELETE FROM \(table) WHERE deviceId = ?", arguments: [deviceId])
             }
         }

@@ -20,13 +20,14 @@ extension WhoopStore {
         }
     }
 
-    // Secondary ORDER BY rrMs keeps order deterministic when several beats share a second.
+    // Beats sharing a whole second come back in ACQUISITION order (seq, then insertion rowid), never sorted by
+    // value: ordering by rrMs would reorder neighbouring beats and corrupt every successive difference (RMSSD).
     public func rrIntervals(deviceId: String, from: Int, to: Int, limit: Int) async throws -> [RRInterval] {
         try syncRead { db in
             try Row.fetchAll(db, sql: """
                 SELECT ts, rrMs FROM rrInterval
                 WHERE deviceId = ? AND ts >= ? AND ts <= ?
-                ORDER BY ts ASC, rrMs ASC LIMIT ?
+                ORDER BY ts ASC, seq ASC, rowid ASC LIMIT ?
                 """, arguments: [deviceId, from, to, limit])
                 .map { RRInterval(ts: $0["ts"], rrMs: $0["rrMs"]) }
         }

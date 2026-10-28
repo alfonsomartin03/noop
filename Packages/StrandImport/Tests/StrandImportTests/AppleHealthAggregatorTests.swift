@@ -358,7 +358,8 @@ final class AppleHealthAggregatorTests: XCTestCase {
         for p in points where p.day == "2024-03-25" { byKey[p.key] = p.value }
 
         XCTAssertEqual(byKey["resting_hr"]!, 50, accuracy: 1e-9)
-        XCTAssertEqual(byKey["hrv"]!, 60, accuracy: 1e-9)
+        XCTAssertEqual(byKey["hrv_sdnn"]!, 60, accuracy: 1e-9)
+        XCTAssertNil(byKey["hrv"], "SDNN must not be published under the RMSSD key")
         XCTAssertEqual(byKey["spo2"]!, 97, accuracy: 1e-9)
         XCTAssertEqual(byKey["resp_rate"]!, 15, accuracy: 1e-9)
         XCTAssertEqual(byKey["avg_hr"]!, 95, accuracy: 1e-9)   // (70+120)/2

@@ -9,6 +9,7 @@ All analytics live in the cross-platform `StrandAnalytics` Swift package. Every 
 - Package: `Packages/StrandAnalytics/Sources/StrandAnalytics/`
 - Top-level index: `StrandAnalytics.swift` (`StrandAnalytics.version == "0.1.0"`)
 - App reference implementation: `Strand/` (macOS SwiftUI)
+- **Measurement-validity specification (Oct 2026): [`MEASUREMENT_VALIDITY.md`](MEASUREMENT_VALIDITY.md)** — metric identities, causal baselines, sleep states/accounting, recovery components, evaluation harness, and what remains unvalidated. Where this file and that one disagree, that one is current.
 
 ---
 
@@ -19,12 +20,12 @@ The package contains more analytics than the app currently calls. This section i
 | Engine | File | Status in the macOS app |
 |---|---|---|
 | `HRVAnalyzer` | `HRVAnalyzer.swift` | **Library-only** as a type. The app computes RMSSD inline via `AppModel.rmssd(_:)` (same Task-Force formula) for the live stress nudge. |
-| `RecoveryScorer` | `RecoveryScorer.swift` | **Library-only.** The recovery values shown in `TodayView` come from imported WHOOP CSV (`recovery_score_pct`), not from this scorer yet. |
+| `RecoveryScorer` | `RecoveryScorer.swift` | **Live (legacy comparator)** via `AnalyticsEngine` → `RecoveryAssessor`, for days the strap recorded. Imported WHOOP values win per field on the dashboard. |
 | `StrainScorer` | `StrainScorer.swift` | **Library-only.** Day strain shown in the UI is the imported `day_strain` column. The TRIMP scorer is the on-device recompute path. |
-| `SleepStager` | `SleepStager.swift` | **Library-only.** Sleep stages/efficiency in the store come from imports; the stager is the recompute path. |
-| `Baselines` | `Baselines.swift` | **Library-only** type. The illness early-warning in `AppModel` uses its own trailing-window baseline math inline (see below). |
+| `SleepStager` | `SleepStager.swift` | **Live** via `IntelligenceEngine` for strap-recorded nights (imports win per field). Staging method `heuristic-quota-v1`: experimental. |
+| `Baselines` | `Baselines.swift` | **Live** through `Baselines.causalState` (NOOP-only nights strictly before the scored day). `CausalReference` adds the robust ln-RMSSD/RHR references. The illness early-warning in `AppModel` uses its own inline math. |
 | `WorkoutDetector` / `Calories` | `WorkoutDetector.swift` | **Library-only.** |
-| `AnalyticsEngine` | `AnalyticsEngine.swift` | **Library-only orchestrator.** `analyzeDay(...)` is implemented and tested but **not** currently called from the import/store pipeline. |
+| `AnalyticsEngine` | `AnalyticsEngine.swift` | **Live.** `IntelligenceEngine.analyzeRecent` calls `analyzeDay` per day, oldest first, and stores results under the `-noop` device id. |
 | `HRZones` | `HRZones.swift` | **Library-only** (display zone model). The app's live zone coaching computes `%HRmax` inline in `AppModel.coachZone(_:)`. |
 | `CorrelationEngine` | `CorrelationEngine.swift` | **Live.** Used by `InsightsView`, `CompareView`, `MetricExplorerView`. |
 | `BehaviorInsights` | `BehaviorInsights.swift` | **Live.** Used by `InsightsView` (`rank` + `sentence`). |
@@ -151,12 +152,14 @@ Source: `RecoveryScorer.swift`. A **z-score + logistic** composite. It is explic
 
 ### Weighting
 
+Model version `legacy-whoop-fit-v1`. Weights were refitted to ONE person's WHOOP export (628 nights; see `WHOOP_REVERSE_ENGINEERING.md`). Agreement with WHOOP is the only thing that fit optimised; it is not evidence of physiological validity. Inputs are raw-unit RMSSD with EWMA mean-abs-dev baselines — the coefficients must not be reused with log-HRV without refitting.
+
 | Driver | Direction | Weight |
 |---|---|---|
-| HRV vs baseline | higher → better recovery | `wHRV = 0.60` (dominant) |
-| Resting HR vs baseline | lower → better | `wRHR = 0.20` |
-| Respiration vs baseline | lower → better | `wResp = 0.05` |
-| Sleep performance | higher → better | `wSleep = 0.15` |
+| HRV vs baseline | higher → higher score | `wHRV = 0.86` (dominant) |
+| Resting HR vs baseline | lower → higher score | `wRHR = 0.04` |
+| Respiration vs baseline | lower → higher score | `wResp = 0.07` — **not supplied** by NOOP: its respiration is inferred from R-R (experimental), not the measured rate the weight was fitted to |
+| Sleep efficiency | higher → higher score | `wSleep = 0.03` (efficiency, not sufficiency) |
 
 Each metric is standardized to a **robust z-score** against the personal baseline (EWMA spread):
 
@@ -170,15 +173,15 @@ Missing terms are dropped and weights renormalized. The weighted-mean z is squas
 
 ```
 score = 100 / (1 + exp(−logisticK · (z − logisticZ0)))
-        logisticK  = 1.6     (±2 z ≈ the full red–green band)
-        logisticZ0 = −0.20   (anchors z = 0 → ~58 %)
+        logisticK  = 1.1     (fitted)
+        logisticZ0 = −0.39   (fitted; z = 0 → ~60)
 ```
 
-The `58%` anchor matches WHOOP's published population-average recovery (`populationMean = 58.0`).
+The output is an index, not a percentage of anything recovered. `RecoveryAssessor` withholds it when an extreme HRV deviation (|z| > 3) comes from a marginal-quality night, and reports sleep sufficiency, autonomic deviation and unusual values as separate components (see `MEASUREMENT_VALIDITY.md`).
 
 ### Cold-start
 
-HRV is the dominant driver. If its baseline isn't usable yet (`BaselineState.usable == false`, i.e. fewer than `minNightsSeed` valid nights), `recovery(...)` returns `nil` — more honest than fabricating a number. Callers may fall back to `populationMean` but should flag it.
+HRV is the dominant driver. If its baseline isn't usable yet (`BaselineState.usable == false`, i.e. fewer than `minNightsSeed` valid nights), `recovery(...)` returns `nil` — more honest than fabricating a number. The app does **not** fall back to `populationMean`.
 
 ### Bands (`band(_:)`)
 
@@ -277,8 +280,8 @@ Consecutive same-stage epochs are merged into `StageSegment`s tiling `[start, en
 
 ### Outputs
 
-- `SleepSession` — `start`, `end`, `efficiency` (AASM `asleep / in-bed`, where `asleep = in-bed − wake`), `stages`, per-session `restingHR` (lowest 5-min rolling-mean HR) and `avgHRV` (mean RMSSD over 5-min tumbling windows).
-- `hypnogramMetrics(_:)` — AASM-style roll-up: TIB / TST / SPT / SOL / REM latency / WASO / efficiency / disturbances, plus deep/REM/light minutes and percentages.
+- `SleepSession` — `start`, `end`, `efficiency` (sleep ÷ OBSERVED time of the motion-inferred sleep period — not TIB), `stages` (`wake`/`asleep`/`light`/`deep`/`rem`/`unknown`; missing motion data is `unknown`, never wake), `restingHR` (mean of the lowest quartile of valid 5-min windows) and `avgHRV` (median RMSSD of valid 5-min windows), `vitalsQuality`.
+- `hypnogramMetrics(_:)` — TST (all sleep states), unknown and unstaged time, SPT, onset offset from the inferred start (not a latency from an attempt time), REM latency, observed-wake WASO, stage minutes; stage percentages are of ALL sleep and do not sum to 100 when part of it is unstaged. Stage durations come from a quota-constrained heuristic (`heuristic-quota-v1`: deep ≤ 17 %, REM ≤ 22 %, no REM in the first 30 min, deep only in the first half) and are partly imposed by those priors.
 
 ---
 
@@ -290,7 +293,7 @@ Source: `Baselines.swift`. Per-metric personal baselines that `RecoveryScorer` c
 
 A robust, recency-weighted center with an EWMA-of-absolute-deviation spread tracker:
 
-- **Half-life → smoothing factor:** `λ = 1 − 0.5^(1/halfLife)`. Center half-life 14 nights; spread half-life 21 (slower).
+- **Half-life → smoothing factor:** `λ = 1 − 0.5^(1/halfLife)`. Center and spread half-life 7 observations (per observation, not per calendar day; staleness counts calendar nights in `causalState`).
 - **Sanity gate:** values outside `[minVal, maxVal]` (per-metric) → skip-and-hold.
 - **Hard outlier rejection:** once seeded, a value > `hardOutlierK = 5 ×` spread away is seen but not folded.
 - **Winsor clamp:** fold only within `± winsorK = 3 ×` spread of the current baseline, so a single big night can't yank the center; the **spread** uses the unclamped deviation so real change is still tracked.
@@ -318,9 +321,9 @@ The simple, maximally auditable path: plain mean and sample SD (ddof = 1) over t
 
 | Metric | min | max | floor spread | center / spread half-life |
 |---|---|---|---|---|
-| `hrv` | 5 | 250 | 5.0 | 14 / 21 |
-| `resting_hr` | 30 | 120 | 2.0 | 14 / 21 |
-| `resp` | 4 | 40 | 0.5 | 14 / 21 |
+| `hrv` | 5 | 250 | 5.0 | 7 / 7 |
+| `resting_hr` | 30 | 120 | 2.0 | 7 / 7 |
+| `resp` | 4 | 40 | 0.5 | 7 / 7 |
 | `skin_temp` | 20 | 42 | 0.3 | 14 / 21 |
 
 ### Deviation

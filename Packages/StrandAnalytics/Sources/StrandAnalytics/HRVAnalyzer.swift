@@ -6,8 +6,11 @@ import WhoopProtocol
 // Ported from server/ingest/app/analysis/hrv.py. The Task Force (1996) RMSSD and
 // SDNN definitions are reproduced exactly:
 //
-//   RMSSD = sqrt( mean( (NN[i+1] − NN[i])^2 ) )           (Task Force 1996)
-//   SDNN  = sample standard deviation of NN (ddof = 1)     (Task Force 1996)
+//   RMSSD = sqrt( Σ (NN[i+1] − NN[i])² / validAdjacentPairs )   (Task Force 1996)
+//   SDNN  = sqrt( Σ (NN − meanNN)² / (N − 1) )                   (Task Force 1996)
+//   pNN50 = 100 × count(|ΔNN| > 50 ms) / validAdjacentPairs
+// A "valid adjacent pair" is two accepted beats that were neighbours in the ORIGINAL acquisition (no beat rejected
+// between them, no data gap): `nPairs` is reported separately from `nClean` because they are different denominators.
 //
 // Cleaning pipeline:
 //   1. Range filter: drop intervals outside [RR_MIN_MS, RR_MAX_MS] = [300, 2000] ms.
@@ -53,15 +56,18 @@ public enum HRVAnalyzer {
         public let nInput: Int
         /// Count of clean NN intervals after range + ectopic filtering.
         public let nClean: Int
+        /// Count of valid adjacent NN pairs (the RMSSD / pNN50 denominator). 0 for the legacy untimed paths.
+        public let nPairs: Int
 
         public init(rmssd: Double?, sdnn: Double?, meanNN: Double?, pnn50: Double?,
-                    nInput: Int, nClean: Int) {
+                    nInput: Int, nClean: Int, nPairs: Int = 0) {
             self.rmssd = rmssd
             self.sdnn = sdnn
             self.meanNN = meanNN
             self.pnn50 = pnn50
             self.nInput = nInput
             self.nClean = nClean
+            self.nPairs = nPairs
         }
 
         /// An empty/insufficient-data result that preserves the input count.
@@ -168,8 +174,10 @@ public enum HRVAnalyzer {
 
     /// Time-aware HRV for a window of timestamped intervals: successive differences are only taken between beats that
     /// are neighbours in the recording (no beat removed between them, timestamps ≤ `maxBeatGapS` apart).
+    /// Beats sharing a whole second keep their given (acquisition) order: the sort is by (ts, original position),
+    /// never by value, so neighbouring beats are never swapped.
     public static func analyzeTimed(_ rr: [RRInterval]) -> HRVResult {
-        let s = rr.sorted { $0.ts < $1.ts }
+        let s = rr.enumerated().sorted { ($0.element.ts, $0.offset) < ($1.element.ts, $1.offset) }.map(\.element)
         var contiguous = [Bool](repeating: false, count: s.count)
         for i in s.indices.dropFirst() { contiguous[i] = s[i].ts - s[i - 1].ts <= maxBeatGapS }
         return analyze(values: s.map { Double($0.rrMs) }, contiguousWithPrevious: contiguous)
@@ -198,7 +206,8 @@ public enum HRVAnalyzer {
         guard pairs >= minBeats / 2 else { return .empty(nInput: nInput) }
         return HRVResult(rmssd: (sumSq / Double(pairs)).squareRoot(), sdnn: sdnnRaw(clean),
                          meanNN: clean.reduce(0, +) / Double(clean.count),
-                         pnn50: Double(nn50) / Double(pairs) * 100.0, nInput: nInput, nClean: clean.count)
+                         pnn50: Double(nn50) / Double(pairs) * 100.0, nInput: nInput, nClean: clean.count,
+                         nPairs: pairs)
     }
 
     /// Which beats survive Malik rejection (same rule as `rejectEctopic`, but as a mask).

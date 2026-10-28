@@ -14,14 +14,25 @@ import WhoopProtocol
 
 public enum AnalyticsEngine {
 
-    /// Baselines passed in by the caller (built from prior nights via Baselines).
+    /// Personal references passed in by the caller. They must be built from nights STRICTLY BEFORE the day being
+    /// analysed and from the same metric identity (see `CausalBaselines.legacyProfile`); this function cannot check that.
     public struct ProfileBaselines: Sendable {
+        /// Legacy EWMA states for the legacy recovery model.
         public let hrv: BaselineState?
         public let restingHR: BaselineState?
         public let resp: BaselineState?
+        /// Robust causal references for the autonomic component (ln RMSSD; resting HR in bpm).
+        public let lnRMSSDReference: ReferenceSnapshot?
+        public let restingHRReference: ReferenceSnapshot?
+        /// Declared 24-h sleep target (minutes) for sleep sufficiency.
+        public let sleepTargetMin: Double
         public init(hrv: BaselineState? = nil, restingHR: BaselineState? = nil,
-                    resp: BaselineState? = nil) {
+                    resp: BaselineState? = nil, lnRMSSDReference: ReferenceSnapshot? = nil,
+                    restingHRReference: ReferenceSnapshot? = nil,
+                    sleepTargetMin: Double = SleepAccounting.defaultAdultTargetMin) {
             self.hrv = hrv; self.restingHR = restingHR; self.resp = resp
+            self.lnRMSSDReference = lnRMSSDReference; self.restingHRReference = restingHRReference
+            self.sleepTargetMin = sleepTargetMin
         }
     }
 
@@ -46,13 +57,19 @@ public enum AnalyticsEngine {
         public let recovery: Double?
         /// Day strain [0,21] or nil (insufficient HR samples / invalid HRR).
         public let strain: Double?
+        /// The separate recovery dimensions (legacy score, sleep sufficiency, autonomic deviation, unusual values).
+        public let assessment: RecoveryAssessment?
+        /// Naps attributed to this day (not in the night totals; counted in 24-h sleep).
+        public let napSessions: [SleepSession]
 
         public init(daily: DailyMetric, sleepSessions: [SleepSession],
                     cachedSleep: [CachedSleepSession], workouts: [ExerciseSession],
-                    recovery: Double?, strain: Double?) {
+                    recovery: Double?, strain: Double?, assessment: RecoveryAssessment? = nil,
+                    napSessions: [SleepSession] = []) {
             self.daily = daily; self.sleepSessions = sleepSessions
             self.cachedSleep = cachedSleep; self.workouts = workouts
             self.recovery = recovery; self.strain = strain
+            self.assessment = assessment; self.napSessions = napSessions
         }
     }
 
@@ -137,28 +154,33 @@ public enum AnalyticsEngine {
             return weight > 0 ? total / weight : nil
         }()
 
+        // Daily respiration = in-bed-weighted mean of per-session breaths/min inferred from R-R.
+        let respDaily: Double? = {
+            let pairs = matched.compactMap { s -> (Double, Double)? in
+                s.avgResp.map { ($0, Double(s.end - s.start)) }
+            }
+            let weight = pairs.reduce(0.0) { $0 + $1.1 }
+            return weight > 0 ? pairs.reduce(0.0) { $0 + $1.0 * $1.1 } / weight : nil
+        }()
+
         let sleepStart = matched.map { $0.start }.min()
         let sleepEnd = matched.map { $0.end }.max()
 
         // ── Recovery ──────────────────────────────────────────────────────────
-        var recovery: Double? = nil
-        // Recovery needs HRV, resting HR and an HRV baseline; otherwise stay nil instead of guessing.
-        // A real night is required: a nap or a still afternoon on the couch must not produce a recovery score.
+        // Legacy score needs a real night (≥ 3 h asleep), HRV, resting HR and a usable HRV baseline; otherwise nil.
         // A provisional night (recording ends right after the wake) still scores so recovery shows on waking; every
         // sync recomputes the whole day, so it is revised if the wearer goes back to sleep (see DayResult.sleepProvisional).
-        let hadMainSleep = tstS >= minRecoverySleepS
-        if hadMainSleep, let hrvVal = avgHRVDaily, let rhrVal = restingHRDaily, let hrvBase = baselines.hrv {
-            // Sleep-performance proxy = in-bed-weighted efficiency (0..1).
-            let sleepPerf = matched.isEmpty ? nil : efficiency
-            recovery = RecoveryScorer.recovery(
-                hrv: hrvVal,
-                rhr: Double(rhrVal),
-                resp: nil,                 // raw resp not aggregated to a nightly scalar here
-                hrvBaseline: hrvBase,
-                rhrBaseline: baselines.restingHR,
-                respBaseline: baselines.resp,
-                sleepPerf: sleepPerf)
-        }
+        // 24-h sleep = union of the night(s) and naps attributed to this day, never double counted.
+        let dayEpisodes = (matched + napSessions).map(\.stages)
+        let sleep24hMin: Double? = (matched + napSessions).isEmpty ? nil : Double(SleepAccounting.sleepSeconds(
+            dayEpisodes, window: TimeSpan(Int.min / 2, Int.max / 2))) / 60.0
+        // Quality of the night's vitals: the longest night's (where the daily HRV mostly comes from).
+        let quality = matched.max(by: { $0.end - $0.start < $1.end - $1.start })?.vitalsQuality
+        let assessment = RecoveryAssessor.assess(
+            sleep24hMin: sleep24hMin, mainSleepS: tstS, efficiency: matched.isEmpty ? nil : efficiency,
+            hrv: avgHRVDaily, restingHR: restingHRDaily, quality: quality, baselines: baselines,
+            minMainSleepS: minRecoverySleepS)
+        let recovery = assessment.legacy.score
 
         // ── Workouts ──────────────────────────────────────────────────────────
         // User override wins; otherwise Tanaka from age.
@@ -213,7 +235,7 @@ public enum AnalyticsEngine {
             exerciseCount: workouts.count,
             spo2Pct: nil,
             skinTempDevC: nil,
-            respRateBpm: nil)
+            respRateBpm: respDaily)
         _ = sleepStart; _ = sleepEnd  // available for callers wiring sleep_start/end columns
 
         // ── Cache rows ────────────────────────────────────────────────────────
@@ -227,8 +249,8 @@ public enum AnalyticsEngine {
                 stagesJSON: encodeStages(s.stages))
         }
 
-        _ = napSessions
         return DayResult(daily: daily, sleepSessions: matched, cachedSleep: cachedSleep,
-                         workouts: workouts, recovery: recovery, strain: strain)
+                         workouts: workouts, recovery: recovery, strain: strain, assessment: assessment,
+                         napSessions: napSessions)
     }
 }

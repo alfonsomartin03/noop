@@ -7,7 +7,7 @@ import WhoopProtocol
 // Single source of truth for the DB schema version; bump with every new migration.
 public enum WhoopStoreInfo {
     /// Bumped whenever the migrator gains a new migration.
-    public static let schemaVersion = 9
+    public static let schemaVersion = 10
 }
 
 /// WhoopStore is an `actor`: its public API is `async`, and all GRDB work runs on the

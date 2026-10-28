@@ -219,6 +219,28 @@ extension WhoopStore {
             try db.create(index: "idx_metricSeries_device_key_day",
                           on: "metricSeries", columns: ["deviceId", "key", "day"])
         }
+        migrator.registerMigration("v10") { db in
+            // R-R beats need their order WITHIN a second. Timestamps are whole seconds, so two genuine beats can share
+            // one; the v1 key (deviceId, ts, rrMs) silently dropped a second beat with the same ms value, and reads
+            // sorted same-second beats by value instead of by acquisition. `seq` = position of the beat among the
+            // beats of its second, in acquisition order. Existing rows keep their insertion order (rowid) as seq.
+            try db.create(table: "rrInterval_v10") { t in
+                t.column("deviceId", .text).notNull()
+                t.column("ts", .integer).notNull()
+                t.column("rrMs", .integer).notNull()
+                t.column("synced", .integer).notNull().defaults(to: 0)
+                t.column("seq", .integer).notNull().defaults(to: 0)
+                t.primaryKey(["deviceId", "ts", "seq", "rrMs"])
+            }
+            try db.execute(sql: """
+                INSERT INTO rrInterval_v10 (deviceId, ts, rrMs, synced, seq)
+                SELECT deviceId, ts, rrMs, synced,
+                       ROW_NUMBER() OVER (PARTITION BY deviceId, ts ORDER BY rowid) - 1
+                FROM rrInterval ORDER BY deviceId, ts, rowid
+                """)
+            try db.drop(table: "rrInterval")
+            try db.rename(table: "rrInterval_v10", to: "rrInterval")
+        }
         return migrator
     }
 }

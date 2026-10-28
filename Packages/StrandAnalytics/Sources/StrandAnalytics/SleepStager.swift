@@ -33,10 +33,13 @@ import WhoopProtocol
 public struct StageSegment: Equatable, Sendable, Codable {
     public var start: Int
     public var end: Int
-    public var stage: String  // "wake" | "light" | "deep" | "rem"
-    public init(start: Int, end: Int, stage: String) {
-        self.start = start; self.end = end; self.stage = stage
+    public var stage: String  // a `SleepState` raw value: "wake" | "asleep" | "light" | "deep" | "rem" | "unknown"
+    /// Provenance for `unknown` / `asleep` segments (see `SleepStateReason`); omitted from JSON when nil.
+    public var reason: String?
+    public init(start: Int, end: Int, stage: String, reason: String? = nil) {
+        self.start = start; self.end = end; self.stage = stage; self.reason = reason
     }
+    public var state: SleepState { SleepState(label: stage) }
 }
 
 /// Main (night) sleep vs a daytime nap. Sedentary rest that merely looks like sleep is never emitted.
@@ -46,23 +49,29 @@ public enum SleepKind: String, Equatable, Sendable { case main, nap }
 public struct SleepSession: Equatable, Sendable {
     public let start: Int
     public let end: Int
-    /// asleep / in-bed in [0, 1] (AASM TST/TIB; asleep = in-bed − wake).
+    /// Sleep ÷ OBSERVED time of the detected sleep period, in [0, 1]. The period is motion-inferred, not a measured
+    /// time in bed, and unknown (no data) time is excluded from both numerator and denominator.
     public let efficiency: Double
     public let stages: [StageSegment]
-    /// Lowest 5-min rolling-mean HR during the session (bpm), or nil.
+    /// Sleep-derived resting HR: mean of the lowest quartile of valid 5-min windows (see SleepVitals), or nil.
     public let restingHR: Int?
-    /// Mean RMSSD over 5-min windows across the session (ms), or nil.
+    /// MEDIAN RMSSD over valid 5-min windows of the session (ms), or nil (see SleepVitals).
     public let avgHRV: Double?
+    /// Median breaths/min over the clean sleep windows, inferred from R-R (see `RespiratoryRate`), or nil.
+    public let avgResp: Double?
     /// Night vs nap (see `SleepStager.classifyCandidate`).
     public let kind: SleepKind
     /// True while the final wake cannot yet be trusted (the recording ends within `provisionalWindowMin` of it).
     public let isProvisional: Bool
+    /// Measurement quality behind `restingHR` / `avgHRV` (nil for sessions not built by `detectSleep`).
+    public let vitalsQuality: VitalsQuality?
 
     public init(start: Int, end: Int, efficiency: Double, stages: [StageSegment],
-                restingHR: Int?, avgHRV: Double?, kind: SleepKind = .main, isProvisional: Bool = false) {
+                restingHR: Int?, avgHRV: Double?, avgResp: Double? = nil, kind: SleepKind = .main, isProvisional: Bool = false,
+                vitalsQuality: VitalsQuality? = nil) {
         self.start = start; self.end = end; self.efficiency = efficiency
-        self.stages = stages; self.restingHR = restingHR; self.avgHRV = avgHRV
-        self.kind = kind; self.isProvisional = isProvisional
+        self.stages = stages; self.restingHR = restingHR; self.avgHRV = avgHRV; self.avgResp = avgResp
+        self.kind = kind; self.isProvisional = isProvisional; self.vitalsQuality = vitalsQuality
     }
 }
 
@@ -169,6 +178,10 @@ public enum SleepStager {
     public static let stageHRVarHighPct: Double = 65.0
     public static let stageRRVHighPct: Double = 65.0
     public static let stageRRVLowPct: Double = 50.0
+    /// Name of the staging method written alongside its output. The deep/REM caps and the hard temporal rules below
+    /// make stage durations partly IMPOSED by population priors, so this hypnogram is an experimental, quota-constrained
+    /// estimate, not measured sleep architecture. Kept as the legacy comparison path until a classifier is validated.
+    public static let stagingMethod = "heuristic-quota-v1"
     /// Population-prior share of sleep assigned to deep / REM at most, and the minimum score (z) to qualify.
     public static let stageDeepTargetPct: Double = 17.0
     public static let stageREMTargetPct: Double = 22.0
@@ -608,21 +621,26 @@ public enum SleepStager {
             let resting = vitals.restingHR
             let avgHrv = vitals.hrv
             sessions.append(SleepSession(start: p.start, end: p.end, efficiency: eff,
-                                         stages: stages, restingHR: resting, avgHRV: avgHrv, kind: kind,
-                                         isProvisional: dataEnd - p.end < provisionalWindowMin * 60))
+                                         stages: stages, restingHR: resting, avgHRV: avgHrv, avgResp: vitals.respRate, kind: kind,
+                                         isProvisional: dataEnd - p.end < provisionalWindowMin * 60,
+                                         vitalsQuality: VitalsQuality(vitals)))
         }
         sessions.sort { $0.start < $1.start }
         return sessions
     }
 
-    /// asleep / in-bed in [0, 1]; asleep = in-bed − wake.
-    // Efficiency = (time in bed - wake) / time in bed.
+    /// Sleep ÷ observed time of the period. Unknown time is neither sleep nor wake, so it leaves both terms; with
+    /// no stage information at all (legacy rows) the whole period counts as observed.
     static func efficiency(start: Int, end: Int, stages: [StageSegment]) -> Double {
-        let inBed = Double(end - start)
-        if inBed <= 0 { return 0 }
-        let wake = stages.filter { $0.stage == "wake" }.reduce(0.0) { $0 + Double($1.end - $1.start) }
-        let asleep = max(0.0, inBed - wake)
-        return min(1.0, asleep / inBed)
+        let period = Double(end - start)
+        if period <= 0 { return 0 }
+        guard !stages.isEmpty else { return 1 }
+        func total(_ keep: (SleepState) -> Bool) -> Double {
+            stages.filter { keep($0.state) }.reduce(0.0) { $0 + Double(max(0, min($1.end, end) - max($1.start, start))) }
+        }
+        let observed = period - total { !$0.isKnown }
+        guard observed > 0 else { return 0 }
+        return min(1.0, total { $0.isSleep } / observed)
     }
 
     // MARK: - Stage 1–3: staging over a 30 s epoch grid
@@ -650,7 +668,10 @@ public enum SleepStager {
     static func stageSession(start: Int, end: Int, grav: [GravitySample],
                              hr: [HRSample], rr: [RRInterval], resp: [RespSample]) -> [StageSegment] {
         let gSeg = rowsBetween(grav, start: start, end: end) { $0.ts }
-        if gSeg.count < 2 { return [StageSegment(start: start, end: end, stage: "light")] }
+        // No motion data: nothing about this span is observed. (Labelling it "light" invented sleep architecture.)
+        let unscored = [StageSegment(start: start, end: end, stage: SleepState.unknown.rawValue,
+                                     reason: SleepStateReason.noMotionData)]
+        if gSeg.count < 2 { return unscored }
 
         let gDeltas = gravityDeltas(gSeg)
         let gTimes = gSeg.map { $0.ts }
@@ -662,7 +683,7 @@ public enum SleepStager {
         let grid = buildEpochGrid(start: Double(start), end: Double(end),
                                   gravTimes: gTimes, gravDeltas: gDeltas,
                                   hr: hrSeg, rr: rrSeg, resp: respSeg)
-        if grid.nEpochs == 0 { return [StageSegment(start: start, end: end, stage: "light")] }
+        if grid.nEpochs == 0 { return unscored }
 
         let rescaled = rescaleCounts(grid.counts)
         let ckFlags = coleKripke(rescaled)
@@ -679,10 +700,17 @@ public enum SleepStager {
 
         // Pre-onset and post-final-wake epochs are not sleep → force wake.
         for i in 0..<labels.count where i < onsetIdx || i > finalWakeIdx { labels[i] = "wake" }
-        // Epochs with no sensor data are unscored, never sleep (zero motion counts would otherwise read as deep rest).
-        for i in 0..<labels.count where !grid.covered[i] { labels[i] = "wake" }
+        // Epochs with no sensor data are UNKNOWN: not sleep (zero motion would read as deep rest) and not wake either.
+        for i in 0..<labels.count where !grid.covered[i] { labels[i] = SleepState.unknown.rawValue }
 
         // Merge consecutive same-stage epochs into segments tiling [start, end].
+        func reason(_ stage: String) -> String? {
+            switch SleepState(label: stage) {
+            case .unknown: return SleepStateReason.noMotionData
+            case .asleep: return SleepStateReason.noCardiacData
+            default: return nil
+            }
+        }
         var segments: [StageSegment] = []
         for (i, stage) in labels.enumerated() {
             let segStart = Int(grid.edges[i].rounded())
@@ -690,7 +718,7 @@ public enum SleepStager {
             if let last = segments.last, last.stage == stage {
                 segments[segments.count - 1].end = segEnd
             } else {
-                segments.append(StageSegment(start: segStart, end: segEnd, stage: stage))
+                segments.append(StageSegment(start: segStart, end: segEnd, stage: stage, reason: reason(stage)))
             }
         }
         if !segments.isEmpty { segments[segments.count - 1].end = end }
@@ -1029,7 +1057,7 @@ public enum SleepStager {
             return v.map { $0.isFinite && sd > 1e-9 ? ($0 - m) / sd : 0 }
         }
         let pool = (0..<n).filter { base[$0] != "wake" && features[$0].moveFrac <= stageStillMoveFrac }
-        guard pool.count >= 20 else { return base }
+        guard pool.count >= 20 else { return abstainWithoutCardiac(base, features: features) }
         let zHR = z(features.map { $0.hr }, pool), zRM = z(features.map { $0.rmssd }, pool)
         let zVar = z(features.map { $0.hrVar }, pool), zRRV = z(features.map { $0.rrv }, pool)
         let depth = (0..<n).map { -zHR[$0] + zRM[$0] - 0.5 * zVar[$0] }
@@ -1045,7 +1073,15 @@ public enum SleepStager {
         for i in deepIdx { out[i] = "deep" }
         let remPool = pool.filter { out[$0] == "light" && features[$0].clock * Double(max(1, n)) * epochS / 60.0 >= noREMAfterOnsetMin }
         for i in top(remPool, act, count: Int(total * stageREMTargetPct / 100.0)) { out[i] = "rem" }
-        return out
+        return abstainWithoutCardiac(out, features: features)
+    }
+
+    /// A sleep epoch with no heart-rate feature has no stage evidence: "light" there was a default, not an estimate.
+    /// It stays asleep (motion says so) but unstaged.
+    static func abstainWithoutCardiac(_ labels: [String], features: [EpochFeatures]) -> [String] {
+        labels.enumerated().map { i, l in
+            l != "wake" && !features[i].hr.isFinite ? SleepState.asleep.rawValue : l
+        }
     }
 
     /// Replace HR and RMSSD by their residual from a ±45 min rolling median. HR falls and HRV rises across
@@ -1136,9 +1172,15 @@ public enum SleepStager {
         return out
     }
 
-    // MARK: - AASM hypnogram metrics
+    // MARK: - AASM-style hypnogram metrics
 
-    /// AASM-style metrics from a session's stage segments.
+    /// Metrics from a session's stage segments. Denominators are explicit:
+    /// - `tstS` counts every sleep state, staged or not; `unknownS` is time with no observed state and is in neither.
+    /// - `deepPct/remPct/lightPct` are shares of ALL sleep (`tstS`), so with unstaged sleep they do not sum to 100;
+    ///   `stagedS` is their own denominator if a classified-sleep fraction is wanted.
+    /// - `tibS` is the detected (motion-inferred) sleep period, NOT a measured time in bed, and `solS` is onset minus
+    ///   that inferred start, not a latency from an attempt-to-sleep time (which NOOP does not observe).
+    /// - `efficiency` = tst ÷ observed period time; `wasoS` counts observed wake only.
     public struct HypnogramMetrics: Equatable, Sendable {
         public let tibS: Double
         public let tstS: Double
@@ -1154,6 +1196,12 @@ public enum SleepStager {
         public let deepPct: Double
         public let remPct: Double
         public let lightPct: Double
+        /// Sleep with no stage estimate (s).
+        public let unstagedS: Double
+        /// Time with no observed sleep/wake state (s).
+        public let unknownS: Double
+        /// Sleep carrying a stage estimate (s).
+        public var stagedS: Double { tstS - unstagedS }
     }
 
     public static func hypnogramMetrics(_ session: SleepSession) -> HypnogramMetrics {
@@ -1161,11 +1209,11 @@ public enum SleepStager {
         let tib = max(0.0, Double(session.end - session.start))
 
         func dur(_ s: StageSegment) -> Double { Double(s.end - s.start) }
-        let sleepSegs = segs.filter { $0.stage == "light" || $0.stage == "deep" || $0.stage == "rem" }
+        func total(_ st: SleepState) -> Double { segs.filter { $0.state == st }.reduce(0.0) { $0 + dur($1) } }
+        let sleepSegs = segs.filter { $0.state.isSleep }
         let tst = sleepSegs.reduce(0.0) { $0 + dur($1) }
-        let deepS = segs.filter { $0.stage == "deep" }.reduce(0.0) { $0 + dur($1) }
-        let remS = segs.filter { $0.stage == "rem" }.reduce(0.0) { $0 + dur($1) }
-        let lightS = segs.filter { $0.stage == "light" }.reduce(0.0) { $0 + dur($1) }
+        let deepS = total(.deep), remS = total(.rem), lightS = total(.light)
+        let unstagedS = total(.asleep), unknownS = total(.unknown)
 
         let onset: Double, sptEnd: Double, sol: Double
         if let first = sleepSegs.first, let last = sleepSegs.last {
@@ -1178,25 +1226,27 @@ public enum SleepStager {
             sol = tib
         }
 
-        let remSegs = segs.filter { $0.stage == "rem" }
+        let remSegs = segs.filter { $0.state == .rem }
         let remLatency = remSegs.first.map { Double($0.start) - onset } ?? Double.nan
 
         var waso = 0.0
         var disturbances = 0
-        for s in segs where s.stage == "wake" {
+        for s in segs where s.state == .wake {
             let w0 = max(Double(s.start), onset)
             let w1 = min(Double(s.end), sptEnd)
             if w1 > w0 { waso += (w1 - w0); disturbances += 1 }
         }
 
-        let se = tib > 0 ? tst / tib : 0.0
+        let observed = tib - unknownS
+        let se = observed > 0 ? tst / observed : 0.0
         func pct(_ x: Double) -> Double { tst > 0 ? x / tst * 100.0 : 0.0 }
 
         return HypnogramMetrics(
             tibS: tib, tstS: tst, sptS: max(0.0, sptEnd - onset), solS: sol,
             remLatencyS: remLatency, wasoS: waso, efficiency: min(1.0, se),
             disturbances: disturbances, deepMin: deepS / 60.0, remMin: remS / 60.0,
-            lightMin: lightS / 60.0, deepPct: pct(deepS), remPct: pct(remS), lightPct: pct(lightS))
+            lightMin: lightS / 60.0, deepPct: pct(deepS), remPct: pct(remS), lightPct: pct(lightS),
+            unstagedS: unstagedS, unknownS: unknownS)
     }
 
     // MARK: - Small stats helpers

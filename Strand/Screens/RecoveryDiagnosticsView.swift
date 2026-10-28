@@ -87,8 +87,8 @@ struct RecoveryDiagnosticsView: View {
         card("Baselines") {
             row("HRV baseline", String(format: "%.1f ms ± %.1f  (%d nights)", r.hrvBase.baseline, r.hrvBase.spread, r.hrvBase.nValid))
             row("Resting HR baseline", String(format: "%.1f bpm ± %.1f  (%d nights)", r.rhrBase.baseline, r.rhrBase.spread, r.rhrBase.nValid))
-            row("Source mix", "\(r.importedNights) imported WHOOP nights, \(r.ownNights) NOOP-measured")
-            Text("Imported and NOOP nights come from different methods; a persistent offset between them shifts every z-score.")
+            row("Source", "\(r.ownNights) NOOP-measured nights before this day; \(r.importedNights) imported WHOOP nights excluded")
+            Text("Baselines use only NOOP's own nights dated before this one. WHOOP's values come from a different method, so they start no baseline here.")
                 .font(.system(size: 11)).foregroundStyle(StrandPalette.textTertiary)
         }
         card("Recovery") {
@@ -185,8 +185,10 @@ struct RecoveryDiagnosticsView: View {
         let stages = (s.stagesJSON?.data(using: .utf8)).flatMap { try? JSONDecoder().decode([StageSegment].self, from: $0) } ?? []
         let cleaned = HRQuality.cleanWithReport(hr)
         let vitals = SleepVitalsCalculator.compute(start: s.startTs, end: s.endTs, stages: stages, hr: cleaned.samples, rr: rr)
-        let base = IntelligenceEngine.baselines(from: repo.days)
         let day = ZoneTimeline.shared.dayString(s.endTs)
+        // Same causal, NOOP-only reference the engine scored this day against (nights strictly before it).
+        let base: AnalyticsEngine.ProfileBaselines? = IntelligenceEngine.baselines(
+            for: day, noopHistory: repo.estimates.values.filter { $0.day < day })
         let stored = repo.days.first { $0.day == day }
         var breakdown: RecoveryScorer.Breakdown? = nil
         if let b = base, let hrv = vitals.hrv, let rhr = vitals.restingHR, let hb = b.hrv {
@@ -198,6 +200,7 @@ struct RecoveryDiagnosticsView: View {
         report = Report(session: s, stages: stages, vitals: vitals, hrReport: cleaned.report, breakdown: breakdown,
                         storedHRV: stored?.avgHrv, storedRHR: stored?.restingHr, storedRecovery: stored?.recovery,
                         hrvBase: hb, rhrBase: rb,
-                        importedNights: repo.officialDays.count, ownNights: repo.estimates.count)
+                        importedNights: repo.officialDays.count,
+                        ownNights: repo.estimates.values.filter { $0.day < day && $0.avgHrv != nil }.count)
     }
 }

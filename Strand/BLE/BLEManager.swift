@@ -581,8 +581,14 @@ public final class BLEManager: NSObject, ObservableObject {
 
     /// Enable the heavy realtime stream (type-40/43) and remember we want it re-armed by keep-alive.
     public func startRealtime() { wantsRealtime = true; send(.toggleRealtimeHR, payload: [0x01]) }
-    /// Stop the realtime stream. The lightweight 0x2A37 HR keeps recording continuously regardless.
-    public func stopRealtime() { wantsRealtime = false; send(.toggleRealtimeHR, payload: [0x00]) }
+    /// Stop the realtime stream and drop the now-stale live reading, so nothing outside the live-HR screen keeps
+    /// showing a frozen bpm. HR and R-R keep being recorded by the strap and arrive with the periodic history offload.
+    public func stopRealtime() {
+        wantsRealtime = false
+        send(.toggleRealtimeHR, payload: [0x00])
+        state.heartRate = nil
+        state.rr = []
+    }
 
     /// Turn the strap's standard HR broadcast on/off (WHOOP 4.0). The strap answers with a
     /// BLE_HR_PROFILE_ENABLED/DISABLED event, which updates `state.hrBroadcast`.
