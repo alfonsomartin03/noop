@@ -34,7 +34,8 @@ enum DayMath {
 
     static func hm(_ minutes: Double) -> String {
         let m = Int(minutes.rounded())
-        return m >= 60 ? "\(m / 60)h \(m % 60)m" : "\(m)m"
+        // Non-breaking: "24h 0m" must not wrap into a caption that reads "0m".
+        return m >= 60 ? "\(m / 60)h\u{00A0}\(m % 60)m" : "\(m)m"
     }
 
     /// Wall-clock time of `ts` in the zone the wearer was in then.
@@ -53,34 +54,47 @@ struct DayHRStats {
     let inZone: TimeInZone
     /// Seconds of the day actually covered by recorded heart rate.
     let coveredS: Double
+    /// Time-weighted mean over supported seconds.
+    private let meanBPM: Double?
     /// Time-weighted energy estimate over the recorded time (Keytel), nil when there is no data.
     let kcal: Double?
 
+    /// The profile values a summary needs, so it can be built away from the main actor.
+    struct Inputs: Sendable {
+        let age: Double, maxHROverride: Double?, body: UserProfile
+        @MainActor init(_ profile: ProfileStore) {
+            age = Double(profile.age)
+            maxHROverride = profile.hrMaxOverride > 0 ? Double(profile.hrMaxOverride) : nil
+            body = UserProfile(weightKg: profile.weightKg, heightCm: profile.heightCm, age: Double(profile.age), sex: profile.sex)
+        }
+    }
+
+    /// `maxHR` is the snapshot the day was scored with, when there is one, so zones here match its load.
+    init(hr: [HRSample], inputs: Inputs, restingHR: Int?, maxHR: Double? = nil) {
+        // Validated once: everything below reads the same supported seconds.
+        let support = SupportedHR(raw: hr)
+        samples = hr.sorted { $0.ts < $1.ts }
+        zoneSet = HRZones.zones(age: inputs.age, maxHROverride: maxHR ?? inputs.maxHROverride)
+        inZone = HRZones.timeInZone(support, zoneSet: zoneSet)
+        coveredS = Double(support.observedSeconds)
+        meanBPM = LoadSummary(support, requestedS: 0, hrMax: zoneSet.maxHR).meanHR
+        kcal = hr.isEmpty ? nil : Calories.estimateDayCalories(support, profile: inputs.body, hrmax: zoneSet.maxHR,
+                                                               restingHR: restingHR.map(Double.init))
+    }
+
+    /// Off the main actor: a day is ~86,000 samples.
     @MainActor
-    init(hr: [HRSample], profile: ProfileStore, restingHR: Int?) {
-        let sorted = hr.sorted { $0.ts < $1.ts }
-        samples = sorted
-        zoneSet = HRZones.zones(age: Double(profile.age),
-                                maxHROverride: profile.hrMaxOverride > 0 ? Double(profile.hrMaxOverride) : nil)
-        inZone = HRZones.timeInZone(sorted, zoneSet: zoneSet)
-        var covered = 0.0
-        for i in 0..<sorted.count {
-            covered += i + 1 < sorted.count ? min(Double(sorted[i + 1].ts - sorted[i].ts), 60) : 1
-        }
-        coveredS = covered
-        if sorted.isEmpty {
-            kcal = nil
-        } else {
-            let up = UserProfile(weightKg: profile.weightKg, heightCm: profile.heightCm,
-                                 age: Double(profile.age), sex: profile.sex)
-            kcal = Calories.estimateDayCalories(sorted, profile: up, hrmax: zoneSet.maxHR, restingHR: restingHR.map(Double.init))
-        }
+    static func build(hr: [HRSample], profile: ProfileStore, restingHR: Int?, maxHR: Double? = nil) async -> DayHRStats {
+        let inputs = Inputs(profile)
+        return await Task.detached(priority: .userInitiated) {
+            DayHRStats(hr: hr, inputs: inputs, restingHR: restingHR, maxHR: maxHR)
+        }.value
     }
 
     var isEmpty: Bool { samples.isEmpty }
     var low: HRSample? { samples.min { $0.bpm < $1.bpm } }
     var peak: HRSample? { samples.max { $0.bpm < $1.bpm } }
-    var average: Int? { samples.isEmpty ? nil : samples.map(\.bpm).reduce(0, +) / samples.count }
+    var average: Int? { meanBPM.map { Int($0.rounded()) } }
     /// Minutes in Zone 2 or higher (moderate effort and up).
     var activeMin: Double { (2...5).reduce(0.0) { $0 + inZone.seconds(inZone: $1) } / 60 }
     /// Minutes in Zone 3 or higher (aerobic and up).
@@ -199,7 +213,7 @@ struct RecoveryDetailView: View {
                 .frame(width: 168, height: 168)
                 VStack(alignment: .leading, spacing: 8) {
                     Text(score.map { StrandPalette.recoveryState($0).capitalized } ?? "No data")
-                        .font(.system(size: 28, weight: .bold)).foregroundStyle(tint)
+                        .font(.system(size: 28, weight: .bold)).foregroundStyle(StrandPalette.scoreInk(tint))
                     Text(summary(d)).font(.system(size: 14)).foregroundStyle(StrandPalette.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                     Text(official ? "WHOOP score" : "NOOP estimate · weighs HRV ~60%, resting HR ~20%, sleep ~15%, breathing ~5%")
@@ -453,13 +467,13 @@ struct StrainDetailView: View {
     @State private var selectedWorkout: WorkoutSelection?
     @State private var steps: Int?
     @State private var activeKcal: Double?
+    @State private var load: DayLoadRecord?
 
     private static let strengthWords = ["strength", "weight", "lift", "functional", "crossfit", "gym", "resistance", "hiit"]
 
     /// Built once per load (it sorts a day of samples), not per render.
-    private var stats: DayHRStats { cached ?? DayHRStats(hr: [], profile: profile, restingHR: nil) }
+    private var stats: DayHRStats { cached ?? DayHRStats(hr: [], inputs: .init(profile), restingHR: nil) }
     private var zones: HRZoneSet { stats.zoneSet }
-    private var inZone: TimeInZone { stats.inZone }
     private var strengthSeconds: Double {
         workouts.filter { w in Self.strengthWords.contains { w.sport.lowercased().contains($0) } }
             .reduce(0) { $0 + ($1.durationS ?? Double(max($1.endTs - $1.startTs, 0))) }
@@ -467,7 +481,7 @@ struct StrainDetailView: View {
 
     var body: some View {
         let v = day?.strain
-        let tint = v.map { StrandPalette.strainColor($0) } ?? StrandPalette.strain033
+        let tint = v.map { StrandPalette.strainColor($0) } ?? StrandPalette.scoreMissing
         VStack(alignment: .leading, spacing: NoopMetrics.gap) {
             DetailHeader(title: "Strain", tint: tint, back: back)
             HeroCard {
@@ -481,11 +495,15 @@ struct StrainDetailView: View {
                 }
                 .frame(width: 168, height: 168)
                 VStack(alignment: .leading, spacing: 8) {
-                    Text(v.map(word) ?? "No data").font(.system(size: 28, weight: .bold)).foregroundStyle(tint)
+                    Text(v.map(word) ?? "No data").font(.system(size: 28, weight: .bold)).foregroundStyle(StrandPalette.scoreInk(tint))
                     Text(v == nil ? "No strain recorded for this day yet."
-                                  : "Cardiovascular load from your heart rate across the day, on a 0–21 scale.")
+                                  : "Cardiovascular load from your awake-time heart rate, on a 0–21 scale. A high score means a high load, not a bad day. Muscular work isn't measured.")
                         .font(.system(size: 14)).foregroundStyle(StrandPalette.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
+                    if let coverageNote {
+                        Text(coverageNote).font(.system(size: 12)).foregroundStyle(StrandPalette.textTertiary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
             }
 
@@ -493,7 +511,7 @@ struct StrainDetailView: View {
 
             DetailGrid {
                 let st = stats
-                DetailTile(title: "Active time", value: st.isEmpty ? nil : DayMath.hm(st.activeMin),
+                DetailTile(title: "Active time", value: st.isEmpty ? nil : DayMath.hm(awakeActiveMin ?? st.activeMin),
                            caption: st.isEmpty ? "No heart-rate data for this day" : "Zone 2 or higher, from your strap",
                            tint: StrandPalette.statusPositive)
                 DetailTile(title: "Energy burned", value: st.kcal.map { "\(Int($0.rounded()))" }, unit: "kcal",
@@ -506,10 +524,10 @@ struct StrainDetailView: View {
                            tint: StrandPalette.statusCritical)
                 DetailTile(title: "Workouts", value: "\(workouts.count)",
                            caption: workouts.isEmpty ? "None detected or logged" : DayMath.hm(workouts.reduce(0) { $0 + ($1.durationS ?? 0) } / 60) + " total",
-                           tint: StrandPalette.strain033)
+                           tint: StrandPalette.metricAmber)
                 if strengthSeconds > 0 {
                     DetailTile(title: "Strength time", value: DayMath.hm(strengthSeconds / 60),
-                               caption: "Weights, gym and functional sessions", tint: StrandPalette.strain066)
+                               caption: "Weights, gym and functional sessions", tint: StrandPalette.metricRose)
                 }
                 if let steps {
                     DetailTile(title: "Steps", value: steps.formatted(), caption: "From Apple Health", tint: StrandPalette.statusPositive)
@@ -534,19 +552,40 @@ struct StrainDetailView: View {
         .sheet(item: $selectedWorkout) { WorkoutDetailView(workout: $0.row) }
     }
 
+    /// Minutes in Zone 2 or higher while awake, when NOOP scored the day.
+    private var awakeActiveMin: Double? {
+        load?.summary.map { Double($0.zoneSeconds[2...5].reduce(0, +)) / 60 }
+    }
+
+    /// Says how much of the awake day the score covers, or why there is none. Only for a score NOOP computed: imports win.
+    private var coverageNote: String? {
+        guard let load, let summary = load.summary else { return nil }
+        if load.status == .insufficient, day?.strain == nil { return "Too little awake-time heart-rate data to score this day." }
+        guard load.strainIndex == day?.strain else { return nil }
+        var parts: [String] = []
+        if load.status == .partial {
+            parts.append("Based on \(DayMath.hm(Double(summary.observedS) / 60)) of awake time recorded. Time not recorded is unknown, not rest.")
+        }
+        if load.reasons.contains(where: LoadReason.sleepUncertainty.contains) {
+            parts.append("Sleep isn't fully classified for this day, so this may change.")
+        }
+        return parts.isEmpty ? nil : parts.joined(separator: " ")
+    }
+
     private var zoneCard: some View {
-        let t = inZone
-        let top = max(t.seconds.max() ?? 0, t.belowZone1, 1)
+        // The same seconds the score was computed from. Zone 0 is shown for context and carries no load.
+        let awake = load?.summary?.zoneSeconds.map(Double.init)
+        let top = max(awake?.max() ?? 0, 1)
         return VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("Time in heart-rate zones").font(.system(size: 17, weight: .semibold)).foregroundStyle(StrandPalette.textPrimary)
+                Text("Awake-time heart-rate zones").font(.system(size: 17, weight: .semibold)).foregroundStyle(StrandPalette.textPrimary)
                 Spacer()
-                Text(stats.isEmpty ? "No heart-rate data for this day" : "Max HR \(Int(zones.maxHR.rounded())) bpm")
+                Text(awake == nil ? "Shown once this day is scored" : "Max HR \(Int(zones.maxHR.rounded())) bpm")
                     .font(.system(size: 12)).foregroundStyle(StrandPalette.textTertiary)
             }
             // Zone 0 is everything below Zone 1 (resting and light movement), so it needs no footnote.
             ForEach((0...5).reversed(), id: \.self) { z in
-                let secs = z == 0 ? t.belowZone1 : t.seconds(inZone: z)
+                let secs = awake?[z] ?? 0
                 let color = z == 0 ? StrandPalette.textTertiary : StrandPalette.hrZoneColor(z)
                 let range = z == 0 ? "<\(Int(zones.zones[0].lower.rounded()))"
                                    : "\(Int(zones.zones[z - 1].lower.rounded()))–\(Int(zones.zones[z - 1].upper.rounded()))"
@@ -572,12 +611,16 @@ struct StrainDetailView: View {
         .strandSurface()
     }
 
+    private func workoutTint(_ w: WorkoutRow) -> Color {
+        w.strain.map { StrandPalette.strainColor($0) } ?? StrandPalette.scoreMissing
+    }
+
     private func workoutRow(_ w: WorkoutRow) -> some View {
         let secs = w.durationS ?? Double(max(w.endTs - w.startTs, 0))
         return HStack(spacing: 14) {
             Image(systemName: "figure.run").font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(StrandPalette.strainColor(w.strain ?? 8)).frame(width: 30, height: 30)
-                .background(StrandPalette.strainColor(w.strain ?? 8).opacity(0.2), in: Circle())
+                .foregroundStyle(workoutTint(w)).frame(width: 30, height: 30)
+                .background(workoutTint(w).opacity(0.2), in: Circle())
             VStack(alignment: .leading, spacing: 2) {
                 Text(w.sport).font(.system(size: 14, weight: .semibold)).foregroundStyle(StrandPalette.textPrimary)
                 Text("\(DayMath.clock(w.startTs)) · \(DayMath.hm(secs / 60))" + (w.avgHr.map { " · avg \($0) bpm" } ?? ""))
@@ -586,7 +629,7 @@ struct StrainDetailView: View {
             Spacer()
             if let s = w.strain {
                 Text(String(format: "%.1f", s)).font(.system(size: 18, weight: .bold).monospacedDigit())
-                    .foregroundStyle(StrandPalette.strainColor(s))
+                    .foregroundStyle(StrandPalette.scoreInk(StrandPalette.strainColor(s)))
             }
         }
         .padding(14)
@@ -606,7 +649,8 @@ struct StrainDetailView: View {
     private func load() async {
         guard let r = DayMath.range(dayKey) else { return }
         let samples = await repo.hrSamples(from: r.from, to: r.to, limit: 200_000)
-        cached = DayHRStats(hr: samples, profile: profile, restingHR: day?.restingHr)
+        load = await repo.dayLoad(dayKey)
+        cached = await DayHRStats.build(hr: samples, profile: profile, restingHR: day?.restingHr, maxHR: load?.calibration.hrMax)
         workouts = await repo.workoutRows().filter { $0.startTs >= r.from && $0.startTs < r.to }.sorted { $0.startTs < $1.startTs }
         let apple = await repo.appleDailyRows().first { $0.day == dayKey }
         steps = apple?.steps

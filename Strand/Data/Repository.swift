@@ -200,18 +200,88 @@ final class Repository: ObservableObject {
         var rows = (try? await store.workouts(deviceId: deviceId, from: lo, to: hi, limit: 5000)) ?? []
         rows += (try? await store.workouts(deviceId: "apple-health", from: lo, to: hi, limit: 5000)) ?? []
         // NOOP auto-detected workouts fill in what no import covers: hide any that overlap a real
-        // WHOOP/Apple workout, and collapse re-detections of the same session (edges shift a little
-        // between analysis windows).
+        // WHOOP/Apple workout, and show one row per event (see WorkoutReconciliation).
         let detected = ((try? await store.workouts(deviceId: deviceId + "-noop", from: lo, to: hi, limit: 5000)) ?? [])
-            .sorted { $0.startTs < $1.startTs }
-        var kept: [WorkoutRow] = []
-        for w in detected where !rows.contains(where: { w.startTs < $0.endTs && $0.startTs < w.endTs }) {
-            if let l = kept.last, w.startTs <= l.endTs {
-                if (w.durationS ?? 0) > (l.durationS ?? 0) { kept[kept.count - 1] = w }
-            } else { kept.append(w) }
+        rows += WorkoutReconciliation.reconcile(detected.filter { w in
+            !rows.contains(where: { w.startTs < $0.endTs && $0.startTs < w.endTs })
+        })
+        let labels = (try? await store.workoutLabels()) ?? []
+        return WorkoutLabels.applying(labels, to: rows).sorted { $0.startTs > $1.startTs }
+    }
+
+    /// The label behind a workout, with who set it.
+    func activityLabel(_ w: WorkoutRow) async -> ActivityLabel {
+        guard let store = await ensureStore() else { return .unknown }
+        // `w` as screens hold it already carries a resolved name, so resolve from the stored row.
+        var stored = w
+        if w.source != "noop" {
+            for id in [deviceId, "apple-health"] {
+                let rows = (try? await store.workouts(deviceId: id, from: w.startTs, to: w.startTs, limit: 5)) ?? []
+                if let raw = rows.first { stored = raw; break }
+            }
         }
-        rows += kept
-        return rows.sorted { $0.startTs > $1.startTs }
+        return WorkoutLabels.resolve(stored, labels: (try? await store.workoutLabels()) ?? [])
+    }
+
+    /// Record the user's choice; nil removes it. An existing label keeps the span it was set under. This changes no
+    /// score: screens reload, nothing is recalculated.
+    func setActivity(_ type: ActivityType?, for w: WorkoutRow, current: ActivityLabel) async {
+        guard let store = await ensureStore() else { return }
+        let start = current.stored?.workoutStartTs ?? w.startTs, end = current.stored?.workoutEndTs ?? w.endTs
+        if let type {
+            try? await store.setWorkoutLabel(WorkoutLabelRow(workoutStartTs: start, workoutEndTs: end, activity: type.rawValue,
+                                                             provenance: LabelProvenance.userSelected.rawValue,
+                                                             updatedAt: Int(Date().timeIntervalSince1970)))
+        } else {
+            try? await store.clearWorkoutLabel(workoutStartTs: start)
+        }
+        dataVersion += 1
+    }
+
+    /// NOOP's load accounting for a day, if it scored that day.
+    func dayLoad(_ day: String) async -> DayLoadRecord? {
+        guard let store = await ensureStore() else { return nil }
+        let rows = (try? await store.loadRecords(deviceId: deviceId + "-noop", from: day, to: day)) ?? []
+        return rows.compactMap(DayLoadRecord.init(row:)).first
+    }
+
+    /// NOOP's load accounting for a detected session, if the row is one.
+    func sessionLoad(_ w: WorkoutRow) async -> SessionLoadRecord? {
+        guard let store = await ensureStore() else { return nil }
+        let day = AnalyticsEngine.dayString(w.startTs)
+        let rows = (try? await store.loadRecords(deviceId: deviceId + "-noop", from: day, to: day)) ?? []
+        return rows.compactMap(SessionLoadRecord.init(row:)).first { $0.start == w.startTs }
+    }
+
+    /// What the user logged against this workout, if anything.
+    func trainingLog(_ w: WorkoutRow) async -> TrainingLogEntry? {
+        guard let store = await ensureStore() else { return nil }
+        return try? await store.trainingLog(workoutStartTs: w.startTs, workoutEndTs: w.endTs)
+    }
+
+    // User-entered, so these write straight to the training-log tables; none of this touches scores or `dataVersion`.
+    /// Returns false if nothing was stored. Pass the span an existing entry was logged under (see `TrainingLogEntry`).
+    func saveEffort(_ rpe: SessionRPE, workoutStartTs: Int, workoutEndTs: Int) async -> Bool {
+        await writeLog { try await $0.upsertSessionEffort(rpe.row(workoutStartTs: workoutStartTs, workoutEndTs: workoutEndTs)) }
+    }
+
+    func clearEffort(workoutStartTs: Int) async -> Bool {
+        await writeLog { try await $0.deleteSessionEffort(workoutStartTs: workoutStartTs) }
+    }
+
+    func addSet(_ set: StrengthSet, workoutStartTs: Int, workoutEndTs: Int, collectedAt: Int) async -> Bool {
+        await writeLog {
+            try await $0.addStrengthSet(set.row(workoutStartTs: workoutStartTs, workoutEndTs: workoutEndTs, collectedAt: collectedAt))
+        }
+    }
+
+    func deleteSet(workoutStartTs: Int, setIndex: Int) async -> Bool {
+        await writeLog { try await $0.deleteStrengthSet(workoutStartTs: workoutStartTs, setIndex: setIndex) }
+    }
+
+    private func writeLog(_ write: (WhoopStore) async throws -> Void) async -> Bool {
+        guard let store = await ensureStore() else { return false }
+        do { try await write(store); return true } catch { return false }
     }
 
     /// Apple Health daily aggregates (steps/energy/vo2/hr).

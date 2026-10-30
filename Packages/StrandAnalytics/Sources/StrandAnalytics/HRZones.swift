@@ -13,11 +13,8 @@ import WhoopProtocol
 //   Zone 4 (80–90% HRmax) — hard / threshold
 //   Zone 5 (90–100% HRmax) — maximum
 //
-// NOTE: the Python source (strain.py) uses Karvonen %HRR zones (Edwards 5-zone,
-// 50/60/70/80/90 %HRR) for TRIMP/strain. Those are reproduced faithfully in
-// StrainScorer.swift. This file provides the simpler, age-only %HRmax zone model
-// the task asks for (zones from age, time-in-zone from [HRSample]); it is the
-// "display" zone model and is independent of the HRR-based strain math.
+// This is the one zone system behind displayed zones, workout zone percentages, the fitted zone load and Edwards load
+// (see CardioLoad.swift). The %HRR-band variant is a separately named method, never a silent substitute.
 
 /// A single heart-rate zone defined as a bpm interval [lower, upper).
 // One zone: bpm bounds plus the %HRmax it came from (kept for display labels).
@@ -139,62 +136,23 @@ public enum HRZones {
         return HRZoneSet(zones: built, maxHR: maxHR, source: source)
     }
 
-    /// Compute time-in-zone (seconds) from a time-ordered HR stream.
-    ///
-    /// Each sample is credited with the duration until the next sample (the
-    /// "hold until next reading" convention). The final sample is credited with
-    /// the median inter-sample interval (so a constant-rate stream is fully
-    /// accounted for). Samples are sorted defensively by ts.
+    /// Time-in-zone (seconds) over the supported seconds of an HR stream (see `SupportedHR`): a sensor gap adds no time
+    /// to any zone. Input is validated and sorted first.
     ///
     /// - Parameters:
-    ///   - hr: time-ordered (or unordered) `[HRSample]`.
+    ///   - hr: `[HRSample]` in any order.
     ///   - zoneSet: the zone definitions to bucket against.
-    // Credits each sample with the time until the next one, so irregular sampling still totals correctly.
     public static func timeInZone(_ hr: [HRSample], zoneSet: HRZoneSet) -> TimeInZone {
-        let sorted = hr.sorted { $0.ts < $1.ts }
-        var zoneSeconds = [Double](repeating: 0, count: 5)
-        var below: Double = 0
-
-        guard !sorted.isEmpty else {
-            return TimeInZone(seconds: zoneSeconds, belowZone1: 0)
-        }
-
-        // Tail sample gets the median inter-sample gap so the series is fully counted.
-        // The last sample has no 'next' sample, so it gets the typical gap.
-        let tailDuration = medianInterval(sorted)
-
-        for i in 0..<sorted.count {
-            let dur: Double
-            if i < sorted.count - 1 {
-                let gap = Double(sorted[i + 1].ts - sorted[i].ts)
-                // Guard against zero/negative or pathological gaps; cap at the median
-                // so a single huge wall-clock gap doesn't blow up one bucket.
-                dur = (gap > 0) ? gap : tailDuration
-            } else {
-                dur = tailDuration
-            }
-            let z = zoneSet.zoneNumber(forBPM: Double(sorted[i].bpm))
-            if z >= 1 {
-                zoneSeconds[z - 1] += dur
-            } else {
-                below += dur
-            }
-        }
-        return TimeInZone(seconds: zoneSeconds, belowZone1: below)
+        timeInZone(SupportedHR(raw: hr), zoneSet: zoneSet)
     }
 
-    /// Median spacing between consecutive timestamps, restricted to plausible
-    /// (0, 300 s] gaps. Falls back to 1.0 s when no plausible gap exists.
-    // Median (not mean) and ignoring gaps over 300 s, so a disconnect doesn't skew the typical interval.
-    static func medianInterval(_ sorted: [HRSample]) -> Double {
-        guard sorted.count >= 2 else { return 1.0 }
-        var gaps: [Double] = []
-        for i in 1..<sorted.count {
-            let g = Double(sorted[i].ts - sorted[i - 1].ts)
-            if g > 0 && g < 300 { gaps.append(g) }
+    public static func timeInZone(_ support: SupportedHR, zoneSet: HRZoneSet) -> TimeInZone {
+        var zoneSeconds = [Double](repeating: 0, count: 5)
+        var below: Double = 0
+        for x in support.intervals {
+            let z = zoneSet.zoneNumber(forBPM: Double(x.bpm))
+            if z >= 1 { zoneSeconds[z - 1] += Double(x.seconds) } else { below += Double(x.seconds) }
         }
-        guard !gaps.isEmpty else { return 1.0 }
-        gaps.sort()
-        return max(gaps[gaps.count / 2], 1.0)
+        return TimeInZone(seconds: zoneSeconds, belowZone1: below)
     }
 }

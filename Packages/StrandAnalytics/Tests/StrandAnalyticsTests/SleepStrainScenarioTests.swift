@@ -154,22 +154,49 @@ final class SleepStrainScenarioTests: XCTestCase {
                                           profile: UserProfile(age: 30), dayRange: (from, from + 86_400)).strain
     }
 
-    func testIdleMorningHasNegligibleStrain() {
-        let v = strain([.sleep(min: 120, bpm: 55)])
-        XCTAssertNotNil(v)
-        XCTAssertLessThan(v!, 1.5, "a day that just began must not start at the ~4.6 rest-day floor")
+    func testSleepOnlyDayHasNoAwakeTimeToScore() {
+        XCTAssertNil(strain([.sleep(min: 120, bpm: 55)]), "no awake data is missing, not a measured 0")
     }
 
-    func testBaselineBuildsOverTheWakingDay() {
-        // Night, then idle waking time at light HR: strain starts at 0 on waking and grows toward the ~4.5 rest-day level.
+    func testAwakeLoadOnARealNightAndNap() {
+        // Awake 16:00-ish Zone 3 hour, a night, then a morning with a nap: only awake seconds carry load or zone time.
+        let segs: [Seg] = [.moving(min: 120, bpm: 150), .moving(min: 360, bpm: 75), .sleep(min: 420, bpm: 50),
+                           .moving(min: 300, bpm: 75), .sleep(min: 60, bpm: 50), .moving(min: 180, bpm: 75)]
+        let b = build(segs)
+        let l = AnalyticsEngine.analyzeDay(day: "d", hr: b.hr, gravity: b.grav, profile: UserProfile(age: 30),
+                                           dayRange: (b.t0, b.end)).load!
+        XCTAssertGreaterThan(l.sleepExcludedS, 300 * 60, "the night was excluded")
+        XCTAssertEqual(l.summary!.observedS + l.sleepHRS, l.dayObservedS)
+        XCTAssertEqual(l.summary!.requestedS + l.sleepExcludedS, b.end - b.t0)
+        XCTAssertEqual(l.sleepExcludedLoad!, 0, accuracy: 1e-9, "resting sleep HR is below Zone 1, so it never carried load")
+        XCTAssertGreaterThan(l.summary!.zoneSeconds[3] + l.summary!.zoneSeconds[4], 100 * 60)
+    }
+
+    func testLaterDataRevealsEveningSleepWithoutTouchingSleepOrRecovery() {
+        // Sleep starts 20 min before the day ends: too little of it for the day's own data to identify.
+        let segs: [Seg] = [.moving(min: 520, bpm: 75), .sleep(min: 420, bpm: 50), .moving(min: 180, bpm: 75)]
+        let b = build(segs)
+        let to = b.t0 + 540 * 60
+        let hr = b.hr.filter { $0.ts < to }, grav = b.grav.filter { $0.ts < to }
+        func run(_ f: AnalyticsEngine.FollowingData?) -> AnalyticsEngine.DayResult {
+            AnalyticsEngine.analyzeDay(day: "d", hr: hr, gravity: grav, profile: UserProfile(age: 30),
+                                       dayRange: (b.t0, to), following: f)
+        }
+        let alone = run(nil)
+        let later = run(.init(hr: b.hr.filter { $0.ts >= to }, gravity: b.grav.filter { $0.ts >= to }))
+        XCTAssertEqual(alone.load!.sleepExcludedS, 0, "unseen sleep is not invented")
+        XCTAssertTrue(alone.load!.reasons.contains(LoadReason.dayEndUnclassified))
+        XCTAssertTrue(alone.load!.provisional)
+        XCTAssertGreaterThan(later.load!.sleepExcludedS, 10 * 60)
+        XCTAssertFalse(later.load!.reasons.contains(LoadReason.dayEndUnclassified))
+        XCTAssertEqual(alone.daily, later.daily, "sleep totals, recovery and strain fields are unmoved here")
+    }
+
+    func testIdleTimeBelowZone1AddsNoLoad() {
+        // Light HR all day stays below Zone 1 (50 % of HRmax): only measured load counts, so nothing accrues with time.
         let night: [Seg] = [.moving(min: 240, bpm: 85), .sleep(min: 420, bpm: 52)]
-        // The day (midnight) starts at the beginning of the night here, as it does for a person who sleeps past midnight.
-        let wake = strain(night + [.moving(min: 5, bpm: 72)], dayStartOffsetMin: 240)!
-        let midday = strain(night + [.moving(min: 360, bpm: 72)], dayStartOffsetMin: 240)!
-        let evening = strain(night + [.moving(min: 960, bpm: 72)], dayStartOffsetMin: 240)!
-        XCTAssertLessThan(wake, 0.5)
-        XCTAssertGreaterThan(midday, wake)
-        XCTAssertEqual(evening, 4.6, accuracy: 0.6)
+        XCTAssertEqual(strain(night + [.moving(min: 5, bpm: 72)], dayStartOffsetMin: 240), 0)
+        XCTAssertEqual(strain(night + [.moving(min: 960, bpm: 72)], dayStartOffsetMin: 240), 0)
     }
 
     func testSingleArtifactSpikeDoesNotMoveStrain() {
@@ -186,7 +213,7 @@ final class SleepStrainScenarioTests: XCTestCase {
     }
 
     func testSustainedCyclingAddsLoad() {
-        let rest = strain([.sleep(min: 180, bpm: 60)])!
+        let rest = strain([.moving(min: 180, bpm: 72)])!
         let ride = strain([.sleep(min: 60, bpm: 60), .moving(min: 90, bpm: 155), .sleep(min: 30, bpm: 60)])!
         XCTAssertGreaterThan(ride, rest + 3)
         XCTAssertLessThanOrEqual(ride, 21)
@@ -194,7 +221,9 @@ final class SleepStrainScenarioTests: XCTestCase {
 
     func testMissingDataEarnsNoLoad() {
         let hr = [HRSample(ts: 0, bpm: 160), HRSample(ts: 7200, bpm: 160)]
-        XCTAssertLessThan(StrainScorer.whoopZoneLoadTimed(hr, maxHR: 190), 0.2)   // ~6 s of credit, not 2 h
+        let observed = SupportedHR(raw: hr)
+        XCTAssertEqual(observed.observedSeconds, 5 + 1)   // bounded hold plus the last reading's own second, not 2 h
+        XCTAssertLessThan(LoadSummary(observed, requestedS: 7201, hrMax: 190).zoneLoad, 0.2)
     }
 
     func testPreviousDayWindowDoesNotLeakIntoStrain() {

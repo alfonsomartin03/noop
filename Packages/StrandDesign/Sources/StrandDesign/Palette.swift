@@ -90,39 +90,44 @@ public enum StrandPalette {
     /// Opacity for dimmed/disabled sections (shared so screens don't invent their own value).
     public static let disabledOpacity: Double = 0.45
 
-    // MARK: Recovery gradient — vivid traffic light (low red → high green).
-    public static let recovery000 = Color(hex: "#FF1F5A")
-    public static let recovery030 = Color(hex: "#FF7A00")
-    public static let recovery055 = Color(hex: "#FFF200")
+    // MARK: Score scales — the same three hues, in opposite directions.
+    // Recovery runs low red → high green because low recovery is the state to notice. Strain runs low green → high red
+    // because red marks a high load, not a bad one: pair it with its number and context label, never with color alone.
+    private static let scoreRed = Color(hex: "#FF1F5A")
+    private static let scoreYellow = Color(hex: "#FFF200")
+    private static let scoreGreen = Color(hex: "#00FF85")
+
+    /// Tint for a score that doesn't exist. Never a point on either scale, so missing can't read as a low or high value.
+    public static var scoreMissing: Color { textTertiary }
+
+    // MARK: Recovery gradient — low red → middle yellow → high green.
+    public static let recovery000 = scoreRed
+    public static let recovery050 = scoreYellow
     public static let recovery078 = Color(hex: "#7CFF4D")
-    public static let recovery100 = Color(hex: "#00FF85")
+    public static let recovery100 = scoreGreen
 
     /// Ordered gradient stops for the recovery scale (location + color).
     public static let recoveryStops: [Gradient.Stop] = [
         .init(color: recovery000, location: 0.00),
-        .init(color: recovery030, location: 0.30),
-        .init(color: recovery055, location: 0.55),
-        .init(color: recovery078, location: 0.78),
+        .init(color: recovery050, location: 0.50),
         .init(color: recovery100, location: 1.00),
     ]
 
-    /// The signature recovery gradient (coral → mint).
+    /// The signature recovery gradient.
     public static let recoveryGradient = Gradient(stops: recoveryStops)
 
-    // MARK: Strain ramp — peach → coral → lavender
-    public static let strain000 = Color(hex: "#FFF200")
-    public static let strain033 = Color(hex: "#FF8A00")
-    public static let strain066 = Color(hex: "#FF1F5A")
-    public static let strain100 = Color(hex: "#E02BFF")
+    // MARK: Strain gradient — low green → middle yellow → high red.
+    public static let strain000 = scoreGreen
+    public static let strain050 = scoreYellow
+    public static let strain100 = scoreRed
 
     public static let strainStops: [Gradient.Stop] = [
         .init(color: strain000, location: 0.00),
-        .init(color: strain033, location: 0.33),
-        .init(color: strain066, location: 0.66),
+        .init(color: strain050, location: 0.50),
         .init(color: strain100, location: 1.00),
     ]
 
-    /// The strain gradient (output / heat).
+    /// The strain gradient.
     public static let strainGradient = Gradient(stops: strainStops)
 
     // MARK: Sleep stages
@@ -157,11 +162,11 @@ public enum StrandPalette {
 
     /// A text/icon-safe version of a pastel data color. In light mode it is darkened toward the
     /// charcoal text color so it reads on white; in dark mode the pastel is used as-is.
-    public static func ink(_ color: Color) -> Color {
+    public static func ink(_ color: Color, darkenedTo amount: Double = 0.52) -> Color {
         #if canImport(AppKit)
         let c = color.rgbaComponents
         let base = NSColor(srgbRed: c.r, green: c.g, blue: c.b, alpha: c.a)
-        let dark = NSColor(srgbRed: c.r * 0.52, green: c.g * 0.52, blue: c.b * 0.52, alpha: c.a)
+        let dark = NSColor(srgbRed: c.r * amount, green: c.g * amount, blue: c.b * amount, alpha: c.a)
         return Color(nsColor: NSColor(name: nil) { appearance in
             appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? base : dark
         })
@@ -170,15 +175,22 @@ public enum StrandPalette {
         #endif
     }
 
+    /// Light-mode darkening for score text. Every point on the scales reaches WCAG AA (4.5:1) on light surfaces with it,
+    /// which the vivid ring colors can't: pure yellow on white is about 1.2:1.
+    static let scoreInkAmount = 0.45
+
+    /// A score color for text. Rings keep the vivid scale; numbers and labels use this so they stay legible in light mode.
+    public static func scoreInk(_ color: Color) -> Color { ink(color, darkenedTo: scoreInkAmount) }
+
     // MARK: - Sampling helpers
 
-    /// Sample the recovery gradient (indigo → mint) at a recovery score 0...100.
+    /// Sample the recovery gradient (red → yellow → green) at a recovery score 0...100.
     /// Returns the exact interpolated color used everywhere recovery is tinted.
     public static func recoveryColor(_ score: Double) -> Color {
         sample(stops: recoveryStops, at: score / 100.0)
     }
 
-    /// Sample the strain gradient at a strain value on the 0...21 Whoop scale.
+    /// Sample the strain gradient (green → yellow → red) at a strain value on the 0...21 scale.
     public static func strainColor(_ strain: Double) -> Color {
         sample(stops: strainStops, at: strain / 21.0)
     }

@@ -40,7 +40,50 @@ final class RRSequenceTests: XCTestCase {
         // second, so the repeats are re-deliveries, not beats.
         let rr = [RRInterval(ts: 100, rrMs: 800), RRInterval(ts: 100, rrMs: 820),
                   RRInterval(ts: 100, rrMs: 800), RRInterval(ts: 100, rrMs: 820)]
-        XCTAssertEqual(WhoopStore.sequenceRR(rr).map { $0.0.rrMs }, [800, 820])
+        XCTAssertEqual(WhoopStore.newBeats(existing: [], incoming: rr.map(\.rrMs)).map(\.rrMs), [800, 820])
+    }
+
+    // MARK: Split-batch ingestion (one second's beats arriving in two inserts)
+
+    private func stored(_ store: WhoopStore) async throws -> [RRInterval] {
+        try await store.rrIntervals(deviceId: "d", from: 0, to: 10_000, limit: 100)
+    }
+
+    func testSecondSplitAcrossTwoBatchesKeepsBothBeatsInOrder() async throws {
+        let store = try await WhoopStore.inMemory()
+        try await store.insert(streams([RRInterval(ts: 99, rrMs: 900), RRInterval(ts: 100, rrMs: 520)]), deviceId: "d")
+        try await store.insert(streams([RRInterval(ts: 100, rrMs: 480), RRInterval(ts: 101, rrMs: 700)]), deviceId: "d")
+        let got = try await stored(store)
+        XCTAssertEqual(got.map(\.rrMs), [900, 520, 480, 700])
+    }
+
+    func testResaveWithShiftedBatchBoundaryDoesNotDuplicate() async throws {
+        let store = try await WhoopStore.inMemory()
+        let whole = [RRInterval(ts: 100, rrMs: 520), RRInterval(ts: 100, rrMs: 480)]
+        try await store.insert(streams(whole), deviceId: "d")
+        // The same second re-pulled in pieces, in any split.
+        let a = try await store.insert(streams([whole[1]]), deviceId: "d")
+        let b = try await store.insert(streams([whole[0]]), deviceId: "d")
+        let c = try await store.insert(streams(whole + [RRInterval(ts: 101, rrMs: 700)]), deviceId: "d")
+        XCTAssertEqual([a.rr, b.rr, c.rr], [0, 0, 1])
+        let got = try await stored(store)
+        XCTAssertEqual(got.map(\.rrMs), [520, 480, 700])
+    }
+
+    func testOverlappingChunkAppendsOnlyTheNewTail() async throws {
+        let store = try await WhoopStore.inMemory()
+        try await store.insert(streams([RRInterval(ts: 100, rrMs: 330), RRInterval(ts: 100, rrMs: 340)]), deviceId: "d")
+        // Re-pulled chunk overlaps the stored beats and carries one more (180 bpm: three beats fit in one second).
+        try await store.insert(streams([RRInterval(ts: 100, rrMs: 340), RRInterval(ts: 100, rrMs: 335)]), deviceId: "d")
+        let got = try await stored(store)
+        XCTAssertEqual(got.map(\.rrMs), [330, 340, 335])
+    }
+
+    func testIdenticalValueContinuationIsResolvedTowardNoDuplicate() {
+        // Documented ambiguity: [460] then [460] could be a genuine second beat or a re-delivery; never duplicate.
+        XCTAssertTrue(WhoopStore.newBeats(existing: [460], incoming: [460]).isEmpty)
+        // Within ONE batch the same pair is unambiguous: two beats.
+        XCTAssertEqual(WhoopStore.newBeats(existing: [], incoming: [460, 460]).map(\.seq), [0, 1])
     }
 
     func testV9DataSurvivesV10MigrationInOrder() throws {

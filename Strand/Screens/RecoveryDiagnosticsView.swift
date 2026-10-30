@@ -187,8 +187,9 @@ struct RecoveryDiagnosticsView: View {
         let vitals = SleepVitalsCalculator.compute(start: s.startTs, end: s.endTs, stages: stages, hr: cleaned.samples, rr: rr)
         let day = ZoneTimeline.shared.dayString(s.endTs)
         // Same causal, NOOP-only reference the engine scored this day against (nights strictly before it).
+        let prov = (try? await store.provenance(deviceId: id + "-noop", from: "0000-00-00", to: day)) ?? []
         let base: AnalyticsEngine.ProfileBaselines? = IntelligenceEngine.baselines(
-            for: day, noopHistory: repo.estimates.values.filter { $0.day < day })
+            for: day, noopHistory: repo.estimates.values.filter { $0.day < day }, provenance: prov)
         let stored = repo.days.first { $0.day == day }
         var breakdown: RecoveryScorer.Breakdown? = nil
         if let b = base, let hrv = vitals.hrv, let rhr = vitals.restingHR, let hb = b.hrv {

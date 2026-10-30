@@ -23,7 +23,7 @@ public struct JournalEntry: Equatable, Codable {
 /// `zonesJSON` is verbatim JSON of HR-zone percentages, stored as a string so the cache stays
 /// schema-agnostic about the zone shape.
 // zonesJSON is kept as raw JSON so the zone format can change without a schema migration.
-public struct WorkoutRow: Equatable, Codable {
+public struct WorkoutRow: Equatable, Codable, Sendable {
     public let startTs: Int          // unix seconds
     public let endTs: Int            // unix seconds
     public let sport: String
@@ -94,32 +94,35 @@ extension WhoopStore {
     @discardableResult
     // Keyed by (start, sport), so re-importing the same workout updates it instead of duplicating.
     public func upsertWorkouts(_ rows: [WorkoutRow], deviceId: String) async throws -> Int {
-        try syncWrite { db in
-            var n = 0
-            for r in rows {
-                try db.execute(sql: """
-                    INSERT INTO workout
-                        (deviceId, startTs, endTs, sport, source, durationS, energyKcal,
-                         avgHr, maxHr, strain, distanceM, zonesJSON, notes)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(deviceId, startTs, sport) DO UPDATE SET
-                        endTs = excluded.endTs,
-                        source = excluded.source,
-                        durationS = excluded.durationS,
-                        energyKcal = excluded.energyKcal,
-                        avgHr = excluded.avgHr,
-                        maxHr = excluded.maxHr,
-                        strain = excluded.strain,
-                        distanceM = excluded.distanceM,
-                        zonesJSON = excluded.zonesJSON,
-                        notes = excluded.notes
-                    """, arguments: [deviceId, r.startTs, r.endTs, r.sport, r.source, r.durationS,
-                                     r.energyKcal, r.avgHr, r.maxHr, r.strain, r.distanceM,
-                                     r.zonesJSON, r.notes])
-                n += db.changesCount
-            }
-            return n
+        try syncWrite { db in try Self.upsertWorkoutRows(db, rows, deviceId: deviceId) }
+    }
+
+    /// Same upsert inside a caller's transaction (see `writeDerived`).
+    static func upsertWorkoutRows(_ db: Database, _ rows: [WorkoutRow], deviceId: String) throws -> Int {
+        var n = 0
+        for r in rows {
+            try db.execute(sql: """
+                INSERT INTO workout
+                    (deviceId, startTs, endTs, sport, source, durationS, energyKcal,
+                     avgHr, maxHr, strain, distanceM, zonesJSON, notes)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(deviceId, startTs, sport) DO UPDATE SET
+                    endTs = excluded.endTs,
+                    source = excluded.source,
+                    durationS = excluded.durationS,
+                    energyKcal = excluded.energyKcal,
+                    avgHr = excluded.avgHr,
+                    maxHr = excluded.maxHr,
+                    strain = excluded.strain,
+                    distanceM = excluded.distanceM,
+                    zonesJSON = excluded.zonesJSON,
+                    notes = excluded.notes
+                """, arguments: [deviceId, r.startTs, r.endTs, r.sport, r.source, r.durationS,
+                                 r.energyKcal, r.avgHr, r.maxHr, r.strain, r.distanceM,
+                                 r.zonesJSON, r.notes])
+            n += db.changesCount
         }
+        return n
     }
 
     /// Upsert Apple-Health daily aggregates. Natural key (deviceId, day). Returns rows changed.

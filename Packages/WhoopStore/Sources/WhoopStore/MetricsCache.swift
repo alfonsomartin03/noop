@@ -12,7 +12,7 @@ import GRDB
 /// `stagesJSON` is the verbatim JSON array of stage segments ([{start,end,stage}]) — stored as a
 /// string so the cache stays schema-agnostic about the staging shape.
 // stagesJSON is stored verbatim so the cache doesn't need to know the staging format.
-public struct CachedSleepSession: Equatable, Codable {
+public struct CachedSleepSession: Equatable, Codable, Sendable {
     public let startTs: Int          // unix seconds
     public let endTs: Int            // unix seconds
     public let efficiency: Double?
@@ -29,7 +29,7 @@ public struct CachedSleepSession: Equatable, Codable {
 
 /// One cached daily-metrics row pulled from the server's /v1/daily. Natural key (deviceId, day).
 // One row per day; every metric is optional because any given day may lack data.
-public struct DailyMetric: Equatable, Codable {
+public struct DailyMetric: Equatable, Codable, Sendable {
     public let day: String           // YYYY-MM-DD
     public let totalSleepMin: Double?
     public let efficiency: Double?
@@ -66,62 +66,68 @@ extension WhoopStore {
     @discardableResult
     // Upserts everywhere in the store: natural key + ON CONFLICT DO UPDATE, so re-running analysis refreshes rows.
     public func upsertSleepSessions(_ sessions: [CachedSleepSession], deviceId: String) async throws -> Int {
-        try syncWrite { db in
-            var n = 0
-            for s in sessions {
-                try db.execute(sql: """
-                    INSERT INTO sleepSession
-                        (deviceId, startTs, endTs, efficiency, restingHr, avgHrv, stagesJSON)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(deviceId, startTs) DO UPDATE SET
-                        endTs = excluded.endTs,
-                        efficiency = excluded.efficiency,
-                        restingHr = excluded.restingHr,
-                        avgHrv = excluded.avgHrv,
-                        stagesJSON = excluded.stagesJSON
-                    """, arguments: [deviceId, s.startTs, s.endTs, s.efficiency,
-                                     s.restingHr, s.avgHrv, s.stagesJSON])
-                n += db.changesCount
-            }
-            return n
+        try syncWrite { db in try Self.upsertSleepSessionRows(db, sessions, deviceId: deviceId) }
+    }
+
+    /// Same upsert inside a caller's transaction (see `writeDerived`).
+    static func upsertSleepSessionRows(_ db: Database, _ sessions: [CachedSleepSession], deviceId: String) throws -> Int {
+        var n = 0
+        for s in sessions {
+            try db.execute(sql: """
+                INSERT INTO sleepSession
+                    (deviceId, startTs, endTs, efficiency, restingHr, avgHrv, stagesJSON)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(deviceId, startTs) DO UPDATE SET
+                    endTs = excluded.endTs,
+                    efficiency = excluded.efficiency,
+                    restingHr = excluded.restingHr,
+                    avgHrv = excluded.avgHrv,
+                    stagesJSON = excluded.stagesJSON
+                """, arguments: [deviceId, s.startTs, s.endTs, s.efficiency,
+                                 s.restingHr, s.avgHrv, s.stagesJSON])
+            n += db.changesCount
         }
+        return n
     }
 
     /// Upsert cached daily metrics. Natural key (deviceId, day). Returns rows changed.
     @discardableResult
     public func upsertDailyMetrics(_ days: [DailyMetric], deviceId: String) async throws -> Int {
-        try syncWrite { db in
-            var n = 0
-            for d in days {
-                try db.execute(sql: """
-                    INSERT INTO dailyMetric
-                        (deviceId, day, totalSleepMin, efficiency, deepMin, remMin, lightMin,
-                         disturbances, restingHr, avgHrv, recovery, strain, exerciseCount,
-                         spo2Pct, skinTempDevC, respRateBpm)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(deviceId, day) DO UPDATE SET
-                        totalSleepMin = excluded.totalSleepMin,
-                        efficiency = excluded.efficiency,
-                        deepMin = excluded.deepMin,
-                        remMin = excluded.remMin,
-                        lightMin = excluded.lightMin,
-                        disturbances = excluded.disturbances,
-                        restingHr = excluded.restingHr,
-                        avgHrv = excluded.avgHrv,
-                        recovery = excluded.recovery,
-                        strain = excluded.strain,
-                        exerciseCount = excluded.exerciseCount,
-                        spo2Pct = excluded.spo2Pct,
-                        skinTempDevC = excluded.skinTempDevC,
-                        respRateBpm = excluded.respRateBpm
-                    """, arguments: [deviceId, d.day, d.totalSleepMin, d.efficiency, d.deepMin,
-                                     d.remMin, d.lightMin, d.disturbances, d.restingHr, d.avgHrv,
-                                     d.recovery, d.strain, d.exerciseCount,
-                                     d.spo2Pct, d.skinTempDevC, d.respRateBpm])
-                n += db.changesCount
-            }
-            return n
+        try syncWrite { db in try Self.upsertDailyMetricRows(db, days, deviceId: deviceId) }
+    }
+
+    /// Same upsert inside a caller's transaction (see `writeDerived`).
+    static func upsertDailyMetricRows(_ db: Database, _ days: [DailyMetric], deviceId: String) throws -> Int {
+        var n = 0
+        for d in days {
+            try db.execute(sql: """
+                INSERT INTO dailyMetric
+                    (deviceId, day, totalSleepMin, efficiency, deepMin, remMin, lightMin,
+                     disturbances, restingHr, avgHrv, recovery, strain, exerciseCount,
+                     spo2Pct, skinTempDevC, respRateBpm)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(deviceId, day) DO UPDATE SET
+                    totalSleepMin = excluded.totalSleepMin,
+                    efficiency = excluded.efficiency,
+                    deepMin = excluded.deepMin,
+                    remMin = excluded.remMin,
+                    lightMin = excluded.lightMin,
+                    disturbances = excluded.disturbances,
+                    restingHr = excluded.restingHr,
+                    avgHrv = excluded.avgHrv,
+                    recovery = excluded.recovery,
+                    strain = excluded.strain,
+                    exerciseCount = excluded.exerciseCount,
+                    spo2Pct = excluded.spo2Pct,
+                    skinTempDevC = excluded.skinTempDevC,
+                    respRateBpm = excluded.respRateBpm
+                """, arguments: [deviceId, d.day, d.totalSleepMin, d.efficiency, d.deepMin,
+                                 d.remMin, d.lightMin, d.disturbances, d.restingHr, d.avgHrv,
+                                 d.recovery, d.strain, d.exerciseCount,
+                                 d.spo2Pct, d.skinTempDevC, d.respRateBpm])
+            n += db.changesCount
         }
+        return n
     }
 
     // MARK: - Reads
@@ -172,7 +178,7 @@ extension WhoopStore {
     /// re-score starts clean instead of leaving rows from an older detection rule behind. Raw strap data is untouched.
     public func deleteDerived(deviceId: String) async throws {
         try syncWrite { db in
-            for table in ["dailyMetric", "sleepSession", "workout", "metricSeries"] {
+            for table in WhoopStore.derivedTables {
                 try db.execute(sql: "DELETE FROM \(table) WHERE deviceId = ?", arguments: [deviceId])
             }
         }

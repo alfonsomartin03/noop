@@ -29,20 +29,23 @@ extension WhoopStore {
     /// creating a duplicate.
     @discardableResult
     public func upsertMetricSeries(_ rows: [MetricPoint], deviceId: String) async throws -> Int {
-        try syncWrite { db in
-            var n = 0
-            for r in rows {
-                try db.execute(sql: """
-                    INSERT INTO metricSeries
-                        (deviceId, day, key, value)
-                    VALUES (?, ?, ?, ?)
-                    ON CONFLICT(deviceId, day, key) DO UPDATE SET
-                        value = excluded.value
-                    """, arguments: [deviceId, r.day, r.key, r.value])
-                n += db.changesCount
-            }
-            return n
+        try syncWrite { db in try Self.upsertMetricSeriesRows(db, rows, deviceId: deviceId) }
+    }
+
+    /// Same upsert inside a caller's transaction (see `writeDerived`).
+    static func upsertMetricSeriesRows(_ db: Database, _ rows: [MetricPoint], deviceId: String) throws -> Int {
+        var n = 0
+        for r in rows {
+            try db.execute(sql: """
+                INSERT INTO metricSeries
+                    (deviceId, day, key, value)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(deviceId, day, key) DO UPDATE SET
+                    value = excluded.value
+                """, arguments: [deviceId, r.day, r.key, r.value])
+            n += db.changesCount
         }
+        return n
     }
 
     // MARK: - Reads

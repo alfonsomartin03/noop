@@ -17,7 +17,7 @@ public enum HRQuality {
     /// Anchors must be this close in time (s) for the spike test to apply (otherwise it is a data gap, not a spike).
     static let maxAnchorGapS = 10
 
-    public struct Report: Equatable, Sendable {
+    public struct Report: Equatable, Codable, Sendable {
         public var duplicates = 0, outOfRange = 0, spikes = 0
     }
 
@@ -26,12 +26,14 @@ public enum HRQuality {
 
     public static func cleanWithReport(_ hr: [HRSample]) -> (samples: [HRSample], report: Report) {
         var rep = Report()
-        let sorted = hr.sorted { $0.ts < $1.ts }
+        // Ties on bpm too: conflicting readings for one second resolve the same way whatever order they arrived in, and
+        // the lowest in-range value is kept (one stream per device, so no source ranking applies here).
+        let sorted = hr.sorted { ($0.ts, $0.bpm) < ($1.ts, $1.bpm) }
         var s: [HRSample] = []
         s.reserveCapacity(sorted.count)
         for x in sorted {
-            if let l = s.last, l.ts == x.ts { rep.duplicates += 1; continue }
             if x.bpm < minValidBPM || x.bpm > maxValidBPM { rep.outOfRange += 1; continue }
+            if let l = s.last, l.ts == x.ts { rep.duplicates += 1; continue }
             s.append(x)
         }
         guard s.count >= 5 else { return (s, rep) }

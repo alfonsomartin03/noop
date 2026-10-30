@@ -55,23 +55,42 @@ public enum AnalyticsEngine {
         public let workouts: [ExerciseSession]
         /// Recovery score [0,100] or nil (cold-start / no HRV baseline).
         public let recovery: Double?
-        /// Day strain [0,21] or nil (insufficient HR samples / invalid HRR).
+        /// Day strain index [0,21], or nil with the reason in `load`. Measured over observed time only.
         public let strain: Double?
         /// The separate recovery dimensions (legacy score, sleep sufficiency, autonomic deviation, unusual values).
         public let assessment: RecoveryAssessment?
         /// Naps attributed to this day (not in the night totals; counted in 24-h sleep).
         public let napSessions: [SleepSession]
+        /// The day's load with its coverage, calibration and reasons. Nil only with no day range and no HR at all.
+        public let load: DayLoadRecord?
 
         public init(daily: DailyMetric, sleepSessions: [SleepSession],
                     cachedSleep: [CachedSleepSession], workouts: [ExerciseSession],
                     recovery: Double?, strain: Double?, assessment: RecoveryAssessment? = nil,
-                    napSessions: [SleepSession] = []) {
+                    napSessions: [SleepSession] = [], load: DayLoadRecord? = nil) {
             self.daily = daily; self.sleepSessions = sleepSessions
             self.cachedSleep = cachedSleep; self.workouts = workouts
             self.recovery = recovery; self.strain = strain
-            self.assessment = assessment; self.napSessions = napSessions
+            self.assessment = assessment; self.napSessions = napSessions; self.load = load
         }
     }
+
+    /// Streams from just after the day, used ONLY to see sleep that began before midnight, which the day's own data cannot
+    /// show. It never reaches sleep totals, recovery or detection. Nil for a day still in progress.
+    public struct FollowingData: Sendable {
+        public let hr: [HRSample]
+        public let rr: [RRInterval]
+        public let resp: [RespSample]
+        public let gravity: [GravitySample]
+        public init(hr: [HRSample], rr: [RRInterval] = [], resp: [RespSample] = [], gravity: [GravitySample]) {
+            self.hr = hr; self.rr = rr; self.resp = resp; self.gravity = gravity
+        }
+    }
+
+    /// How much of the day's evening is re-read with `FollowingData`: enough to contain a night's start.
+    static let eveningContextS = 12 * 3600
+    /// How far past the day to read for `FollowingData`.
+    public static let followingWindowS = 12 * 3600
 
     /// Minimum asleep time (seconds) in the day's sleep sessions before a recovery score is produced.
     static let minRecoverySleepS = 3.0 * 3600.0
@@ -82,7 +101,9 @@ public enum AnalyticsEngine {
 
     /// JSON-encode stage segments to the verbatim array shape CachedSleepSession stores.
     static func encodeStages(_ stages: [StageSegment]) -> String? {
-        guard let data = try? JSONEncoder().encode(stages) else { return nil }
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .sortedKeys   // the same night always stores the same bytes
+        guard let data = try? encoder.encode(stages) else { return nil }
         return String(data: data, encoding: .utf8)
     }
 
@@ -97,8 +118,11 @@ public enum AnalyticsEngine {
     ///     workouts and strain must only see this day's data, not the previous evening's.
     ///   - profile: user profile (age/sex/weight/height) for HRmax + calories.
     ///   - baselines: personal baselines for recovery normalization.
-    ///   - maxHROverride: explicit HRmax (bpm) to use for strain/zones; nil →
-    ///     Tanaka from profile.age.
+    ///   - maxHROverride: declared HRmax (bpm); nil → labelled Tanaka estimate from profile.age.
+    ///   - calibration: frozen snapshot of an earlier scoring of this day. It replaces every other HR reference, so a
+    ///     past day keeps its values; nil resolves one for this run.
+    ///   - knownSessions: imported or logged sessions. They only attribute load, they can't change the day's total.
+    ///   - following: data after the day; see `FollowingData`. A result without it may be provisional at its end.
     // Order matters: sleep first (gives resting HR + HRV), then recovery (needs those), then workouts and strain.
     public static func analyzeDay(day: String,
                                   hr rawHR: [HRSample] = [],
@@ -108,10 +132,13 @@ public enum AnalyticsEngine {
                                   profile: UserProfile,
                                   baselines: ProfileBaselines = ProfileBaselines(),
                                   maxHROverride: Double? = nil,
-                                  dayRange: (from: Int, to: Int)? = nil) -> DayResult {
+                                  dayRange: (from: Int, to: Int)? = nil,
+                                  calibration frozen: HRCalibration? = nil,
+                                  knownSessions: [TimeSpan] = [],
+                                  following: FollowingData? = nil) -> DayResult {
 
         // Validated HR for every downstream score: de-duplicated, in range, isolated optical spikes removed.
-        let hr = HRQuality.clean(rawHR)
+        let (hr, hrQuality) = HRQuality.cleanWithReport(rawHR)
 
         // ── Sleep detection + staging ─────────────────────────────────────────
         let allSessions = SleepStager.detectSleep(hr: hr, rr: rr, resp: resp, gravity: gravity,
@@ -170,53 +197,71 @@ public enum AnalyticsEngine {
         // Legacy score needs a real night (≥ 3 h asleep), HRV, resting HR and a usable HRV baseline; otherwise nil.
         // A provisional night (recording ends right after the wake) still scores so recovery shows on waking; every
         // sync recomputes the whole day, so it is revised if the wearer goes back to sleep (see DayResult.sleepProvisional).
-        // 24-h sleep = union of the night(s) and naps attributed to this day, never double counted.
-        let dayEpisodes = (matched + napSessions).map(\.stages)
-        let sleep24hMin: Double? = (matched + napSessions).isEmpty ? nil : Double(SleepAccounting.sleepSeconds(
-            dayEpisodes, window: TimeSpan(Int.min / 2, Int.max / 2))) / 60.0
+        // 24-h sleep = sleep in exactly the 24 h of elapsed time ending at this day's final awakening (its main sleep,
+        // else its last nap), from EVERY detected session (yesterday afternoon's nap included), overlaps counted once.
+        // The part of that window before the data read for this day is unobserved and reported as such.
+        let anchor = matched.map(\.end).max() ?? napSessions.map(\.end).max()
+        let sleep24hMin: Double? = anchor.map { Double(SleepAccounting.sleep24h(allSessions.map(\.stages), endingAt: $0)) / 60.0 }
+        let dataStart = [rawHR.map(\.ts).min(), gravity.map(\.ts).min()].compactMap { $0 }.min()
+        let observedFraction: Double = {
+            guard let a = anchor, let d = dataStart else { return 1 }
+            return Double(a - max(d, a - 86_400)) / 86_400
+        }()
         // Quality of the night's vitals: the longest night's (where the daily HRV mostly comes from).
         let quality = matched.max(by: { $0.end - $0.start < $1.end - $1.start })?.vitalsQuality
         let assessment = RecoveryAssessor.assess(
             sleep24hMin: sleep24hMin, mainSleepS: tstS, efficiency: matched.isEmpty ? nil : efficiency,
             hrv: avgHRVDaily, restingHR: restingHRDaily, quality: quality, baselines: baselines,
-            minMainSleepS: minRecoverySleepS)
+            minMainSleepS: minRecoverySleepS, observedWindowFraction: observedFraction)
         let recovery = assessment.legacy.score
 
+        // ── Calibration: one snapshot for detection, load and zones ───────────
+        // Day resting HR from sleep is the best reference; the causal reference covers a day with no night.
+        let calibration = frozen ?? HRCalibration.resolve(
+            day: day, declaredMax: maxHROverride, age: profile.age,
+            sleepResting: restingHRDaily.map(Double.init),
+            causalResting: baselines.restingHR?.usable == true ? baselines.restingHR?.baseline : nil)
+
         // ── Workouts ──────────────────────────────────────────────────────────
-        // User override wins; otherwise Tanaka from age.
-        let effMaxHR: Double? = maxHROverride ?? (profile.age > 0 ? StrainScorer.tanakaHRmax(age: profile.age) : nil)
-        // Day resting HR from sleep is the best baseline for 'elevated' HR, so pass it through.
+        // Supported intervals of the whole buffer, clipped exactly to this day, so a hold crossing midnight is split.
+        let span: TimeSpan? = dayRange.map { TimeSpan($0.from, $0.to) }
+            ?? hr.first.flatMap { f in hr.last.map { TimeSpan(f.ts, $0.ts + SupportedHR.nominalS) } }
+        let daySupport = span.map { SupportedHR(cleaned: hr).clipped(to: $0) } ?? SupportedHR(cleaned: [])
         let hrDay = dayRange.map { r in hr.filter { $0.ts >= r.from && $0.ts < r.to } } ?? hr
         let gravityDay = dayRange.map { r in gravity.filter { $0.ts >= r.from && $0.ts < r.to } } ?? gravity
-        let workouts = WorkoutDetector.detect(
-            hr: hrDay, gravity: gravityDay,
-            restingHR: restingHRDaily.map(Double.init),
-            maxHR: maxHROverride,
-            age: profile.age > 0 ? profile.age : nil,
-            profile: profile)
 
-        // ── Strain: fitted WHOOP model = log of the workouts' weighted zone load plus a rest-day floor ──
-        // Day strain = log of summed zone load of workouts + a rest-day floor (see StrainScorer).
-        let strain: Double?
-        if hrDay.count < StrainScorer.minReadings {
-            strain = nil
-        } else {
-            // Workout segments can be shorter than minReadings (min bout is 5 min), so use the raw zone
-            // load rather than whoopLoad (which returned nil and silently dropped them).
-            let maxForLoad = effMaxHR ?? Double(StrainScorer.defaultMaxHR())
-            var loads: [Double] = workouts.map { w in
-                let seg = hrDay.filter { $0.ts >= w.start && $0.ts <= w.end }
-                return StrainScorer.whoopZoneLoadTimed(seg, maxHR: w.hrmax ?? maxForLoad)
-            }
-            // Plus sustained high-HR effort the motion gate missed (e.g. a still wrist while cycling).
-            // Catches long hard efforts that workout detection did not claim, without double counting.
-            loads.append(StrainScorer.highEffortLoad(hrDay, maxHR: maxForLoad,
-                                                     excluding: workouts.map { ($0.start, $0.end) }))
-            // Rest-day baseline accrues with recorded WAKING time (sleep excluded): ~0 on waking, full at the end of a ~16 h day.
-            let asleep = allSessions.map { (start: $0.start, end: $0.end) }
-            let coverage = dayRange.map { StrainScorer.coveredSeconds(hr, from: $0.from, to: $0.to, excluding: asleep) / StrainScorer.awakeDaySeconds } ?? 1.0
-            strain = StrainScorer.dayStrain(workoutLoads: loads, coverage: coverage)
+        // ── Awake time: the day minus confidently identified sleep, naps included ──
+        // Sessions ending after this day are found by a separate pass, so `allSessions`, which feeds sleep and recovery,
+        // is untouched. Without later data, sleep starting late in the day stays unseen and the result says so.
+        var sleepEpisodes = allSessions
+        var laterChecked = false
+        if let f = following, let r = dayRange, let lastLater = f.gravity.map(\.ts).max(),
+           lastLater - r.to >= SleepStager.provisionalWindowMin * 60 {
+            let from = r.to - eveningContextS
+            let later = SleepStager.detectSleep(hr: hr.filter { $0.ts >= from } + HRQuality.clean(f.hr),
+                                                rr: rr.filter { $0.ts >= from } + f.rr,
+                                                resp: resp.filter { $0.ts >= from } + f.resp,
+                                                gravity: gravity.filter { $0.ts >= from } + f.gravity,
+                                                sleepHRHint: baselines.restingHR?.usable == true ? baselines.restingHR?.baseline : nil)
+            sleepEpisodes += later.filter { $0.end > r.to }
+            laterChecked = true
         }
+        let awake = span.map {
+            AwakeWindow.classify(sleepEpisodes, span: $0, laterDataChecked: laterChecked,
+                                 lastObservedTs: daySupport.intervals.last?.end)
+        } ?? AwakeWindow()
+
+        let workouts = WorkoutDetector.detect(cleaned: hrDay, support: daySupport, gravity: gravityDay,
+                                              calibration: calibration, profile: profile, sleep: awake.sleep)
+
+        // ── Load: integrated over the day's unique awake supported seconds, then attributed to sessions ──
+        // Independent of how episodes were grouped. Time that wasn't observed stays unknown: it is never filled in.
+        let load = span.map {
+            DayLoadRecord.compute(day: day, span: $0, support: daySupport, awake: awake,
+                                  sessions: workouts.map { TimeSpan($0.start, $0.end) } + knownSessions,
+                                  calibration: calibration, quality: hrQuality)
+        }
+        let strain = load?.strainIndex
 
         // ── Assemble DailyMetric ──────────────────────────────────────────────
         let daily = DailyMetric(
@@ -251,6 +296,6 @@ public enum AnalyticsEngine {
 
         return DayResult(daily: daily, sleepSessions: matched, cachedSleep: cachedSleep,
                          workouts: workouts, recovery: recovery, strain: strain, assessment: assessment,
-                         napSessions: napSessions)
+                         napSessions: napSessions, load: load)
     }
 }

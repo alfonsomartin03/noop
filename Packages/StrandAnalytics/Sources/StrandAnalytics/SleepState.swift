@@ -31,4 +31,5 @@ public enum SleepState: String, Codable, Sendable, CaseIterable {
 public enum SleepStateReason {
     public static let noMotionData = "no motion data"           // epoch without gravity samples (off-wrist / gap)
     public static let noCardiacData = "no cardiac data"         // sleep epoch without HR: stage withheld
+    public static let noSegment = "no segment"                  // implicit gap between stored segments
 }

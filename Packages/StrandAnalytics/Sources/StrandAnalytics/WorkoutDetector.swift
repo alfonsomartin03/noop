@@ -1,29 +1,31 @@
 import Foundation
 import WhoopProtocol
 
-// WorkoutDetector.swift — retroactive workout detection from the 1 Hz store.
+// WorkoutDetector.swift — retroactive detection of episodes that may be exercise, from the 1 Hz store.
 //
-// Ported from server/ingest/app/analysis/exercise.py (+ activity.py, calories.py).
+// Ported from server/ingest/app/analysis/exercise.py (+ activity.py, calories.py), then reworked around supported time.
 //
-// A workout is HR held above the bottom of Zone 1 for a sustained window (formerly: above
-// resting + HR_MARGIN_BPM) AND sustained motion (gravity-derived intensity above
-// MOTION_THRESHOLD). Both gates must hold for a sample to count as active.
-//
-// Per detected bout: avg/peak HR, duration, Edwards zone time-%, mean %HRR,
-// strain (StrainScorer), and estimated calories (Keytel 2005 active + revised
-// Harris–Benedict BMR resting, age/sex/weight/height adjusted).
-//
-// All intensity/energy outputs are APPROXIMATE and not medical advice.
+// What this does and does not establish: it finds sustained elevated heart rate. Elevated HR alone does not prove a
+// workout happened (heat, stress, illness), and a quiet wrist does not prove inactivity (cycling, lifting), so a result
+// is a POSSIBLE activity with its evidence attached, not a confirmed session, and no sport is named. Thresholds and
+// durations here are engineering parameters that have not been tuned on labelled data (see `DetectionEvaluation`).
 //
 // HOW IT WORKS (big picture)
 // --------------------------
-// Two independent detectors each propose time windows ("runs"):
-//   1. Motion + HR  — wrist movement AND elevated HR at the same time (running, HIIT, sports).
-//   2. HR only      — sustained elevated HR with no motion needed (cycling, rowing, lifting,
-//                     where the wrist barely moves).
-// Their runs are unioned (overlapping/nearly-touching ones become one), then each candidate is
-// checked for real intensity (zone time) before being reported with its stats.
-// Pipeline: detect() → both detectors → unionRuns → intensity gate → ExerciseSession.
+//   1. HR-only trigger: smoothed HR above the bottom of Zone 1, with hysteresis, forms raw active runs. A sensor gap past
+//      the bounded hold ends a run, because nothing is known about the time inside it.
+//   2. Runs join when what separates them is short, and only if that stretch was mostly observed: a hole in the data is
+//      never bridged as if the effort continued.
+//   3. Every second of an episode is then active, paused (observed, HR dropped) or unknown (not observed), and these
+//      partition its elapsed time. Acceptance needs enough ACTIVE time and coverage, never wall-clock span alone.
+//   4. Motion is context. The channel is a ~1 Hz unit gravity vector (≈1 g magnitude), an orientation signal rather than
+//      raw acceleration, so raw-accelerometer activity models do not apply to it. It labels the evidence and never
+//      rejects an episode: arm movement alone once made detection far too eager, and a still wrist is normal on a bike.
+//
+// Per episode: time-weighted HR, %HRmax zones, load and index (all via `CardioLoad`, the same code the daily total uses),
+// and estimated calories (Keytel 2005 active + revised Harris–Benedict BMR resting, age/sex/weight/height adjusted).
+//
+// All intensity/energy outputs are APPROXIMATE and not medical advice.
 
 // MARK: - Profile + result
 
@@ -40,60 +42,60 @@ public struct UserProfile: Equatable, Sendable {
     }
 }
 
-/// A detected workout window. All intensity fields are APPROXIMATE.
+/// What supports an episode. Categorical on purpose: no calibration study exists to back a probability.
+public enum ActivityEvidence: String, Codable, Sendable {
+    case heartRateAndMotion        // sustained HR with sustained wrist movement
+    case heartRateStillWrist       // sustained HR, wrist mostly still (cycling, lifting, or not exercise at all)
+    case heartRateNoMotionData     // sustained HR, too little motion data to say
+
+    /// Short plain-language label for stored notes and the UI.
+    public var note: String {
+        switch self {
+        case .heartRateAndMotion: return "Auto-detected: sustained heart rate and wrist movement"
+        case .heartRateStillWrist: return "Auto-detected: sustained heart rate, wrist mostly still"
+        case .heartRateNoMotionData: return "Auto-detected: sustained heart rate, no motion data"
+        }
+    }
+}
+
+/// A detected episode, half-open [start, end). All intensity fields are APPROXIMATE.
 public struct ExerciseSession: Equatable, Sendable {
     public let start: Int
     public let end: Int
+    /// Time-weighted mean over supported seconds.
     public let avgHR: Double
     public let peakHR: Int
+    /// Display index of this episode's load.
     public let strain: Double?
+    /// Elapsed seconds. `load` splits them into active, paused and unknown.
     public let durationS: Double
-    /// Edwards zone (0–5) time breakdown as % of HR samples; sums to 100.
+    /// %HRmax zone (0–5) time as % of observed seconds; sums to ~100.
     public let zoneTimePct: [Int: Double]
-    /// Mean Karvonen %HRR over the bout, clamped [0, 100], or nil.
+    /// Time-weighted mean Karvonen %HRR, or nil when resting HR is unknown.
     public let avgHRRPct: Double?
-    /// Effective HRmax used for zone math (bpm), or nil.
+    /// HRmax used (bpm).
     public let hrmax: Double?
-    /// "caller" | "observed" | "tanaka" | "unknown".
+    /// `HRCalibration.MaxSource` raw value.
     public let hrmaxSource: String
     public let caloriesKcal: Double?
     public let caloriesKJ: Double?
-
-    public init(start: Int, end: Int, avgHR: Double, peakHR: Int, strain: Double?,
-                durationS: Double, zoneTimePct: [Int: Double], avgHRRPct: Double?,
-                hrmax: Double?, hrmaxSource: String,
-                caloriesKcal: Double?, caloriesKJ: Double?) {
-        self.start = start; self.end = end; self.avgHR = avgHR; self.peakHR = peakHR
-        self.strain = strain; self.durationS = durationS; self.zoneTimePct = zoneTimePct
-        self.avgHRRPct = avgHRRPct; self.hrmax = hrmax; self.hrmaxSource = hrmaxSource
-        self.caloriesKcal = caloriesKcal; self.caloriesKJ = caloriesKJ
-    }
+    /// The accounting behind these numbers, as stored.
+    public let load: SessionLoadRecord
 }
 
 public enum WorkoutDetector {
 
-    // MARK: - Constants (exercise.py)
+    // MARK: - Constants (engineering parameters, not tuned on labelled data)
 
-    // --- Detector 1 (motion + HR) and shared constants ---
-    /// Minimum length of a motion-gated bout, in minutes.
-    public static let minExerciseMin: Double = 5.0
-    /// A sample only counts as active if HR is above resting + this many bpm.
-    public static let hrMarginBPM: Double = 15.0
     /// Smoothed gravity-change magnitude above this means "moving".
     public static let motionThreshold: Double = 0.20
     /// Trailing window (seconds) used to average the motion signal.
     public static let motionSmoothS: Double = 10.0
-    /// Active samples separated by less than this (seconds) belong to the same run.
-    public static let mergeGapS: Double = 150.0
-    /// Intensity gate: fraction of bout HR samples that must sit in Edwards zone 2+ (≥60% HRR).
-    public static let minIntensityZ2Plus: Double = 0.50
-    /// Max time difference (seconds) when pairing a motion sample with its nearest HR sample.
-    public static let alignToleranceS: Double = 5.0
-    /// Resting HR is estimated as this percentile of the day's HR when the caller gives none.
-    public static let restingPercentile: Double = 10.0
+    /// Below this share of observed seconds with a gravity sample, motion says nothing about the episode.
+    public static let minMotionCoverage: Double = 0.5
+    /// Share of an episode's motion samples that must be "moving" to call it heart rate AND motion.
+    public static let minMovingFraction: Double = 0.25
 
-    // Workout trigger: heart rate held above the bottom of Zone 1 (50% of HRmax) for a sustained stretch.
-    // Wrist motion is deliberately NOT a trigger: arm movement at a desk or while walking made it far too eager.
     /// Rolling-median window smoothing single-sample HR spikes.
     public static let hrSmoothS: Int = 60
     /// Zone 1 floor as a fraction of HRmax; smoothed HR must exceed it to count as active.
@@ -101,18 +103,18 @@ public enum WorkoutDetector {
     /// Once an effort has started it continues until smoothed HR falls this many bpm below the Zone 1 floor,
     /// so cardiac drift or an easy descent does not chop a session.
     public static let exitBelowFloorBPM: Double = 5.0
-    /// HR must stay above the Zone 1 floor for at least this long (minutes) to count as a workout.
+    /// Supported ACTIVE time (minutes) an episode needs.
     public static let hrOnlyMinMin: Double = 15.0
-    /// Gaps up to this long inside an effort are bridged (rest between sets, a stop light, a drink).
+    /// Pauses up to this long inside an effort are bridged (rest between sets, a stop light, a drink).
     public static let hrOnlyBridgeS: Int = 300
-    /// Hysteresis: once an effort has started it continues while smoothed HR stays above
-    /// rest + hrOnlyExitFrac × (entry margin), so steady endurance work that drifts just under the
-    /// entry line (cardiac drift, easy descents) is not chopped up or clipped short.
-    public static let hrOnlyExitFrac: Double = 0.75
-    /// Two long efforts (each ≥ longEffortMin) separated by a pause up to this long are one session
+    /// Two long efforts (each ≥ longEffortMin active) separated by a pause up to this long are one session
     /// (a café stop mid-ride, a red-light queue, refilling a bottle).
     public static let longBridgeS: Int = 1500
     public static let longEffortMin: Double = 15.0
+    /// Most unobserved time a bridge may contain. Past this, the two sides are separate: the data cannot say it was one.
+    public static let maxUnknownBridgeS: Int = 300
+    /// Share of an episode's elapsed time that must be observed.
+    public static let minEpisodeCoverage: Double = 0.8
 
     // MARK: - Activity series (activity.py)
 
@@ -122,23 +124,21 @@ public enum WorkoutDetector {
         public let intensity: Double
     }
 
-    /// Per-record motion-intensity series: L2 magnitude of the gravity change vs
-    /// the previous record. First row → 0. Empty input → []. (GravitySample always
-    /// carries finite x/y/z, so no dropout sentinel is required here.)
+    /// Per-record motion-intensity series: L2 magnitude of the gravity change vs the previous record. First row → 0, as is
+    /// a row after a gap past the hold (a change across a gap is not a per-second change). Empty input → [].
     public static func activitySeries(_ gravity: [GravitySample]) -> [ActivityPoint] {
         if gravity.isEmpty { return [] }
         let rows = gravity.sorted { $0.ts < $1.ts }   // never trust input order
         var series: [ActivityPoint] = []
         series.reserveCapacity(rows.count)
         var prev: GravitySample? = nil
-        for (i, row) in rows.enumerated() {
-            let intensity: Double
-            if i == 0 { intensity = 0.0 }
-            else if let p = prev {
+        for row in rows {
+            var intensity = 0.0
+            if let p = prev, row.ts - p.ts <= SupportedHR.maxHoldS {
                 // Euclidean distance between consecutive gravity vectors: 0 = still, bigger = more movement.
                 let dx = row.x - p.x, dy = row.y - p.y, dz = row.z - p.z
                 intensity = (dx * dx + dy * dy + dz * dz).squareRoot()
-            } else { intensity = 0.0 }
+            }
             series.append(ActivityPoint(ts: row.ts, intensity: intensity))
             prev = row
         }
@@ -146,39 +146,6 @@ public enum WorkoutDetector {
     }
 
     // MARK: - Helpers
-
-    /// Sorted (ts, bpm) pairs.
-    static func cleanHR(_ hr: [HRSample]) -> [(ts: Int, bpm: Double)] {
-        hr.map { (ts: $0.ts, bpm: Double($0.bpm)) }.sorted { $0.ts < $1.ts }
-    }
-
-    /// Day resting-HR baseline = nearest-rank RESTING_PERCENTILE of bpm values.
-    static func deriveRestingHR(_ hrSeg: [(ts: Int, bpm: Double)]) -> Double {
-        let bpms = hrSeg.map { $0.bpm }.sorted()
-        precondition(!bpms.isEmpty, "deriveRestingHR called with empty segment")
-        // Nearest-rank percentile (1-based rank). The low end of the day's HR approximates resting,
-        // while ignoring brief sensor dips below the true baseline.
-        let rank = max(1, Int(ceil(restingPercentile / 100.0 * Double(bpms.count))))
-        return bpms[rank - 1]
-    }
-
-    /// Value whose ts is nearest to `ts` within `tol` seconds, else nil. Ties go
-    /// to the later timestamp (matches the Python <= behaviour).
-    static func nearest(_ sortedTs: [Int], _ values: [Double], _ ts: Int, _ tol: Double) -> Double? {
-        if sortedTs.isEmpty { return nil }
-        // Binary search (bisect_left) for the first timestamp >= ts, then compare it
-        // with its left neighbour to find which one is closest.
-        var lo = 0, hi = sortedTs.count
-        while lo < hi { let mid = (lo + hi) / 2; if sortedTs[mid] < ts { lo = mid + 1 } else { hi = mid } }
-        let i = lo
-        var bestV: Double? = nil
-        var bestD = tol          // anything farther than the tolerance is rejected
-        for j in [i - 1, i] where j >= 0 && j < sortedTs.count {
-            let d = abs(Double(sortedTs[j] - ts))
-            if d <= bestD { bestD = d; bestV = values[j] }
-        }
-        return bestV
-    }
 
     /// Trailing rolling mean (over window_s) of intensities (all finite here).
     static func smoothedIntensity(_ motion: [ActivityPoint], windowS: Double) -> [Double] {
@@ -198,110 +165,140 @@ public enum WorkoutDetector {
         return out
     }
 
-    /// Per-bout Edwards zone breakdown (%) + mean %HRR. APPROXIMATE.
-    static func boutIntensity(_ hrSeries: [(ts: Int, bpm: Double)],
-                              restingHR: Double, maxHR: Double) -> ([Int: Double], Double?) {
-        if hrSeries.isEmpty || maxHR <= restingHR { return ([:], nil) }
-        let hrReserve = maxHR - restingHR      // Karvonen heart-rate reserve (HRR)
-        var zoneCounts = [Int: Int]()
-        for z in 0...5 { zoneCounts[z] = 0 }
-        var hrrVals: [Double] = []
-        for r in hrSeries {
-            let z = StrainScorer.zoneWeight(r.bpm, restingHR: restingHR, hrReserve: hrReserve)
-            zoneCounts[z, default: 0] += 1
-            hrrVals.append(StrainScorer.pctHRR(r.bpm, restingHR: restingHR, hrReserve: hrReserve))
-        }
-        // Convert counts to percentages (1 decimal) and average the %HRR.
-        let n = Double(hrSeries.count)
-        var zonePct = [Int: Double]()
-        for (z, c) in zoneCounts { zonePct[z] = ((Double(c) / n * 100.0) * 10).rounded() / 10 }
-        let avgHRR = ((hrrVals.reduce(0, +) / n) * 10).rounded() / 10
-        return (zonePct, avgHRR)
-    }
-
-    /// Rolling median of bpm over the trailing `windowS` seconds (robust to single-sample spikes).
-    static func smoothedHR(_ hr: [(ts: Int, bpm: Double)], windowS: Int) -> [Double] {
+    /// Rolling median of bpm over the trailing `windowS` seconds (robust to single-sample spikes). bpm values are small
+    /// integers, so the window is a histogram: sorting it per sample was the detector's main cost.
+    static func smoothedHR(_ hr: [HRSample], windowS: Int) -> [Double] {
+        guard let lowest = hr.map(\.bpm).min(), let highest = hr.map(\.bpm).max() else { return [] }
+        var counts = [Int](repeating: 0, count: highest - lowest + 1)
         var out: [Double] = []
         out.reserveCapacity(hr.count)
         var lo = 0   // oldest sample still inside the trailing window
         for i in 0..<hr.count {
-            while hr[i].ts - hr[lo].ts > windowS { lo += 1 }
+            counts[hr[i].bpm - lowest] += 1
+            while hr[i].ts - hr[lo].ts > windowS { counts[hr[lo].bpm - lowest] -= 1; lo += 1 }
             // Median (middle of the sorted window) so one-sample spikes/dropouts don't matter.
-            let w = hr[lo...i].map { $0.bpm }.sorted()
-            out.append(w[w.count / 2])
+            let rank = (i - lo + 1) / 2
+            var seen = 0, bin = 0
+            while true {
+                seen += counts[bin]
+                if seen > rank { break }
+                bin += 1
+            }
+            out.append(Double(bin + lowest))
         }
         return out
     }
 
-    /// Detector 2: runs of sustained elevated HR (no motion needed), ≥ hrOnlyMinMin long after bridging
-    /// short dips. Returns (startTs, endTs) pairs.
-    ///
-    /// Steps: (1) compute enter/exit HR thresholds, (2) smooth HR, (3) walk the series with hysteresis to
-    /// find raw runs, (4) bridge short dips, (5) trim run edges, (6) join long efforts split by a stop,
-    /// (7) drop runs that are too short.
-    static func hrOnlyRuns(_ hr: [(ts: Int, bpm: Double)], restingHR: Double, maxHR: Double?) -> [(Int, Int)] {
-        guard hr.count > 1 else { return [] }
-        // Entry line = bottom of Zone 1 (e.g. HRmax 190 → 95 bpm); 190 is assumed when HRmax is unknown.
-        let threshold = (maxHR ?? 190.0) * zone1Floor
-        let exitThreshold = threshold - exitBelowFloorBPM
+    /// Where an episode's elapsed time went. active + paused + unknown == end − start.
+    struct Episode: Equatable {
+        let start: Int
+        let end: Int
+        let activeS: Int
+        let pausedS: Int
+        let unknownS: Int
+    }
+
+    /// Raw active runs: smoothed HR past the entry line, held with hysteresis, broken by any gap past the bounded hold.
+    static func activeRuns(_ hr: [HRSample], entry: Double, exit: Double) -> [TimeSpan] {
         let sm = smoothedHR(hr, windowS: hrSmoothS)
-        var raw: [(Int, Int)] = []
+        var raw: [TimeSpan] = []
         var start: Int? = nil   // start ts of the run being built (nil = not in a run)
         var last = 0            // ts of the most recent active sample
         for (i, r) in hr.enumerated() {
+            if let s0 = start, r.ts - last > SupportedHR.maxHoldS {
+                raw.append(TimeSpan(s0, last + 1)); start = nil
+            }
             // Start only above the entry line; once running, stay in until HR falls below the exit line.
-            let active = sm[i] > threshold || (start != nil && sm[i] > exitThreshold)
+            let active = sm[i] > entry || (start != nil && sm[i] > exit)
             if active {
                 if start == nil { start = r.ts }
                 last = r.ts
             } else if let s0 = start, r.ts - last > 1 {
                 // Inactive for more than a 1 s hiccup → close the current run.
-                raw.append((s0, last)); start = nil
+                raw.append(TimeSpan(s0, last + 1)); start = nil
             }
         }
-        if let s0 = start { raw.append((s0, last)) }   // data ended mid-effort
-        // The trailing median lags the true edges by ~half its window, so clip each run to its first/last
-        // raw sample above the exit threshold.
-        var runs = unionRuns(raw, bridgeS: hrOnlyBridgeS).compactMap { r -> (Int, Int)? in
-            let hot = hr.filter { $0.ts >= r.0 && $0.ts <= r.1 && $0.bpm > exitThreshold }
-            guard let a = hot.first?.ts, let b = hot.last?.ts else { return nil }
-            return (a, b)
-        }
-        // Join long efforts split by a longer pause (one ride with a stop). Both sides must be
-        // substantial (≥ longEffortMin) and the pause ≤ longBridgeS; the join is cumulative, so a
-        // ride with several stops chains into one session.
-        var joined: [(Int, Int)] = []
-        for r in runs {
-            if let l = joined.last, r.0 - l.1 <= longBridgeS,
-               Double(l.1 - l.0) >= longEffortMin * 60.0, Double(r.1 - r.0) >= longEffortMin * 60.0 {
-                joined[joined.count - 1].1 = r.1
-            } else { joined.append(r) }
-        }
-        runs = joined
-        // Finally reject anything shorter than the HR-only minimum (filters out spikes).
-        return runs.filter { Double($0.1 - $0.0) >= hrOnlyMinMin * 60.0 }
+        if let s0 = start { raw.append(TimeSpan(s0, last + 1)) }   // data ended mid-effort
+        return raw
     }
 
-    /// Sort and merge runs whose gap is ≤ bridgeS (overlaps always merge, since the gap is then ≤ 0).
-    static func unionRuns(_ runs: [(Int, Int)], bridgeS: Int) -> [(Int, Int)] {
-        var out: [(Int, Int)] = []
-        for r in runs.sorted(by: { $0.0 < $1.0 }) {
-            if let l = out.last, r.0 - l.1 <= bridgeS { out[out.count - 1].1 = max(l.1, r.1) } else { out.append(r) }
+    /// Episodes of sustained elevated HR. Steps: (1) raw active runs, (2) bridge short pauses, (3) trim edges to raw samples,
+    /// (4) join long efforts split by a stop, (5) account every second, (6) require active time and coverage.
+    static func episodes(_ hr: [HRSample], support: SupportedHR, hrMax: Double) -> [Episode] {
+        guard hr.count > 1 else { return [] }
+        let entry = hrMax * zone1Floor
+        let exit = entry - exitBelowFloorBPM
+        let raw = activeRuns(hr, entry: entry, exit: exit)
+
+        func unknownBetween(_ a: TimeSpan, _ b: TimeSpan) -> Int {
+            let gap = TimeSpan(a.end, b.start)
+            return gap.duration - support.observedSeconds(in: gap)
         }
-        return out
+        func activeSeconds(_ span: TimeSpan) -> Int {
+            raw.reduce(0) { acc, r in
+                let s = TimeSpan(max(r.start, span.start), min(r.end, span.end))
+                return acc + support.observedSeconds(in: s)
+            }
+        }
+
+        var bridged: [TimeSpan] = []
+        for r in raw {
+            if let l = bridged.last, r.start - l.end <= hrOnlyBridgeS, unknownBetween(l, r) <= maxUnknownBridgeS {
+                bridged[bridged.count - 1] = TimeSpan(l.start, r.end)
+            } else { bridged.append(r) }
+        }
+        // The trailing median lags the true edges by ~half its window, so clip each run to its first/last
+        // raw sample above the exit threshold.
+        let trimmed = bridged.compactMap { r -> TimeSpan? in
+            let hot = hr.filter { $0.ts >= r.start && $0.ts < r.end && Double($0.bpm) > exit }
+            guard let a = hot.first?.ts, let b = hot.last?.ts else { return nil }
+            return TimeSpan(a, b + 1)
+        }
+        // Join long efforts split by a longer pause (one ride with a stop). Both sides must be substantial and the
+        // pause observed; the join is cumulative, so a ride with several stops chains into one session.
+        var joined: [TimeSpan] = []
+        for r in trimmed {
+            if let l = joined.last, r.start - l.end <= longBridgeS, unknownBetween(l, r) <= maxUnknownBridgeS,
+               Double(activeSeconds(l)) >= longEffortMin * 60.0, Double(activeSeconds(r)) >= longEffortMin * 60.0 {
+                joined[joined.count - 1] = TimeSpan(l.start, r.end)
+            } else { joined.append(r) }
+        }
+        return joined.compactMap { s in
+            let observed = support.observedSeconds(in: s)
+            let active = activeSeconds(s)
+            guard Double(active) >= hrOnlyMinMin * 60.0,
+                  Double(observed) / Double(s.duration) >= minEpisodeCoverage else { return nil }
+            return Episode(start: s.start, end: s.end, activeS: active, pausedS: observed - active,
+                           unknownS: s.duration - observed)
+        }
+    }
+
+    /// What motion says about an episode, and the share of it spent moving (nil when motion can't say).
+    static func motionEvidence(_ span: TimeSpan, ts: [Int], smoothed: [Double], observedS: Int) -> (ActivityEvidence, Double?) {
+        var lo = 0, hi = ts.count
+        while lo < hi { let mid = (lo + hi) / 2; if ts[mid] < span.start { lo = mid + 1 } else { hi = mid } }
+        var n = 0, moving = 0
+        var i = lo
+        while i < ts.count, ts[i] < span.end {
+            n += 1
+            if smoothed[i] >= motionThreshold { moving += 1 }
+            i += 1
+        }
+        guard observedS > 0, Double(n) / Double(observedS) >= minMotionCoverage else { return (.heartRateNoMotionData, nil) }
+        let fraction = Double(moving) / Double(n)
+        return (fraction >= minMovingFraction ? .heartRateAndMotion : .heartRateStillWrist, fraction)
     }
 
     // MARK: - Public API
 
-    /// Detect workouts from the 1 Hz HR + gravity store.
+    /// Detect possible activity from raw streams.
     ///
     /// - Parameters:
     ///   - hr: heart-rate stream (required; empty → []).
-    ///   - gravity: gravity stream (required; empty → []).
-    ///   - restingHR: day resting-HR baseline (bpm). nil → derived as the 10th
-    ///     percentile of the day's HR.
-    ///   - maxHR: HRmax (bpm). nil → estimated via StrainScorer.estimateHRmax.
-    ///   - age: used only for the Tanaka fallback when maxHR is nil.
+    ///   - gravity: gravity stream; may be empty, which only changes the reported evidence.
+    ///   - restingHR: declared resting HR (bpm); nil leaves %HRR unavailable.
+    ///   - maxHR: declared HRmax (bpm).
+    ///   - age: for the labelled Tanaka estimate when `maxHR` is nil.
     ///   - profile: when provided, per-bout calories are estimated.
     public static func detect(hr: [HRSample],
                               gravity: [GravitySample],
@@ -309,63 +306,52 @@ public enum WorkoutDetector {
                               maxHR: Double? = nil,
                               age: Double? = nil,
                               profile: UserProfile? = nil) -> [ExerciseSession] {
-        // --- Prepare inputs ---
-        let hrSeg = cleanHR(hr)
+        let cleaned = HRQuality.clean(hr)
+        return detect(cleaned: cleaned, support: SupportedHR(cleaned: cleaned), gravity: gravity,
+                      calibration: .resolve(declaredMax: maxHR, age: age, declaredResting: restingHR), profile: profile)
+    }
+
+    /// Detect over validated samples and their supported intervals, under one calibration snapshot. With no usable HRmax
+    /// there is no defined zone floor, so nothing is detected (rather than assuming a universal 190). Seconds in
+    /// `sleep` never count toward a session's load, so a session can't report more than the awake-time day holds.
+    public static func detect(cleaned hr: [HRSample], support: SupportedHR, gravity: [GravitySample],
+                              calibration: HRCalibration, profile: UserProfile? = nil,
+                              sleep: [TimeSpan] = []) -> [ExerciseSession] {
+        guard let hrMax = calibration.hrMax, !hr.isEmpty else { return [] }
+        let found = episodes(hr, support: support, hrMax: hrMax)
+        if found.isEmpty { return [] }
         let motion = activitySeries(gravity)
-        if hrSeg.isEmpty { return [] }
+        let motionTs = motion.map(\.ts)
+        let smoothed = smoothedIntensity(motion, windowS: motionSmoothS)
 
-        let restHR = restingHR ?? deriveRestingHR(hrSeg)
-
-        // HRmax: caller value wins; otherwise estimated (observed peak / Tanaka by age).
-        // nil means unknown, in which case zone math and the intensity gate are skipped.
-        let effMaxHR: Double?
-        let hrmaxSource: String
-        if let m = maxHR {
-            effMaxHR = m; hrmaxSource = "caller"
-        } else {
-            let (est, src) = StrainScorer.estimateHRmax(hrSeg.map { $0.bpm }, age: age)
-            effMaxHR = est == 0.0 ? nil : est
-            hrmaxSource = src
-        }
-
-        // Trigger: smoothed HR above the Zone 1 floor for hrOnlyMinMin, short dips bridged.
-        let runs = hrOnlyRuns(hrSeg, restingHR: restHR, maxHR: effMaxHR)
-        if runs.isEmpty { return [] }
-
-        // --- Build a session (stats + intensity gate) for each candidate run ---
         var sessions: [ExerciseSession] = []
-        for (start, end) in runs {
-            // All HR samples inside the run drive the stats below.
-            let window = hrSeg.filter { $0.ts >= start && $0.ts <= end }
-            if window.isEmpty { continue }
-            let bpms = window.map { $0.bpm }
-            let hrSamples = window.map { HRSample(ts: $0.ts, bpm: Int($0.bpm.rounded())) }
-
-            // Zone breakdown only possible when HRmax is known and above resting.
-            var zonePct: [Int: Double] = [:]
-            var avgHRR: Double? = nil
-            if let m = effMaxHR, m > restHR {
-                (zonePct, avgHRR) = boutIntensity(window, restingHR: restHR, maxHR: m)
-            }
+        for e in found {
+            let span = TimeSpan(e.start, e.end)
+            let segment = support.clipped(to: span, excluding: sleep)
+            let summary = LoadSummary(segment, requestedS: span.duration - SleepAccounting.totalSeconds(sleep, clippedTo: span),
+                                      hrMax: hrMax)
+            guard let mean = summary.meanHR, let peak = summary.peakHR else { continue }
+            let (evidence, moving) = motionEvidence(span, ts: motionTs, smoothed: smoothed, observedS: summary.observedS)
 
             // Calories only when the caller supplied a body profile.
             var kcal: Double? = nil
             var kj: Double? = nil
             if let profile = profile {
-                let (k, j) = Calories.estimateBoutCalories(hrSamples, profile: profile,
-                                                           hrmax: effMaxHR, restingHR: restHR)
+                let (k, j) = Calories.estimateBoutCalories(hr.filter { $0.ts >= e.start && $0.ts < e.end }, profile: profile,
+                                                           hrmax: hrMax, restingHR: calibration.restingHR)
                 kcal = k; kj = j
             }
-
-            // Summary stats for the session.
-            let avg = bpms.reduce(0, +) / Double(bpms.count)
-            let peak = Int(bpms.max()!.rounded())
-            let strain = StrainScorer.strain(hrSamples, maxHR: effMaxHR, restingHR: restHR)
-
+            let record = SessionLoadRecord(start: e.start, end: e.end, activeS: e.activeS, pausedS: e.pausedS,
+                                           unknownS: e.unknownS, summary: summary, evidence: evidence,
+                                           movingFraction: moving, calibration: calibration,
+                                           loadVersion: CardioLoad.loadVersion, detectorVersion: CardioLoad.detectorVersion)
             sessions.append(ExerciseSession(
-                start: start, end: end, avgHR: avg, peakHR: peak, strain: strain,
-                durationS: Double(end - start), zoneTimePct: zonePct, avgHRRPct: avgHRR,
-                hrmax: effMaxHR, hrmaxSource: hrmaxSource, caloriesKcal: kcal, caloriesKJ: kj))
+                start: e.start, end: e.end, avgHR: mean, peakHR: peak,
+                strain: StrainScorer.activityIndex(load: summary.zoneLoad),
+                durationS: Double(span.duration), zoneTimePct: summary.zonePercent,
+                avgHRRPct: CardioLoad.meanPercentHRR(segment, calibration: calibration).map { ($0 * 10).rounded() / 10 },
+                hrmax: hrMax, hrmaxSource: calibration.hrMaxSource.rawValue,
+                caloriesKcal: kcal, caloriesKJ: kj, load: record))
         }
         return sessions
     }
@@ -422,16 +408,21 @@ public enum Calories {
         return max(0.0, eeKjMin) / workoutDivisor
     }
 
-    /// Estimate kcal over a whole day of irregularly spaced HR samples. Each sample is credited with the time until
-    /// the next one (capped at `maxGapS`, so a gap while the strap was off or unsynced adds nothing), using the same
-    /// resting/active split as `estimateBoutCalories`.
+    /// Estimate kcal over a day of HR samples, on the same supported seconds as the day's coverage (see `SupportedHR`),
+    /// so "recorded" means one thing everywhere. Uses the same resting/active split as `estimateBoutCalories`. Sleep stays
+    /// in: this is total-day energy, and excluding sleep from strain must not remove resting energy.
     public static func estimateDayCalories(_ hrSamples: [HRSample],
                                            profile: UserProfile,
                                            hrmax: Double?,
-                                           restingHR: Double?,
-                                           maxGapS: Double = 60) -> Double {
-        let sorted = hrSamples.sorted { $0.ts < $1.ts }
-        guard !sorted.isEmpty else { return 0 }
+                                           restingHR: Double?) -> Double {
+        estimateDayCalories(SupportedHR(raw: hrSamples), profile: profile, hrmax: hrmax, restingHR: restingHR)
+    }
+
+    public static func estimateDayCalories(_ support: SupportedHR,
+                                           profile: UserProfile,
+                                           hrmax: Double?,
+                                           restingHR: Double?) -> Double {
+        guard !support.intervals.isEmpty else { return 0 }
         let weightKg = profile.weightKg > 0 ? profile.weightKg : 70.0
         let heightCm = profile.heightCm > 0 ? profile.heightCm : 170.0
         let age = profile.age > 0 ? profile.age : 30.0
@@ -442,11 +433,9 @@ public enum Calories {
         let restingRate = restingKcalPerS(coeffs, weightKg: weightKg, heightCm: heightCm, age: age)
 
         var total = 0.0
-        for i in 0..<sorted.count {
-            let dt = i + 1 < sorted.count ? min(Double(sorted[i + 1].ts - sorted[i].ts), maxGapS) : 1.0
-            guard dt > 0 else { continue }
-            let bpm = Double(sorted[i].bpm)
-            total += (bpm < activeThreshold ? restingRate : activeKcalPerS(coeffs, hr: bpm, hrmax: effHRmax, weightKg: weightKg, age: age)) * dt
+        for x in support.intervals {
+            let bpm = Double(x.bpm)
+            total += (bpm < activeThreshold ? restingRate : activeKcalPerS(coeffs, hr: bpm, hrmax: effHRmax, weightKg: weightKg, age: age)) * Double(x.seconds)
         }
         return total
     }

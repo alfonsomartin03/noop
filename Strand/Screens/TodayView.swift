@@ -109,7 +109,7 @@ struct TodayView: View {
                     }
                 }
                 .frame(width: 150, height: 150)
-                Text(synthesisWord(score)).font(.system(size: 24, weight: .bold)).foregroundStyle(tint)
+                Text(synthesisWord(score)).font(.system(size: 24, weight: .bold)).foregroundStyle(StrandPalette.scoreInk(tint))
                 Spacer(minLength: 0)
                 VStack(spacing: 6) {
                     chip("HRV", d?.avgHrv.map { "\(Int($0.rounded())) ms" }, StrandPalette.metricPurple)
@@ -157,7 +157,7 @@ struct TodayView: View {
     /// Strain card: ring out of 21, then what the strap measured that day (active time, energy, steps if imported).
     private func strainWidget(_ d: DailyMetric?) -> some View {
         let v = d?.strain
-        let tint = v.map { StrandPalette.strainColor($0) } ?? StrandPalette.strain033
+        let tint = v.map { StrandPalette.strainColor($0) } ?? StrandPalette.scoreMissing
         return StrandWidget("Strain", symbol: "flame.fill", tint: tint, action: { open(.strain) }) {
             VStack(spacing: 12) {
                 ProgressRing(fraction: (v ?? 0) / 21, tint: tint, lineWidth: 14) {
@@ -169,7 +169,7 @@ struct TodayView: View {
                     }
                 }
                 .frame(width: 150, height: 150)
-                Text(v.map { strainWord($0) } ?? "No data").font(.system(size: 22, weight: .bold)).foregroundStyle(tint)
+                Text(v.map { strainWord($0) } ?? "No data").font(.system(size: 22, weight: .bold)).foregroundStyle(StrandPalette.scoreInk(tint))
                 Spacer(minLength: 0)
                 VStack(spacing: 6) {
                     chip("Active", dayStats.flatMap { $0.isEmpty ? nil : DayMath.hm($0.activeMin) }, StrandPalette.statusPositive)
@@ -209,7 +209,8 @@ struct TodayView: View {
         let key = activeDay
         if let r = DayMath.range(key) {
             let samples = await repo.hrSamples(from: r.from, to: r.to, limit: 200_000)
-            dayStats = DayHRStats(hr: samples, profile: profile, restingHR: byDay[key]?.restingHr)
+            let scoredMax = await repo.dayLoad(key)?.calibration.hrMax
+            dayStats = await DayHRStats.build(hr: samples, profile: profile, restingHR: byDay[key]?.restingHr, maxHR: scoredMax)
             night = SleepTimeline.pick(repo.sleeps, range: r, day: byDay[key])
         }
         let apple = await repo.appleDailyRows().first { $0.day == key }
@@ -631,7 +632,7 @@ private struct HeartRateDayCard: View {
             out.append(Insight(icon: "flame.fill",
                                text: s.elevatedMin >= 1 ? "Elevated (Zone 3+) for \(DayMath.hm(s.elevatedMin))."
                                                         : "No time in Zone 3 or higher, a calm day for your heart.",
-                               tint: StrandPalette.strain033))
+                               tint: StrandPalette.metricAmber))
             let hours = s.coveredS / 3600
             out.append(Insight(icon: hours >= 20 ? "checkmark.circle.fill" : "exclamationmark.circle.fill",
                                text: hours >= 20 ? String(format: "Heart rate recorded for %.0f h of the day.", hours)

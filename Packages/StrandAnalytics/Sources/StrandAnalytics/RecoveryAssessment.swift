@@ -86,7 +86,7 @@ public enum RecoveryAssessor {
     public static func assess(sleep24hMin: Double?, mainSleepS: Double, efficiency: Double?,
                               hrv: Double?, restingHR: Int?, quality: VitalsQuality?,
                               baselines: AnalyticsEngine.ProfileBaselines,
-                              minMainSleepS: Double) -> RecoveryAssessment {
+                              minMainSleepS: Double, observedWindowFraction: Double = 1) -> RecoveryAssessment {
         let goodQuality = quality.map { $0.hrvWindows >= goodQualityHRVWindows && $0.hrvSpansNight } ?? false
 
         // ── Legacy composite (comparison path) ──
@@ -108,9 +108,9 @@ public enum RecoveryAssessor {
                                                breakdown: legacyBreakdown, withheldReason: withheld)
 
         // ── Sleep sufficiency ──
-        let sleep = RecoveryAssessment.SleepSufficiency(
-            shortfall: SleepAccounting.shortfall(sleepMin: sleep24hMin, targetMin: baselines.sleepTargetMin),
-            efficiency: efficiency)
+        var shortfall = SleepAccounting.shortfall(sleepMin: sleep24hMin, targetMin: baselines.sleepTargetMin)
+        shortfall.observedWindowFraction = observedWindowFraction
+        let sleep = RecoveryAssessment.SleepSufficiency(shortfall: shortfall, efficiency: efficiency)
 
         // ── Autonomic deviation ──
         var notes: [String] = []

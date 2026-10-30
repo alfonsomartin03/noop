@@ -59,13 +59,22 @@ extension WhoopStore {
                 }
             }
             if !streams.rr.isEmpty {
+                // Beats are keyed by their position within the second ACROSS batches: a second's beats can arrive in
+                // two inserts (a live flush boundary, a re-pulled chunk), so the incoming beats are aligned against
+                // what is already stored for that second instead of being numbered from 0 again.
+                let existingStmt = try db.cachedStatement(sql: """
+                    SELECT rrMs FROM rrInterval WHERE deviceId = ? AND ts = ? ORDER BY seq ASC, rowid ASC
+                    """)
                 let stmt = try db.cachedStatement(sql: """
                     INSERT INTO rrInterval (deviceId, ts, seq, rrMs) VALUES (?, ?, ?, ?)
                     ON CONFLICT(deviceId, ts, seq, rrMs) DO NOTHING
                     """)
-                for (r, seq) in WhoopStore.sequenceRR(streams.rr) {
-                    try stmt.execute(arguments: [deviceId, r.ts, seq, r.rrMs])
-                    rr += db.changesCount
+                for (ts, group) in WhoopStore.groupBySecond(streams.rr) {
+                    let existing = try Int.fetchAll(existingStmt, arguments: [deviceId, ts])
+                    for (rrMs, seq) in WhoopStore.newBeats(existing: existing, incoming: group) {
+                        try stmt.execute(arguments: [deviceId, ts, seq, rrMs])
+                        rr += db.changesCount
+                    }
                 }
             }
             if !streams.events.isEmpty {
@@ -166,21 +175,41 @@ extension WhoopStore {
     /// ends inside that second, so only the first interval may reach back before it. 100 ms of slack for stamping jitter.
     static let rrBucketSpanMs = 1_100
 
-    /// Assign each beat its position among the beats of the same second (acquisition order), and drop exact
-    /// re-deliveries of a beat inside one batch. A repeated value is a genuine beat while the bucket still fits in
-    /// one second (two 450 ms beats at 130 bpm); once a repeat would push the bucket past `rrBucketSpanMs`, it is a
-    /// retransmitted record, not physiology. Deterministic, so re-saving the same chunk maps to the same keys.
-    static func sequenceRR(_ rr: [RRInterval]) -> [(RRInterval, Int)] {
-        var buckets: [Int: [Int]] = [:]          // ts → rrMs kept so far, in order
-        var out: [(RRInterval, Int)] = []
-        out.reserveCapacity(rr.count)
+    /// Beats grouped by whole second, seconds in first-appearance order, beats in acquisition order.
+    static func groupBySecond(_ rr: [RRInterval]) -> [(Int, [Int])] {
+        var order: [Int] = [], groups: [Int: [Int]] = [:]
         for r in rr {
-            var b = buckets[r.ts, default: []]
-            let spanAfterFirst = b.dropFirst().reduce(0, +) + (b.isEmpty ? 0 : r.rrMs)
-            if b.contains(r.rrMs) && spanAfterFirst > rrBucketSpanMs { continue }
-            out.append((r, b.count))
-            b.append(r.rrMs)
-            buckets[r.ts] = b
+            if groups[r.ts] == nil { order.append(r.ts) }
+            groups[r.ts, default: []].append(r.rrMs)
+        }
+        return order.map { ($0, groups[$0]!) }
+    }
+
+    /// Which incoming beats of one second are new, and the `seq` each gets, given the beats already stored for that
+    /// second (in seq order). Deterministic, so any re-delivery maps to the same keys:
+    ///   1. the incoming beats occur as a contiguous run of the stored ones → an exact re-delivery, nothing new;
+    ///   2. the longest stored suffix that equals an incoming prefix is the overlap of a re-pulled chunk → dropped;
+    ///   3. the rest is appended after the stored beats; a repeated value that no longer fits the one-second bucket
+    ///      (`rrBucketSpanMs`) is a retransmission, not physiology, and is dropped.
+    /// Residual ambiguity, resolved toward never duplicating: an incoming group identical to stored beats is treated
+    /// as a re-delivery even when, at > ~120 bpm, it could be a genuine new beat of the same length.
+    static func newBeats(existing: [Int], incoming: [Int]) -> [(rrMs: Int, seq: Int)] {
+        guard !incoming.isEmpty else { return [] }
+        if incoming.count <= existing.count {
+            for off in 0...(existing.count - incoming.count) where Array(existing[off..<off + incoming.count]) == incoming {
+                return []
+            }
+        }
+        var overlap = 0
+        for k in stride(from: min(existing.count, incoming.count), through: 1, by: -1)
+            where Array(existing.suffix(k)) == Array(incoming.prefix(k)) { overlap = k; break }
+        var bucket = existing
+        var out: [(rrMs: Int, seq: Int)] = []
+        for v in incoming.dropFirst(overlap) {
+            let spanAfterFirst = bucket.dropFirst().reduce(0, +) + (bucket.isEmpty ? 0 : v)
+            if bucket.contains(v) && spanAfterFirst > rrBucketSpanMs { continue }
+            out.append((v, bucket.count))
+            bucket.append(v)
         }
         return out
     }

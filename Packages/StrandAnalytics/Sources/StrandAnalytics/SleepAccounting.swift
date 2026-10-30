@@ -16,6 +16,8 @@ import Foundation
 //                   NOT a confidence interval and no protection against classifier error.
 //   wake bouts      maximal runs of observed wake inside the sleep period ≥ `minBoutS`, runs separated by less than
 //                   `mergeGapS` of sleep merged. These are NOT EEG arousals.
+//   implicit gaps   time inside an episode that no segment covers is UNKNOWN (`normalized`), never observed time,
+//                   wake or sleep; overlapping segments are trimmed so no second is counted twice.
 
 public struct TimeSpan: Equatable, Sendable { public let start: Int; public let end: Int
     public init(_ start: Int, _ end: Int) { self.start = start; self.end = end }
@@ -47,6 +49,28 @@ public enum SleepAccounting {
     /// Intervals of every segment whose state satisfies `keep`.
     public static func intervals(_ segs: [StageSegment], where keep: (SleepState) -> Bool) -> [TimeSpan] {
         segs.filter { keep($0.state) }.map { TimeSpan($0.start, $0.end) }
+    }
+
+    /// Segments clipped to `period`, overlaps trimmed (the earlier-starting segment keeps the shared time; ties keep
+    /// input order) and every uncovered stretch filled with an explicit `unknown` segment (`SleepStateReason.noSegment`).
+    /// The result tiles `period` exactly.
+    public static func normalized(_ segs: [StageSegment], period: TimeSpan) -> [StageSegment] {
+        let ordered = segs.enumerated().sorted { ($0.element.start, $0.offset) < ($1.element.start, $1.offset) }.map(\.element)
+        var out: [StageSegment] = []
+        var cursor = period.start
+        for s in ordered {
+            let a = max(s.start, cursor, period.start), b = min(s.end, period.end)
+            guard b > a else { continue }
+            if a > cursor {
+                out.append(StageSegment(start: cursor, end: a, stage: SleepState.unknown.rawValue, reason: SleepStateReason.noSegment))
+            }
+            out.append(StageSegment(start: a, end: b, stage: s.stage, reason: s.reason))
+            cursor = b
+        }
+        if cursor < period.end {
+            out.append(StageSegment(start: cursor, end: period.end, stage: SleepState.unknown.rawValue, reason: SleepStateReason.noSegment))
+        }
+        return out
     }
 
     // MARK: - Per-episode summary
@@ -90,10 +114,7 @@ public enum SleepAccounting {
     public static func summarize(_ segs: [StageSegment], period: TimeSpan,
                                  inBed: TimeSpan? = nil, attemptTs: Int? = nil,
                                  minBoutS: Int = 60, mergeGapS: Int = 0) -> EpisodeSummary {
-        let clip = segs.compactMap { s -> StageSegment? in
-            let a = max(s.start, period.start), b = min(s.end, period.end)
-            return b > a ? StageSegment(start: a, end: b, stage: s.stage, reason: s.reason) : nil
-        }.sorted { $0.start < $1.start }
+        let clip = normalized(segs, period: period)
         func secs(_ keep: (SleepState) -> Bool) -> Int { totalSeconds(intervals(clip, where: keep)) }
         let tst = secs { $0.isSleep }, unknown = secs { !$0.isKnown }, wake = secs { $0 == .wake }
         let deep = secs { $0 == .deep }, rem = secs { $0 == .rem }, light = secs { $0 == .light }
@@ -158,6 +179,15 @@ public enum SleepAccounting {
         totalSeconds(episodes.flatMap { intervals($0, where: { $0.isSleep }) }, clippedTo: window)
     }
 
+    /// Exactly 24 h of elapsed time ending at `anchorEnd` (the day's final awakening): (anchorEnd − 86 400, anchorEnd].
+    public static func window24h(endingAt anchorEnd: Int) -> TimeSpan { TimeSpan(anchorEnd - 86_400, anchorEnd) }
+
+    /// Sleep in the 24 h ending at `anchorEnd`, from ALL episodes (yesterday's afternoon nap included, an episode that
+    /// straddles the window start clipped to it, anything older excluded). Overlaps count once.
+    public static func sleep24h(_ episodes: [[StageSegment]], endingAt anchorEnd: Int) -> Int {
+        sleepSeconds(episodes, window: window24h(endingAt: anchorEnd))
+    }
+
     // MARK: - Sleep Regularity Index (Phillips et al. 2017)
 
     public struct SRIResult: Equatable, Sendable {
@@ -195,7 +225,11 @@ public enum SleepAccounting {
     public static func stateGrid(episodes: [[StageSegment]], covered: [TimeSpan],
                                  from: Int, to: Int, epochS: Int) -> [SleepState] {
         let cov = union(covered)
-        let segs = episodes.flatMap { $0 }.sorted { $0.start < $1.start }
+        // Inside an episode, time no segment covers is unknown — not "worn, so awake".
+        let segs = episodes.flatMap { ep -> [StageSegment] in
+            guard let a = ep.map(\.start).min(), let b = ep.map(\.end).max() else { return [] }
+            return normalized(ep, period: TimeSpan(a, b))
+        }.sorted { $0.start < $1.start }
         var out: [SleepState] = []
         var t = from
         while t + epochS <= to {
@@ -250,6 +284,9 @@ public enum SleepAccounting {
         public let shortfallMin: Double?
         /// sleep ≥ target. nil when unknown. Efficiency never enters this.
         public let meetsTarget: Bool?
+        /// Share of the 24-h window covered by the data the day was scored from (1 = all of it). Below 1, sleep in the
+        /// unread part is not seen, so `sleepMin` is a lower bound there.
+        public var observedWindowFraction: Double = 1
     }
 
     /// Observed shortfall against a TRANSPARENT target the user can see and change. The default 7 h follows the

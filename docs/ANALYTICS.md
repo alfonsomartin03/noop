@@ -21,12 +21,17 @@ The package contains more analytics than the app currently calls. This section i
 |---|---|---|
 | `HRVAnalyzer` | `HRVAnalyzer.swift` | **Library-only** as a type. The app computes RMSSD inline via `AppModel.rmssd(_:)` (same Task-Force formula) for the live stress nudge. |
 | `RecoveryScorer` | `RecoveryScorer.swift` | **Live (legacy comparator)** via `AnalyticsEngine` → `RecoveryAssessor`, for days the strap recorded. Imported WHOOP values win per field on the dashboard. |
-| `StrainScorer` | `StrainScorer.swift` | **Library-only.** Day strain shown in the UI is the imported `day_strain` column. The TRIMP scorer is the on-device recompute path. |
+| `SupportedHR` / `CardioLoad` / `HRCalibration` | `SupportedHR.swift`, `CardioLoad.swift`, `HRCalibration.swift` | **Live.** The one accounting path behind load, coverage, zones and session summaries. |
+| `StrainScorer` | `StrainScorer.swift` | **Live.** Maps load onto the versioned 0–21 index. Imported WHOOP values win per field on the dashboard. |
 | `SleepStager` | `SleepStager.swift` | **Live** via `IntelligenceEngine` for strap-recorded nights (imports win per field). Staging method `heuristic-quota-v1`: experimental. |
 | `Baselines` | `Baselines.swift` | **Live** through `Baselines.causalState` (NOOP-only nights strictly before the scored day). `CausalReference` adds the robust ln-RMSSD/RHR references. The illness early-warning in `AppModel` uses its own inline math. |
-| `WorkoutDetector` / `Calories` | `WorkoutDetector.swift` | **Library-only.** |
+| `WorkoutDetector` / `Calories` | `WorkoutDetector.swift` | **Live** via `AnalyticsEngine`. Finds possible activity; names no sport. |
+| `IncrementalScorer` | `IncrementalScorer.swift` | **Live.** Recomputes only days whose inputs changed. See its header for the rules. |
+| `WorkoutLabels` | `WorkoutLabels.swift` | **Live.** Activity type and who set it. No calculation reads it. |
+| `DetectionEvaluation` | `DetectionEvaluation.swift` | **Harness only.** No reference data exists, so it has scored nothing. |
+| `TrainingLog` | `TrainingLog.swift` | Session RPE and strength volume from what the user logs on the workout sheet. Displayed beside strain; feeds no score. |
 | `AnalyticsEngine` | `AnalyticsEngine.swift` | **Live.** `IntelligenceEngine.analyzeRecent` calls `analyzeDay` per day, oldest first, and stores results under the `-noop` device id. |
-| `HRZones` | `HRZones.swift` | **Library-only** (display zone model). The app's live zone coaching computes `%HRmax` inline in `AppModel.coachZone(_:)`. |
+| `HRZones` | `HRZones.swift` | **Live.** The one %HRmax zone system, used by load and the Strain screen. Zone coaching also computes `%HRmax` inline in `AppModel.coachZone(_:)`. |
 | `CorrelationEngine` | `CorrelationEngine.swift` | **Live.** Used by `InsightsView`, `CompareView`, `MetricExplorerView`. |
 | `BehaviorInsights` | `BehaviorInsights.swift` | **Live.** Used by `InsightsView` (`rank` + `sentence`). |
 | `ComparisonEngine` | `ComparisonEngine.swift` | **Live.** Used by `MetricExplorerView`. |
@@ -197,39 +202,65 @@ HRV is the dominant driver. If its baseline isn't usable yet (`BaselineState.usa
 
 ---
 
-## `StrainScorer` — 0–21 logarithmic cardiovascular load
+## Cardiovascular load and the strain index
 
-Source: `StrainScorer.swift`. An **independent** implementation of published exercise-physiology methods (WHOOP-*like*, not a reproduction).
+Sources: `SupportedHR.swift`, `HRCalibration.swift`, `CardioLoad.swift`, `StrainScorer.swift`. Load is measured from heart rate; it is not muscular strain, calories, tissue damage or recovery time. The changes and their evidence are in [WORKOUT_STRAIN_REPORT.md](WORKOUT_STRAIN_REPORT.md).
 
-### Pipeline
+### Supported intervals
 
-1. **Heart-Rate Reserve (Karvonen 1957):** `HRR = HRmax − RHR`.
-2. **Per-sample intensity** as `%HRR = (HR − RHR) / HRR × 100`, clamped `[0, 100]`.
-3. **TRIMP accumulation** over the window, by one of two methods:
-   - **Edwards (1993) 5-zone summation (default):** each sample contributes its zone weight (`1…5` at the `50 / 60 / 70 / 80 / 90 %HRR` cut-offs) × duration.
-   - **Banister (1991) exponential:** each sample contributes `duration × x × 0.64 × e^(b·x)`, where `x = %HRR/100` and `b = 1.92` (men) / `1.67` (women).
-4. **Logarithmic compression** onto `[0, 21]`:
+Every result comes from half-open, non-overlapping intervals (`SupportedHR`). A reading supports its own second (`[ts, ts+1)`) and may be held to 5 s across a dropout, labelled as estimated. Time past that is unknown: never low, zero or rest. Clipping at day boundaries and exclusions is exact.
 
 ```
-strain = 21 · ln(TRIMP + 1) / ln(D),    D = strainDenominator = 7201
+observed_seconds = sum(dt_i)
+mean_HR          = sum(HR_i · dt_i) / sum(dt_i)
+zone_seconds[z]  = sum(dt_i in zone z)
+coverage         = observed_seconds / requested_seconds
 ```
 
-`D = 7201` is calibrated so the Edwards daily ceiling — top zone weight 5 sustained for 24 h = `5 × 1440 = 7200` — maps to exactly `21.0` (`ln(7201)/ln(7201) = 1`).
+Requested seconds follow the declared day range, so a daylight-saving day is 23 or 25 hours.
 
-### HRmax estimation (`estimateHRmax`)
+### Calibration (`HRCalibration`)
 
-- With ≥ `hrmaxMinSamples = 600` HR samples, use the observed `99.5th` percentile (`"observed"`), unless a Tanaka estimate is higher.
-- **Tanaka (2001):** `HRmax = 208 − 0.7 × age` (gender-independent), used as the floor / fallback (`"tanaka"`).
-- No data and no age → `(0, "unknown")`.
+One snapshot per day drives detection, load and zones, and is stored with the result. HRmax: a declared value, else Tanaka (2001) `208 − 0.7 × age`, labelled as a population estimate, else unavailable. Resting HR: this day's sleep low quantile, else the causal reference from earlier nights, else unavailable. That protocol is not interchangeable with a standardized awake resting HR. Finished days keep their snapshot; only an explicit re-score resolves it again.
 
-### Guards & gates
+### Methods (`LoadMethod`)
 
-- Returns `nil` with fewer than `minReadings = 600` samples (≈ 10 min at 1 Hz) or when `HRmax ≤ RHR` (invalid HRR).
-- Per-sample duration is inferred from the first two timestamps, falling back to `1 s`.
+| Method | Definition | Unit | Additive | In production |
+|---|---|---|---|---|
+| `fittedZoneLoad` | `sum(minutes in zone z × w_z)`, `w = 0.105, 0.110, 0.347, 0.749, 1.875` | AU | Yes | Daily and session load |
+| `edwards` | `%HRmax` bands 50/60/70/80/90 with weights 1–5, zero below 50 % | AU | Yes | Stored beside load |
+| `edwardsHRR` | The same weights on `%HRR` bands: a NOOP variant, not the published zones | AU | Yes | No |
+| `banisterIntegrated` | `sum(dt_minutes · x · a · e^(b·x))`, `x = (HR − rest) / (max − rest)` clipped to [0, 1] | AU | Yes | No, coefficients unset |
+| `banisterSessionMean` | `T · x̄ · a · e^(b·x̄)` | AU | **No** | No, coefficients unset |
+| `sessionRPE`, `strengthVolume` | See `TrainingLog.swift` | AU, kg | Yes | Workout sheet only, from user entries |
+| `mechanicalWork`, `powerTSS` | Require measured power (and FTP) | kJ, AU | — | No input exists |
 
-### Denominator calibration (`fitStrainDenominator`)
+Conventional Banister pairs are `(0.64, 1.92)` and `(0.86, 1.67)`, from the historical male and female formulations. They are population conventions, always chosen explicitly and never inferred from a profile's gender. The fitted weights come from one person's export and are a compatibility fit, not a physiological finding. HR above the configured HRmax scores in the top zone and is flagged (`aboveMaxS`).
 
-Given `(TRIMP, reference_strain)` pairs, fits `D` via a through-origin least-squares line in log-space: `ln(D) = 21 · Σx² / Σ(x·strain)`, `x = ln(TRIMP+1)`. Throws on fewer than 2 usable pairs.
+### Daily load and the index
+
+Strain measures accumulated **awake-time** load. Load is integrated over the day's unique supported seconds outside confidently identified sleep (`AwakeWindow`), then attributed: `exerciseLoad + incidentalLoad = zoneLoad`. Sessions never add load, so splitting or merging them changes nothing. Session-mean TRIMP must not be summed this way.
+
+- **Excluded:** seconds in a sleep state (`SleepState.isSleep`) of any session, naps included, cut exactly at each edge. A reading inside sleep carries nothing out of it: its hold is dropped, so sleep HR cannot reach awake time.
+- **Not excluded:** `wake` epochs, and seconds of unknown state. Those aren't known to be sleep, and no boundary is invented; they are counted, reported in `uncertainStateS`, and make the result provisional when they reach 5 minutes.
+- **Awake is not exercising:** awake seconds score by zone weight, Zone 0 weighs nothing, and nothing is added for time. Elevated HR outside a session is incidental load, not a workout.
+- **Late sleep:** a finished day re-reads 12 h either side of midnight only to find sessions ending after it. That pass never reaches sleep totals, recovery or detection, and a later sync can revise the day's end.
+- **Unchanged by sleep exclusion:** the full-day HR chart and statistics, and total-day calories, which keep resting energy and now use the same supported seconds as coverage.
+- **Provisional** (`provisional`): the day is partial, or no sleep was classified, a sleep session is provisional, sleep state is unknown, or the day's end could not be checked. Missing sleep is not proof of wakefulness.
+
+```
+day index      = softCeiling(4.67 · ln(1 + load))
+activity index = softCeiling(4.56 · ln(1 + load))
+```
+
+`softCeiling` is the identity to 16 and approaches 21 without reaching it. The index (`noop-strain-index-1`) is a presentation choice, applied once to summed load. It saturates, so compare raw load between hard days. There is no rest-day floor: a day with no load above Zone 1 is 0.
+
+| Status | Meaning | Index |
+|---|---|---|
+| `complete` | At least 90 % of awake time observed (the day minus confident sleep) | Yes |
+| `partial` | Scored on observed time, never scaled up | Yes, labelled |
+| `insufficient` | Under 10 observed awake minutes | None, with a reason |
+| `calibrationUnavailable` | No usable HRmax | None, with a reason |
 
 ---
 
@@ -332,16 +363,17 @@ The simple, maximally auditable path: plain mean and sample SD (ddof = 1) over t
 
 ---
 
-## `WorkoutDetector` + `Calories` — retroactive workout detection
+## `WorkoutDetector` + `Calories` — retroactive detection of possible activity
 
-Source: `WorkoutDetector.swift`. Finds workouts in the stored 1 Hz HR + gravity streams (no manual logging).
+Source: `WorkoutDetector.swift`. Finds episodes of sustained elevated HR in the stored 1 Hz streams. Elevated HR alone does not prove a workout, and a still wrist does not prove inactivity, so a result is a possible activity with its evidence attached, and no sport is named.
 
-A workout is a **sustained window** (≥ `minExerciseMin = 5` min) where **both** gates hold per sample:
+1. **Active runs:** 60-s median HR above the Zone 1 floor (50 % of HRmax), held until it falls 5 bpm below it. A gap past the 5 s hold ends a run.
+2. **Bridging:** runs join across pauses up to 5 min, or up to 25 min between two efforts of at least 15 active minutes. A bridge may contain at most 5 min of unobserved time.
+3. **Accounting:** every second of an episode is active, paused (observed) or unknown (not observed), and these partition its elapsed time.
+4. **Acceptance:** at least 15 min of supported active time and 80 % coverage.
+5. **Evidence:** the motion channel is a ~1 Hz unit gravity vector, an orientation signal rather than raw acceleration, so raw-accelerometer models do not apply. It yields `heartRateAndMotion` (at least 25 % of samples moving), `heartRateStillWrist` or `heartRateNoMotionData`, and never rejects an episode.
 
-- **Elevated HR** — above `RHR + hrMarginBPM (15 bpm)`. RHR defaults to the day's 10th-percentile HR.
-- **Sustained motion** — gravity-derived intensity (10-second trailing mean) above `motionThreshold = 0.20`.
-
-Active samples are grouped into runs (merging gaps < `mergeGapS = 150 s`), then qualified by intensity: ≥ `minIntensityZ2Plus = 0.50` of the bout in Edwards zone 2+. Per bout it reports avg/peak HR, duration, Edwards zone-time %, mean `%HRR`, strain (via `StrainScorer`), and calories.
+All of these values are engineering parameters not tuned on labelled data. Session numbers come from the same `LoadSummary` as the day. `DetectionEvaluation` is the harness for scoring detection against annotated sessions; nothing has been scored with it.
 
 ### Calories (`Calories.estimateBoutCalories`)
 
@@ -396,7 +428,7 @@ Source: `ComparisonEngine.swift`. Period-over-period comparison of one daily met
 
 ## The library orchestrator: `AnalyticsEngine`
 
-Source: `AnalyticsEngine.swift`. A pure function that ties the recompute engines together for one day. **Implemented and tested, but not yet wired into the import/store pipeline** — the importers currently copy WHOOP's own per-day recovery/strain/sleep numbers from your export.
+Source: `AnalyticsEngine.swift`. A pure function that ties the recompute engines together for one day. **Live** through `IntelligenceEngine` for strap-recorded days; imported values win per field.
 
 `analyzeDay(day:hr:rr:resp:gravity:profile:baselines:maxHROverride:)` runs, in order:
 
@@ -404,8 +436,9 @@ Source: `AnalyticsEngine.swift`. A pure function that ties the recompute engines
 2. Daily sleep aggregates (in-bed-weighted efficiency; deep/REM/light minutes; disturbances) via `hypnogramMetrics`.
 3. Daily resting HR = lowest per-session resting HR; daily avg HRV = in-bed-weighted mean of per-session HRV.
 4. `RecoveryScorer.recovery(...)` with the personal HRV/RHR/resp baselines and the efficiency-based sleep-performance proxy.
-5. `StrainScorer.strain(...)` over the full day's HR window (Tanaka HRmax from age unless overridden).
-6. `WorkoutDetector.detect(...)`.
+5. `HRCalibration.resolve(...)`, unless the caller passes a frozen snapshot.
+6. `WorkoutDetector.detect(...)` over the day's supported intervals.
+7. `DayLoadRecord.compute(...)`: load, attribution, coverage, status and the strain index.
 
 It assembles a `DailyMetric` (the `WhoopStore` cache shape) plus rich `SleepSession`s and `CachedSleepSession` cache rows. Every derived value is **approximate** by construction.
 

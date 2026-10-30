@@ -635,8 +635,9 @@ public enum SleepStager {
         let period = Double(end - start)
         if period <= 0 { return 0 }
         guard !stages.isEmpty else { return 1 }
+        let tiled = SleepAccounting.normalized(stages, period: TimeSpan(start, end))   // gaps → unknown
         func total(_ keep: (SleepState) -> Bool) -> Double {
-            stages.filter { keep($0.state) }.reduce(0.0) { $0 + Double(max(0, min($1.end, end) - max($1.start, start))) }
+            tiled.filter { keep($0.state) }.reduce(0.0) { $0 + Double($1.end - $1.start) }
         }
         let observed = period - total { !$0.isKnown }
         guard observed > 0 else { return 0 }
@@ -1205,7 +1206,9 @@ public enum SleepStager {
     }
 
     public static func hypnogramMetrics(_ session: SleepSession) -> HypnogramMetrics {
-        let segs = session.stages.sorted { $0.start < $1.start }
+        // Uncovered stretches between stored segments are unknown, never observed time.
+        let segs = session.stages.isEmpty ? []
+            : SleepAccounting.normalized(session.stages, period: TimeSpan(session.start, session.end))
         let tib = max(0.0, Double(session.end - session.start))
 
         func dur(_ s: StageSegment) -> Double { Double(s.end - s.start) }

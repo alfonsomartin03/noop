@@ -17,13 +17,13 @@ final class StrandDesignTests: XCTestCase {
     }
 
     func testRecoveryGradientStops() {
-        XCTAssertEqual(StrandPalette.recoveryStops.count, 5)
+        XCTAssertEqual(StrandPalette.recoveryStops.count, 3)
         XCTAssertEqual(StrandPalette.recoveryStops.first?.location, 0.0)
         XCTAssertEqual(StrandPalette.recoveryStops.last?.location, 1.0)
     }
 
     func testRecoveryColorEndpoints() {
-        // Score 0 should equal the indigo start; 100 the mint end.
+        // Score 0 should equal the red start; 100 the green end.
         let low = StrandPalette.recoveryColor(0).rgbaComponents
         let indigo = StrandPalette.recovery000.rgbaComponents
         XCTAssertEqual(low.r, indigo.r, accuracy: 0.02)
@@ -56,13 +56,71 @@ final class StrandDesignTests: XCTestCase {
     }
 
     func testStrainColorScaleAndEndpoints() {
-        // Strain samples the 0...21 ramp; endpoints match ember/magenta.
+        // Strain samples the 0...21 ramp; endpoints match its green and red.
         let ember = StrandPalette.strainColor(0).rgbaComponents
         let start = StrandPalette.strain000.rgbaComponents
         XCTAssertEqual(ember.r, start.r, accuracy: 0.02)
         let magenta = StrandPalette.strainColor(21).rgbaComponents
         let end = StrandPalette.strain100.rgbaComponents
         XCTAssertEqual(magenta.b, end.b, accuracy: 0.02)
+    }
+
+    private func assertHue(_ c: Color, red: Bool, green: Bool, _ note: String) {
+        let v = c.rgbaComponents
+        XCTAssertEqual(v.r > 0.8, red, note)
+        XCTAssertEqual(v.g > 0.8, green, note)
+    }
+
+    func testRecoveryRunsRedYellowGreen() {
+        assertHue(StrandPalette.recoveryColor(0), red: true, green: false, "low recovery is red")
+        assertHue(StrandPalette.recoveryColor(50), red: true, green: true, "middle recovery is yellow")
+        assertHue(StrandPalette.recoveryColor(100), red: false, green: true, "high recovery is green")
+    }
+
+    func testStrainRunsGreenYellowRed() {
+        assertHue(StrandPalette.strainColor(0), red: false, green: true, "low strain is green")
+        assertHue(StrandPalette.strainColor(10.5), red: true, green: true, "middle strain is yellow")
+        assertHue(StrandPalette.strainColor(21), red: true, green: false, "high strain is red")
+    }
+
+    func testScalesAreOppositeEverywhere() {
+        for p in stride(from: 0.0, through: 1.0, by: 0.05) {
+            let r = StrandPalette.recoveryColor(p * 100).rgbaComponents, s = StrandPalette.strainColor((1 - p) * 21).rgbaComponents
+            XCTAssertEqual(r.r, s.r, accuracy: 0.01); XCTAssertEqual(r.g, s.g, accuracy: 0.01); XCTAssertEqual(r.b, s.b, accuracy: 0.01)
+        }
+    }
+
+    func testColorsInterpolateSmoothly() {
+        // No visible jump between neighbouring whole scores.
+        var prev = StrandPalette.recoveryColor(0).rgbaComponents
+        for score in 1...100 {
+            let c = StrandPalette.recoveryColor(Double(score)).rgbaComponents
+            XCTAssertLessThan(abs(c.r - prev.r) + abs(c.g - prev.g) + abs(c.b - prev.b), 0.06, "step at \(score)")
+            prev = c
+        }
+    }
+
+    func testScoreTextReachesAAInBothAppearances() {
+        // WCAG contrast of score text. Surfaces are written out: the adaptive tokens resolve to one appearance per test run.
+        func lum(_ v: (r: Double, g: Double, b: Double)) -> Double {
+            func f(_ x: Double) -> Double { x <= 0.03928 ? x / 12.92 : pow((x + 0.055) / 1.055, 2.4) }
+            return 0.2126 * f(v.r) + 0.7152 * f(v.g) + 0.0722 * f(v.b)
+        }
+        func contrast(_ a: Double, _ b: Double) -> Double { (max(a, b) + 0.05) / (min(a, b) + 0.05) }
+        func surface(_ hex: String) -> Double { let c = Color(hex: hex).rgbaComponents; return lum((c.r, c.g, c.b)) }
+        let dark = ["#050608", "#0F1117", "#181B23"].map(surface), light = ["#F1F3F8", "#FFFFFF"].map(surface)
+        for score in stride(from: 0.0, through: 100.0, by: 2.5) {
+            for c in [StrandPalette.recoveryColor(score), StrandPalette.strainColor(score * 0.21)] {
+                let v = c.rgbaComponents, k = StrandPalette.scoreInkAmount
+                for s in dark { XCTAssertGreaterThan(contrast(lum((v.r, v.g, v.b)), s), 4.5, "dark \(score)") }
+                for s in light { XCTAssertGreaterThan(contrast(lum((v.r * k, v.g * k, v.b * k)), s), 4.5, "light \(score)") }
+            }
+        }
+    }
+
+    func testMissingScoreIsNotAPointOnEitherScale() {
+        let m = StrandPalette.scoreMissing.rgbaComponents
+        XCTAssertLessThan(max(m.r, m.g, m.b) - min(m.r, m.g, m.b), 0.15, "neutral, not a hue from the scales")
     }
 
     func testHRZoneColor() {

@@ -112,6 +112,7 @@ It holds exactly the kinds of data you would expect from the features:
   `skinTempSample`, `respSample`, `gravitySample`, `battery`, `event`.
 - **Derived/cached metrics**: `sleepSession`, `dailyMetric`, `workout`, `journal`,
   `appleDaily`, and the generic long-format `metricSeries`.
+- **Training log** (`sessionEffort`, `strengthSet`): effort ratings and sets you enter on a workout.
 - **A transient raw outbox** (`rawBatch`): compressed raw BLE frames, **prunable**.
 - **Device records** (`device`): strap id, MAC, name, first/last-seen timestamps.
 

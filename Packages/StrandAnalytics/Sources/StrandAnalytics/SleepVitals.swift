@@ -96,8 +96,11 @@ public enum SleepVitalsCalculator {
                                hr: [HRSample], rr: [RRInterval]) -> SleepVitals {
         let hrS = hr.filter { $0.ts >= start && $0.ts <= end }.sorted { $0.ts < $1.ts }
         let rrS = rr.filter { $0.ts >= start && $0.ts <= end }.sorted { $0.ts < $1.ts }
-        let wake = stages.filter { $0.stage == SleepState.wake.rawValue }
-        let unknown = stages.filter { $0.stage == SleepState.unknown.rawValue }
+        // With a hypnogram, any stretch it leaves uncovered is unknown (cannot be confirmed asleep). An empty list means
+        // "no hypnogram supplied" and applies no state gate.
+        let tiled = stages.isEmpty ? [] : SleepAccounting.normalized(stages, period: TimeSpan(start, end))
+        let wake = tiled.filter { $0.state == .wake }
+        let unknown = tiled.filter { $0.state == .unknown }
 
         func frac(_ segs: [StageSegment], _ a: Int, _ b: Int) -> Double {
             let w = segs.reduce(0) { $0 + max(0, min($1.end, b) - max($1.start, a)) }

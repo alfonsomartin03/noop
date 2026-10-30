@@ -10,6 +10,8 @@ Evidence labels used below:
 
 ---
 
+Workout detection and strain are covered separately in [WORKOUT_STRAIN_REPORT.md](WORKOUT_STRAIN_REPORT.md).
+
 ## 1. Defects found and fixed
 
 | # | Defect (verified in code) | Fix | Where |
@@ -25,7 +27,18 @@ Evidence labels used below:
 | 9 | Respiration built its time axis from R-R lengths alone, so a dropped packet was **spliced out of time**. | `RespiratoryRate.estimate(beats:)` splits the series where stamped time and summed R-R time disagree (> 2 s) or stamps jump > 3 s, and analyses one continuous run. | `RespiratoryRate.swift` |
 | 10 | Inferred respiration was being fed into the legacy recovery term. That weight was fitted to WHOOP's *measured* rate. | Not passed to the legacy model. Still stored in `respRateBpm` and labelled experimental. | `RecoveryAssessor` |
 | 11 | Apple Health SDNN was flattened under the generic `"hrv"` key that means RMSSD for WHOOP. It had no persisting caller, so this was latent. | Key renamed to `hrv_sdnn`, with a test that `"hrv"` is absent. | `AppleHealthAggregator.metricPoints` |
-| 12 | A rule-version re-score destroyed previous algorithm outputs. | `recomputeAll` archives the old `-noop` daily rows under `-noop-v<old>` before wiping. `deleteDerived` also clears NOOP's metric-series rows. Imports and raw samples are never touched (tested). | `IntelligenceEngine.recomputeAll`, `MetricsCache.deleteDerived` |
+| 12 | A rule-version re-score destroyed previous algorithm outputs. | Superseded by review fix R3 below. | — |
+
+### Review fixes (second pass)
+
+| # | Defect in the first pass | Fix | Where |
+|---|---|---|---|
+| R1 | `seq` restarted at 0 in every insert batch. A second split across batches collided, and a re-save with a shifted boundary (`[a,b]`, then `[b]`) **stored `b` twice**. | Each second's incoming beats are aligned against the beats already stored for that second: an exact re-delivery adds nothing, a re-pulled overlap is trimmed, and genuine continuation beats get `seq` after the stored ones. The physical one-second rule still drops in-batch retransmissions. One ambiguity remains and is resolved toward never duplicating: an incoming group identical to stored beats counts as a re-delivery, even though at > ~120 bpm it could be a new beat of the same length. | `StreamStore.newBeats`, `insert` |
+| R2 | Partial replay was not equivalent to a full re-score. A replayed day kept stale `noop.*` keys and workouts from the earlier run, and seeding trusted every stored row whatever version produced it. | `CausalReplay` is the single scoring loop. Every planned day is **replaced**: by its new result, or removed when it no longer has data. Seed rows count only through their persisted provenance. Tested: a 10-day partial replay equals the same days of a full replay. | `CausalReplay.swift`, `IntelligenceEngine.analyzeRecent` |
+| R3 | Archive and recompute could fail half-way: `try?` archive, then unconditional delete, then the version was marked applied even after a failure. | `WhoopStore.writeDerived` archives (all five derived tables), deletes and writes in **one transaction**. The whole re-score is computed first. Any failure leaves previous rows untouched, and the version is marked applied only after a successful commit, so it's retried next launch. Rows older than the re-score horizon are kept with their provenance instead of being deleted. | `DerivedStore.swift`, `IntelligenceEngine.recomputeAll` |
+| R4 | "24-h sleep" used an effectively unbounded window over the day's sessions only. | Exactly 86 400 s of elapsed time ending at the day's final awakening (main sleep, else the last nap), from **all** detected sessions, clipped at the window start. `observedWindowFraction` records how much of that window the data read for the day covered; below 1, `sleepMin` is a lower bound. | `SleepAccounting.sleep24h`, `AnalyticsEngine` |
+| R5 | Provenance existed only in memory. | Migration **v11** adds `metricProvenance(deviceId, day, key, definition, unit, source, hardware, algorithmVersion, context, aggregation, coverage, exclusionReasons, scoringVersion)`. It's written in the same transaction as the values, for every derived key, and unavailable values carry a reason. Stored rows without readable current provenance never seed a reference. | `Database.swift` v11, `ProvenanceKey.records`, `MetricIdentity(record:)` |
+| R6 | Time between stored segments was treated as observed, and `stateGrid` called it wake. | `SleepAccounting.normalized` tiles the period: gaps become `unknown` (`no segment`), and overlaps are trimmed so each second counts once. It's used by `summarize`, `hypnogramMetrics`, `SleepStager.efficiency`, `SleepVitals` and `stateGrid`. | `SleepAccounting.swift` and callers |
 
 Preserved unchanged: median valid-window RMSSD, the lower-quartile-window resting HR, gap/rejection-aware adjacency in `analyzeTimed`, and every existing gate value.
 
@@ -55,7 +68,7 @@ Preserved unchanged: median valid-window RMSSD, the lower-quartile-window restin
 | Metric | Definition | Missingness / denominator |
 |---|---|---|
 | TST | union of all sleep states (incl. `asleep`) | `[S, S+U]` bounds from unknown time. These are **not** a confidence interval |
-| 24-h sleep | union of nights, naps and overlapping imports, clipped to a window | elapsed seconds; overlap counted once; DST days handled by timestamp arithmetic |
+| 24-h sleep | union of all detected sleep in the 86 400 s ending at the day's final awakening | elapsed seconds; overlap counted once; episodes straddling the window start clipped; `observedWindowFraction` < 1 when the read window started later (a lower bound) |
 | Efficiency (TIB) | `100 · TST / TIB` | `nil` without a real in-bed boundary source. NOOP has none today, so the stored `efficiency` field is the separately defined *observed sleep-period* efficiency |
 | SOL | onset − attempt time | `nil` without an attempt time (never 0) |
 | WASO | observed wake between first onset and final awakening | unknown time in that span reported beside it (`unknownInSleepPeriodS`) |
@@ -104,11 +117,13 @@ Preprocessing must be fitted on training participants only; the harness can't en
 
 | Package | Result | New |
 |---|---|---|
-| StrandAnalytics | 218 / 218 pass | 34 (`MeasurementValidityTests`), covering acceptance items 1–11 and the harness |
-| WhoopStore | 81 / 81 pass | 6 (`RRSequenceTests`, `DerivedIsolationTests`), covering item 2 at storage level, item 12, and the v9→v10 migration |
-| StrandImport aggregator | 28 / 28 pass | 1 assertion: SDNN is not under `"hrv"` |
-| StrandImport importer/coordinator | 27 failures **before and after** this change | missing `export.xml` fixtures; unrelated |
+| StrandAnalytics | 230 / 230 pass | 35 (`MeasurementValidityTests`) + 11 (`ReplayRegressionTests`: partial replay, persisted-provenance gating, 24-h clipping, implicit gaps) |
+| WhoopStore | 90 / 90 pass | 15 (`RRSequenceTests` incl. split-batch ingestion, `DerivedIsolationTests`, `DerivedWriteTests`: injected-failure rollback for both write scopes, partial-replay cleanup, archive of all derived tables, provenance round trip, v11) |
+| WhoopProtocol | 85 / 85 pass | — |
+| StrandImport | 34 / 61 pass; aggregator 28 / 28 | 27 failures **before and after**: all are a missing `export.xml` fixture in importer/coordinator suites |
 | App (`xcodebuild`, macOS, unsigned) | builds | — |
+
+Mutation checks: removing gap normalisation fails the gap test. Removing BOTH the plan-day row filter and the plan-day provenance filter from `CausalReplay` fails the stale-row replay test. Removing either one alone doesn't, because the other still blocks the leak.
 
 Item 12 is partly out of reach. Raw samples, imports and earlier algorithm outputs survive. **Manual corrections** don't exist as a feature yet, so there's nothing to preserve.
 
@@ -116,7 +131,8 @@ Item 12 is partly out of reach. Raw samples, imports and earlier algorithm outpu
 
 ## 4. What changes for the user
 
-- **First launch** runs store migration v10, which rebuilds the R-R table (a one-time cost proportional to stored beats). Then scoring v3 runs a full re-score with v2 rows archived.
+- **First launch** runs store migrations v10 (rebuilds the R-R table once, a cost proportional to stored beats) and v11 (adds the provenance table). Then scoring v3 runs a full re-score that is written atomically, with previous rows archived under `-noop-v<old>`. If it fails, the old scores stay and it retries on the next launch.
+- Existing NOOP rows have no provenance, so until the v3 re-score commits they don't seed baselines. Rows older than the 730-day re-score horizon are kept but never seed.
 - **Recovery needs NOOP's own history.** Imported WHOOP nights no longer seed NOOP baselines, so a strap-only history needs ≥ 4 NOOP-measured nights (legacy) or ≥ 5 (autonomic component) before a score appears. Days with only an import still show WHOOP's own score.
 - Recovery values shift: no inferred respiration term, causal baselines, and some nights withheld by the quality guard.
 - Nightly HRV/RHR may be unavailable more often: duplicated streams, rows-not-seconds coverage, and unknown-state windows are now rejected.

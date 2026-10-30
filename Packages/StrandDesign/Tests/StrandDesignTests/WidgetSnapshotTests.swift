@@ -35,7 +35,7 @@ final class WidgetSnapshotTests: XCTestCase {
                             SleepStageBar(deep: 95, rem: 110, light: 250, awake: 20)
                         }
                     }
-                    StrandWidget("Strain", symbol: "flame.fill", tint: StrandPalette.strain033, action: {}) {
+                    StrandWidget("Strain", symbol: "flame.fill", tint: StrandPalette.strainColor(12.4), action: {}) {
                         VStack(alignment: .leading, spacing: 6) { WidgetValue("12.4", unit: "/ 21"); Spacer(minLength: 0); WidgetCaption("Strenuous") }
                     }
                     StrandWidget("Heart rate", symbol: "heart.fill", tint: StrandPalette.metricRose, action: {}) {

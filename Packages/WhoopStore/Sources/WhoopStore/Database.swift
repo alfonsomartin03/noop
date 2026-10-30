@@ -241,6 +241,98 @@ extension WhoopStore {
             try db.drop(table: "rrInterval")
             try db.rename(table: "rrInterval_v10", to: "rrInterval")
         }
+        migrator.registerMigration("v11") { db in
+            // Provenance of each DERIVED value: what it is, how and by which algorithm version it was computed, its
+            // coverage and why it may be unavailable. Lets a later run tell current-version values from stale ones
+            // instead of trusting every stored row (see StrandAnalytics MetricIdentity). One row per (device, day, key).
+            try db.create(table: "metricProvenance") { t in
+                t.column("deviceId", .text).notNull()
+                t.column("day", .text).notNull()
+                t.column("key", .text).notNull()
+                t.column("definition", .text).notNull()
+                t.column("unit", .text).notNull()
+                t.column("source", .text).notNull()
+                t.column("hardware", .text).notNull()
+                t.column("algorithmVersion", .text).notNull()
+                t.column("context", .text).notNull()
+                t.column("aggregation", .text).notNull()
+                t.column("coverage", .double)
+                t.column("exclusionReasons", .text).notNull().defaults(to: "")
+                t.column("scoringVersion", .integer).notNull()
+                t.primaryKey(["deviceId", "day", "key"])
+            }
+        }
+        migrator.registerMigration("v12") { db in
+            // Load accounting behind a derived day or session: coverage, calibration snapshot, versions and reasons, as
+            // JSON (StrandAnalytics owns the shape, like stagesJSON). Lets a past day keep the calibration it was scored
+            // with. One row per day (scope "day", startTs 0) and per detected session (scope "session").
+            try db.create(table: "loadRecord") { t in
+                t.column("deviceId", .text).notNull()
+                t.column("day", .text).notNull()
+                t.column("scope", .text).notNull()
+                t.column("startTs", .integer).notNull()
+                t.column("algorithmVersion", .text).notNull()
+                t.column("payload", .text).notNull()
+                t.primaryKey(["deviceId", "day", "scope", "startTs"])
+            }
+        }
+        migrator.registerMigration("v13") { db in
+            // What the user reported about a workout: session effort and logged strength sets. These are source data,
+            // not derived rows, so they have no deviceId: the derived writers delete and archive by deviceId and can
+            // never match them. A workout is identified by the start it had when logged; workoutEndTs keeps that span
+            // so the entry can be found again if a re-score moves the start. One effort row per workout: a missing
+            // response is no row, never a zero.
+            try db.create(table: "sessionEffort") { t in
+                t.column("workoutStartTs", .integer).notNull().primaryKey()
+                t.column("workoutEndTs", .integer).notNull()
+                t.column("scale", .text).notNull()
+                t.column("rpe", .double).notNull().check(sql: "rpe >= 0 AND rpe <= 10")
+                t.column("sessionMinutes", .double).notNull().check(sql: "sessionMinutes > 0")
+                t.column("collectedAt", .integer).notNull()
+                t.column("provenance", .text).notNull()
+            }
+            // externalKg NULL = no external load logged (bodyweight work); never filled in with body mass.
+            try db.create(table: "strengthSet") { t in
+                t.column("workoutStartTs", .integer).notNull()
+                t.column("setIndex", .integer).notNull()
+                t.column("workoutEndTs", .integer).notNull()
+                t.column("exercise", .text).notNull().check(sql: "length(trim(exercise)) > 0")
+                t.column("reps", .integer).notNull().check(sql: "reps > 0")
+                t.column("externalKg", .double).check(sql: "externalKg >= 0")
+                t.column("rir", .integer).check(sql: "rir >= 0")
+                t.column("collectedAt", .integer).notNull()
+                t.column("provenance", .text).notNull()
+                t.primaryKey(["workoutStartTs", "setIndex"])
+            }
+        }
+        migrator.registerMigration("v14") { db in
+            // Who says what a workout was. Source data like the training log: no deviceId, so a re-score can't reach it,
+            // and workoutEndTs keeps the span so the label still finds its workout if detection moves the edges.
+            try db.create(table: "workoutLabel") { t in
+                t.column("workoutStartTs", .integer).notNull().primaryKey()
+                t.column("workoutEndTs", .integer).notNull()
+                t.column("activity", .text).notNull()
+                t.column("provenance", .text).notNull()
+                t.column("updatedAt", .integer).notNull()
+            }
+            // What each stored day's score was computed from, so unchanged history is reused and only affected days are
+            // recomputed. Written in the same transaction as the day's results (see DerivedStore).
+            try db.create(table: "dayScoreState") { t in
+                t.column("deviceId", .text).notNull()
+                t.column("day", .text).notNull()
+                t.column("algorithmKey", .text).notNull()
+                t.column("configKey", .text).notNull()
+                t.column("inputRevision", .integer).notNull()
+                t.column("calibrationKey", .text).notNull()
+                t.column("baselineKey", .text).notNull()
+                t.column("knownSessionsKey", .text).notNull()
+                t.column("rangeStart", .integer).notNull()
+                t.column("rangeEnd", .integer).notNull()
+                t.column("finalized", .boolean).notNull()
+                t.column("hasResult", .boolean).notNull()
+                t.primaryKey(["deviceId", "day"])
+            }
+        }
         return migrator
     }
 }

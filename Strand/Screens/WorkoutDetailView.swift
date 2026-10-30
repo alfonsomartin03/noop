@@ -76,7 +76,8 @@ struct WorkoutSelection: Identifiable {
 }
 
 /// One workout: elapsed time, summary numbers and the heart-rate curve across it. Hovering the curve reads out the
-/// bpm and the elapsed time (plus wall-clock time) at that point.
+/// bpm and the elapsed time (plus wall-clock time) at that point. Below it, optional reported effort and logged sets,
+/// shown as their own fields beside strain and never combined with it.
 struct WorkoutDetailView: View {
     @EnvironmentObject var repo: Repository
     @Environment(\.dismiss) private var dismiss
@@ -84,11 +85,20 @@ struct WorkoutDetailView: View {
 
     @State private var samples: [HRSample] = []
     @State private var loaded = false
+    @State private var sessionLoad: SessionLoadRecord?
+    @State private var log: TrainingLogEntry?
+    @State private var logFailed = false
+    @State private var exerciseText = ""
+    @State private var repsText = ""
+    @State private var kgText = ""
+    @State private var rirText = ""
+    @FocusState private var editing: Bool
+    @State private var label: ActivityLabel?
 
     private static let gradient = Gradient(colors: [StrandPalette.metricCyan, StrandPalette.metricRose, StrandPalette.statusCritical])
 
     private var durationS: Double { workout.durationS ?? Double(max(workout.endTs - workout.startTs, 0)) }
-    private var avg: Int? { samples.isEmpty ? workout.avgHr : samples.map(\.bpm).reduce(0, +) / samples.count }
+    private var avg: Int? { workout.avgHr ?? (samples.isEmpty ? nil : samples.map(\.bpm).reduce(0, +) / samples.count) }
     private var peak: Int? { samples.map(\.bpm).max() ?? workout.maxHr }
 
     /// At most ~600 points so a multi-hour session stays smooth; each point is the mean of its slice.
@@ -103,24 +113,95 @@ struct WorkoutDetailView: View {
         }
     }
 
+    /// Reported effort as a load, or nil when the user gave no response.
+    private var sessionRPE: SessionRPE? { log?.effort.flatMap { SessionRPE(row: $0) } }
+    /// An existing entry keeps the span it was logged under, even if a re-score has since moved this workout.
+    private var logStart: Int { log?.workoutStartTs ?? workout.startTs }
+    private var logEnd: Int { log?.workoutEndTs ?? workout.endTs }
+    /// The set the form would add; nil until what's typed can be read.
+    private var draftSet: StrengthSet? { StrengthSet(exercise: exerciseText, reps: repsText, kg: kgText, rir: rirText) }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: NoopMetrics.gap) {
+        VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(workout.sport).font(.system(size: 22, weight: .bold)).foregroundStyle(StrandPalette.textPrimary)
+                    activityMenu
                     Text("\(Self.dateText(workout.startTs)) · \(DayMath.clock(workout.startTs)) – \(DayMath.clock(workout.endTs))")
                         .font(.system(size: 13)).foregroundStyle(StrandPalette.textSecondary)
                 }
                 Spacer()
-                Button("Done") { dismiss() }.buttonStyle(.strandPrimary).keyboardShortcut(.defaultAction)
+                // Return in a set field adds the set rather than closing the sheet.
+                Button("Done") { dismiss() }.buttonStyle(.strandPrimary).keyboardShortcut(editing ? nil : .defaultAction)
             }
+            .padding(24)
 
+            ScrollView {
+                details
+                    .padding([.horizontal, .bottom], 24)
+            }
+        }
+        .frame(minWidth: 620, minHeight: 460, idealHeight: 760)
+        .background(StrandPalette.surfaceBase)
+        .task { await load() }
+    }
+
+    /// The activity type, editable. Changing it changes no score.
+    private var activityMenu: some View {
+        Menu {
+            ForEach(ActivityType.allCases, id: \.self) { type in
+                Button(type.displayName) { pick(type) }
+            }
+            if label?.stored != nil {
+                Divider()
+                Button("Remove my label") { pick(nil) }
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Text(label?.name ?? workout.sport).font(.system(size: 22, weight: .bold))
+                    .foregroundStyle(StrandPalette.textPrimary)
+                Image(systemName: "chevron.up.chevron.down").font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(StrandPalette.textTertiary)
+                if let source = labelSource {
+                    Text(source).font(.system(size: 11)).foregroundStyle(StrandPalette.textTertiary)
+                }
+            }
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .accessibilityLabel("Activity type")
+    }
+
+    private var labelSource: String? {
+        switch label?.provenance {
+        case .userSelected: return "Set by you"
+        case .imported: return "From import"
+        case .inferred: return "Estimated"
+        default: return label == nil ? nil : "Tap to set"
+        }
+    }
+
+    private func pick(_ type: ActivityType?) {
+        guard let current = label else { return }
+        Task {
+            await repo.setActivity(type, for: workout, current: current)
+            label = await repo.activityLabel(workout)
+        }
+    }
+
+    private var details: some View {
+        VStack(alignment: .leading, spacing: NoopMetrics.gap) {
             HStack(spacing: NoopMetrics.gap) {
                 stat("Elapsed", Self.elapsed(durationS), StrandPalette.accent)
                 stat("Avg HR", avg.map { "\($0) bpm" }, StrandPalette.metricRose)
                 stat("Peak HR", peak.map { "\($0) bpm" }, StrandPalette.statusCritical)
                 if let kcal = workout.energyKcal { stat("Energy", "\(Int(kcal.rounded())) kcal", StrandPalette.metricAmber) }
-                if let s = workout.strain { stat("Strain", String(format: "%.1f", s), StrandPalette.strainColor(s)) }
+            }
+
+            loadFields
+
+            if let note = sessionNote {
+                Text(note).font(.system(size: 12)).foregroundStyle(StrandPalette.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             VStack(alignment: .leading, spacing: 8) {
@@ -130,11 +211,155 @@ struct WorkoutDetailView: View {
             .padding(NoopMetrics.cardPadding)
             .frame(maxWidth: .infinity, alignment: .leading)
             .strandSurface()
+
+            logCard
         }
-        .padding(24)
-        .frame(minWidth: 620, minHeight: 460)
-        .background(StrandPalette.surfaceBase)
-        .task { await load() }
+    }
+
+    /// Cardio, perceived effort and each exercise's volume side by side, each in its own units. No total across them.
+    private var loadFields: some View {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: NoopMetrics.gap)], alignment: .leading, spacing: NoopMetrics.gap) {
+            if let s = workout.strain {
+                stat("Cardio strain", String(format: "%.1f", s), StrandPalette.scoreInk(StrandPalette.strainColor(s)), caption: "From heart rate")
+            }
+            stat("Session RPE load", sessionRPE.map { "\(Int($0.load.rounded())) AU" }, StrandPalette.lavenderInk,
+                 caption: sessionRPE.map { "RPE \(Self.number($0.rpe)) × \(Int($0.sessionMinutes.rounded())) min" } ?? "Not reported")
+            ForEach(StrengthVolume.summaries((log?.sets ?? []).map(StrengthSet.init(row:))), id: \.exercise) { e in
+                stat(e.exercise, e.volumeKg.map { "\(Self.number($0)) kg" }, StrandPalette.accentInk,
+                     caption: "\(e.sets) \(e.sets == 1 ? "set" : "sets") · \(e.reps) reps" + (e.volumeKg == nil ? " · no load" : ""))
+            }
+        }
+    }
+
+    // MARK: Session log
+
+    private var logCard: some View {
+        VStack(alignment: .leading, spacing: NoopMetrics.gap) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Session log").font(StrandFont.headline).foregroundStyle(StrandPalette.textPrimary)
+                Text("Optional, and separate from strain. Blank stays blank.")
+                    .font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text("Perceived effort").font(StrandFont.subhead.weight(.semibold)).foregroundStyle(StrandPalette.textSecondary)
+                    Spacer()
+                    if log?.effort != nil {
+                        Button("Clear") { Task { await clearEffort() } }.buttonStyle(.strandSecondary)
+                    }
+                }
+                HStack(spacing: 4) {
+                    ForEach(0...10, id: \.self) { n in rpeChoice(n) }
+                }
+                .disabled(!loaded || durationS <= 0)
+                Text("How hard was the whole session? CR10 scale: 0 rest · 3 moderate · 5 hard · 7 very hard · 10 maximal.")
+                    .font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let e = log?.effort {
+                    Text(Self.collectionNote(e)).font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            Rectangle().fill(StrandPalette.hairline).frame(height: 0.5)
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Exercises").font(StrandFont.subhead.weight(.semibold)).foregroundStyle(StrandPalette.textSecondary)
+                ForEach(log?.sets ?? [], id: \.setIndex) { setRow($0) }
+                HStack(spacing: 8) {
+                    logField("Exercise", $exerciseText)
+                    logField("Reps", $repsText).frame(width: 64)
+                    logField("kg", $kgText).frame(width: 72)
+                    logField("RIR", $rirText).frame(width: 64)
+                    Button("Add set") { Task { await addSet() } }
+                        .buttonStyle(.strandSecondary)
+                        .disabled(!loaded || draftSet == nil)
+                }
+                Text("Leave kg blank for bodyweight: body mass is never added. Load counts as you enter it, so compare an exercise with itself.")
+                    .font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if let log, log.workoutStartTs != workout.startTs {
+                Text("Logged against this session as it was detected then, \(DayMath.clock(log.workoutStartTs)) – \(DayMath.clock(log.workoutEndTs)).")
+                    .font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
+            }
+            if logFailed {
+                Text("That change couldn't be saved.").font(StrandFont.caption).foregroundStyle(StrandPalette.statusCriticalInk)
+            }
+        }
+        .padding(NoopMetrics.cardPadding)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .strandSurface()
+    }
+
+    private func rpeChoice(_ n: Int) -> some View {
+        let selected = log?.effort?.rpe == Double(n)
+        return Button { Task { await setEffort(n) } } label: {
+            Text("\(n)")
+                .font(StrandFont.captionNumber)
+                .foregroundStyle(selected ? StrandPalette.textPrimary : StrandPalette.textSecondary)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
+                .background(selected ? StrandPalette.accentMuted : StrandPalette.surfaceInset,
+                            in: RoundedRectangle(cornerRadius: NoopMetrics.controlRadius, style: .continuous))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Effort \(n) of 10")
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+
+    private func setRow(_ s: StrengthSetRow) -> some View {
+        HStack(spacing: 8) {
+            Text(s.exercise).font(StrandFont.body).foregroundStyle(StrandPalette.textPrimary).lineLimit(1)
+            Spacer()
+            Text(Self.setText(s)).font(StrandFont.bodyNumber).foregroundStyle(StrandPalette.textSecondary)
+            Button { Task { await deleteSet(s) } } label: {
+                Image(systemName: "xmark").font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Remove set")
+        }
+    }
+
+    private func logField(_ prompt: String, _ text: Binding<String>) -> some View {
+        TextField(prompt, text: text)
+            .textFieldStyle(.plain)
+            .font(StrandFont.body)
+            .foregroundStyle(StrandPalette.textPrimary)
+            .focused($editing)
+            .onSubmit { Task { await addSet() } }
+            .padding(.horizontal, 10).padding(.vertical, 7)
+            .background(StrandPalette.surfaceInset, in: RoundedRectangle(cornerRadius: NoopMetrics.controlRadius, style: .continuous))
+    }
+
+    private func setEffort(_ n: Int) async {
+        // Tapping the current answer isn't a new response, so it keeps its collection time.
+        guard log?.effort?.rpe != Double(n),
+              let rpe = SessionRPE(rpe: Double(n), sessionMinutes: durationS / 60, collectedAt: Int(Date().timeIntervalSince1970)) else { return }
+        await applyLog(await repo.saveEffort(rpe, workoutStartTs: logStart, workoutEndTs: logEnd))
+    }
+
+    private func clearEffort() async {
+        await applyLog(await repo.clearEffort(workoutStartTs: logStart))
+    }
+
+    private func addSet() async {
+        guard loaded, let set = draftSet else { return }
+        await applyLog(await repo.addSet(set, workoutStartTs: logStart, workoutEndTs: logEnd,
+                                         collectedAt: Int(Date().timeIntervalSince1970)))
+        // The fields stay filled: the next set is usually the same lift.
+    }
+
+    private func deleteSet(_ s: StrengthSetRow) async {
+        await applyLog(await repo.deleteSet(workoutStartTs: s.workoutStartTs, setIndex: s.setIndex))
+    }
+
+    private func applyLog(_ saved: Bool) async {
+        logFailed = !saved
+        log = await repo.trainingLog(workout)
     }
 
     @ViewBuilder private var chart: some View {
@@ -164,10 +389,22 @@ struct WorkoutDetailView: View {
         }
     }
 
-    private func stat(_ label: String, _ value: String?, _ tint: Color) -> some View {
+    /// What the detection rests on and how much of the session was seen. Nil for imported workouts.
+    private var sessionNote: String? {
+        guard let l = sessionLoad else { return nil }
+        var parts = [l.evidence.note + ". Cardiovascular load only; muscular work isn't measured."]
+        if l.pausedS > 0 { parts.append("\(Self.elapsed(Double(l.pausedS))) paused.") }
+        if l.unknownS > 0 { parts.append("\(Self.elapsed(Double(l.unknownS))) not recorded.") }
+        return parts.joined(separator: " ")
+    }
+
+    private func stat(_ label: String, _ value: String?, _ tint: Color, caption: String? = nil) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(label).font(.system(size: 12, weight: .semibold)).foregroundStyle(StrandPalette.textSecondary)
+            Text(label).font(.system(size: 12, weight: .semibold)).foregroundStyle(StrandPalette.textSecondary).lineLimit(1)
             Text(value ?? "—").font(.system(size: 22, weight: .bold).monospacedDigit()).foregroundStyle(tint)
+            if let caption {
+                Text(caption).font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary).lineLimit(1)
+            }
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -176,7 +413,28 @@ struct WorkoutDetailView: View {
 
     private func load() async {
         samples = (await repo.hrSamples(from: workout.startTs, to: workout.endTs, limit: 50_000)).sorted { $0.ts < $1.ts }
+        sessionLoad = await repo.sessionLoad(workout)
+        label = await repo.activityLabel(workout)
+        log = await repo.trainingLog(workout)
         loaded = true
+    }
+
+    /// Whole numbers without a decimal, half kilos with one, thousands grouped.
+    private static func number(_ v: Double) -> String {
+        v.formatted(.number.precision(.fractionLength(0...1)))
+    }
+
+    private static func setText(_ s: StrengthSetRow) -> String {
+        var t = s.externalKg.map { "\(s.reps) × \(number($0)) kg" } ?? "\(s.reps) reps, no external load"
+        if let rir = s.rir { t += " · RIR \(rir)" }
+        return t
+    }
+
+    /// When the answer was given relative to the session, so a late response can be told apart.
+    private static func collectionNote(_ e: SessionEffortRow) -> String {
+        let lag = e.collectedAt - e.workoutEndTs
+        let timing = lag > 0 ? ", \(elapsed(Double(lag))) after the session" : " during the session"
+        return "Reported by you \(dateText(e.collectedAt)) at \(DayMath.clock(e.collectedAt))\(timing) (\(e.scale))."
     }
 
     /// h:mm:ss, or m:ss under an hour.

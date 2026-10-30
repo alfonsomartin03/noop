@@ -350,7 +350,9 @@ targets: [
 |---|---|
 | `HRVAnalyzer` | `analyze(_:windowStart:windowEnd:)` and `analyze(rawRR:)` → `HRVResult` (RMSSD, SDNN, meanNN, pNN50). Range filter [300, 2000] ms + Malik 20%-local-median ectopic rejection; needs ≥ 20 clean beats. |
 | `RecoveryScorer` | `restingHR(_:start:end:)`; `recovery(...)` → 0–100 (HRV-dominant z-score + logistic composite); `band(_:)` → `"red"`/`"yellow"`/`"green"`. |
-| `StrainScorer` | `strain(_:maxHR:restingHR:method:sex:denominator:)` → 0–21 (Edwards/Banister TRIMP, log-mapped); `tanakaHRmax(age:)`, `estimateHRmax(_:age:)`, `trimpToStrain(_:)`. |
+| `SupportedHR` | `init(raw:)` → supported intervals; `clipped(to:excluding:)`, `observedSeconds(in:)`. The one time-accounting layer. |
+| `CardioLoad` | `LoadSummary` (observed time, time-weighted HR, zone seconds, load); `LoadMethod` registry; `banisterIntegrated`, `banisterSessionMean`, `edwardsHRRVariant`. |
+| `StrainScorer` | `dayIndex(load:)`, `activityIndex(load:)` → versioned 0–21 display index; `tanakaHRmax(age:)`. |
 | `HRZones` | `zones(age:maxHROverride:)` → `HRZoneSet`; `timeInZone(_:zoneSet:)` → `TimeInZone`. |
 | `Baselines` | `update(_:value:cfg:)` → `BaselineState` (Winsorized-EWMA personal baselines + `BaselineStatus`); standard `metricCfg` for HRV / resting HR / resp / skin temp. |
 | `SleepStager` | `detectSleep(hr:rr:resp:gravity:)` → `[SleepSession]` (in-bed detection + approximate 4-class staging); `hypnogramMetrics(_:)` → `HypnogramMetrics`. |
@@ -372,8 +374,9 @@ import WhoopProtocol
 let hrv = HRVAnalyzer.analyze(rrIntervals, windowStart: bedStart, windowEnd: wakeEnd)
 print("RMSSD:", hrv.rmssd ?? .nan, "ms")
 
-// Day strain from the full HR series.
-let strain = StrainScorer.strain(hrSamples, maxHR: 190, restingHR: 50)  // 0…21
+// Load over the supported seconds of an HR series, then the display index.
+let load = LoadSummary(SupportedHR(raw: hrSamples), requestedS: 86_400, hrMax: 190)
+let strain = StrainScorer.dayIndex(load: load.zoneLoad)  // 0…21, nil for invalid load
 
 // Full-day rollup (sleep + recovery + strain + workouts) in one call.
 let day = AnalyticsEngine.analyzeDay(

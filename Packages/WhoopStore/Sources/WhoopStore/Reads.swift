@@ -8,15 +8,24 @@ extension WhoopStore {
     /// thousands of rows; reusing one decoder removes that per-row allocation.
     fileprivate static let eventDecoder = JSONDecoder()
 
+    /// Scoring reads hundreds of thousands of rows a pass, so decoding is by column position through a cursor: looking
+    /// columns up by name per row was over half the cost of a read.
+    fileprivate static func fetchStream<T>(_ db: Database, sql: String, arguments: StatementArguments,
+                                           _ decode: (Row) -> T) throws -> [T] {
+        var out: [T] = []
+        let rows = try Row.fetchCursor(db, sql: sql, arguments: arguments)
+        while let r = try rows.next() { out.append(decode(r)) }
+        return out
+    }
+
     // All stream reads share one shape: a device, an inclusive [from, to] ts window, and a row limit, oldest first.
     public func hrSamples(deviceId: String, from: Int, to: Int, limit: Int) async throws -> [HRSample] {
         try syncRead { db in
-            try Row.fetchAll(db, sql: """
+            try Self.fetchStream(db, sql: """
                 SELECT ts, bpm FROM hrSample
                 WHERE deviceId = ? AND ts >= ? AND ts <= ?
                 ORDER BY ts ASC LIMIT ?
-                """, arguments: [deviceId, from, to, limit])
-                .map { HRSample(ts: $0["ts"], bpm: $0["bpm"]) }
+                """, arguments: [deviceId, from, to, limit]) { HRSample(ts: $0[0], bpm: $0[1]) }
         }
     }
 
@@ -24,12 +33,11 @@ extension WhoopStore {
     // value: ordering by rrMs would reorder neighbouring beats and corrupt every successive difference (RMSSD).
     public func rrIntervals(deviceId: String, from: Int, to: Int, limit: Int) async throws -> [RRInterval] {
         try syncRead { db in
-            try Row.fetchAll(db, sql: """
+            try Self.fetchStream(db, sql: """
                 SELECT ts, rrMs FROM rrInterval
                 WHERE deviceId = ? AND ts >= ? AND ts <= ?
                 ORDER BY ts ASC, seq ASC, rowid ASC LIMIT ?
-                """, arguments: [deviceId, from, to, limit])
-                .map { RRInterval(ts: $0["ts"], rrMs: $0["rrMs"]) }
+                """, arguments: [deviceId, from, to, limit]) { RRInterval(ts: $0[0], rrMs: $0[1]) }
         }
     }
 
@@ -86,23 +94,21 @@ extension WhoopStore {
 
     public func respSamples(deviceId: String, from: Int, to: Int, limit: Int) async throws -> [RespSample] {
         try syncRead { db in
-            try Row.fetchAll(db, sql: """
+            try Self.fetchStream(db, sql: """
                 SELECT ts, raw FROM respSample
                 WHERE deviceId = ? AND ts >= ? AND ts <= ?
                 ORDER BY ts ASC LIMIT ?
-                """, arguments: [deviceId, from, to, limit])
-                .map { RespSample(ts: $0["ts"], raw: $0["raw"]) }
+                """, arguments: [deviceId, from, to, limit]) { RespSample(ts: $0[0], raw: $0[1]) }
         }
     }
 
     public func gravitySamples(deviceId: String, from: Int, to: Int, limit: Int) async throws -> [GravitySample] {
         try syncRead { db in
-            try Row.fetchAll(db, sql: """
+            try Self.fetchStream(db, sql: """
                 SELECT ts, x, y, z FROM gravitySample
                 WHERE deviceId = ? AND ts >= ? AND ts <= ?
                 ORDER BY ts ASC LIMIT ?
-                """, arguments: [deviceId, from, to, limit])
-                .map { GravitySample(ts: $0["ts"], x: $0["x"], y: $0["y"], z: $0["z"]) }
+                """, arguments: [deviceId, from, to, limit]) { GravitySample(ts: $0[0], x: $0[1], y: $0[2], z: $0[3]) }
         }
     }
 

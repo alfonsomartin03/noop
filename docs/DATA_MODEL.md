@@ -75,6 +75,7 @@ The schema falls into four groups:
 | **Raw outbox** (transient) | `rawBatch` | Compressed raw BLE frames, prunable |
 | **Bookkeeping** | `cursors` | Highwater / read cursors |
 | **Metric caches** | `sleepSession`, `dailyMetric`, `journal`, `workout`, `appleDaily`, `metricSeries` | Derived metrics + CSV / Apple-Health imports |
+| **Training log** (durable) | `sessionEffort`, `strengthSet` | Entered by the user on the workout sheet |
 
 All timestamp columns named `ts`, `startTs`, `endTs`, `capturedAt`, etc. are **unix seconds**
 (integers). Day-keyed cache tables use a `day` text column in `YYYY-MM-DD` form and compare it
@@ -98,6 +99,12 @@ Migrations are registered in `Packages/WhoopStore/Sources/WhoopStore/Database.sw
 | **v7** | Adds in-sleep signal aggregates to `dailyMetric`: `spo2Pct`, `skinTempDevC`, `respRateBpm` (all nullable). |
 | **v8** | Adds `journal`, `workout`, and `appleDaily` (Apple-Health daily aggregates). |
 | **v9** | Adds the generic long-format `metricSeries` table and its `(deviceId, key, day)` index. |
+| **v10** | Rebuilds `rrInterval` so a beat is keyed by `(deviceId, ts, seq, rrMs)`. |
+| **v11** | Adds `metricProvenance`: what each derived value is, how it was computed, its coverage and why it may be unavailable. |
+| **v12** | Adds `loadRecord`: JSON load accounting per derived day and session, including the calibration snapshot. |
+| **v13** | Adds `sessionEffort` and `strengthSet`: user-entered training log. Source data, no `deviceId`, never touched by a re-score. |
+| **v14** | Adds `workoutLabel` (activity type with provenance; source data like v13) and `dayScoreState` (what each stored day was computed from, for incremental scoring). |
+| **v13** | Adds `sessionEffort` and `strengthSet`: user-entered training data, kept apart from derived rows. |
 
 ### The vestigial `synced` column
 
@@ -439,6 +446,44 @@ those reads index-only. Accessors: `upsertMetricSeries(...)`, `metricSeries(...)
 `metricKeys(...)` (distinct keys for a device), and `metricDays(...)` (`MIN`/`MAX` day per key).
 
 ---
+
+## Training log (user-entered, durable)
+
+What the user reported about a workout (`TrainingLogStore.swift`). This is source data, not a cache: neither table has a
+`deviceId` or appears in `derivedTables`, so `writeDerived` and `deleteDerived` cannot delete or archive it. A workout is
+identified by the start it had when logged. `workoutEndTs` keeps that span, so if a re-score moves the workout,
+`trainingLog(workoutStartTs:workoutEndTs:)` falls back to the logged entry it overlaps most, and later writes keep the
+original key. Nothing here is estimated, and neither table feeds a score.
+
+### `sessionEffort` *(v13)*
+
+One reported effort per workout (`struct SessionEffortRow`). No response means no row, never a zero.
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| `workoutStartTs` | INTEGER NOT NULL | PK. Workout start when logged, unix seconds. |
+| `workoutEndTs` | INTEGER NOT NULL | Workout end when logged, unix seconds. |
+| `scale` | TEXT NOT NULL | Response scale, `CR10`. |
+| `rpe` | DOUBLE NOT NULL | The response, 0–10. No default. |
+| `sessionMinutes` | DOUBLE NOT NULL | Elapsed workout minutes when answered, above 0. |
+| `collectedAt` | INTEGER NOT NULL | When the user answered, unix seconds. |
+| `provenance` | TEXT NOT NULL | `user-entered`. |
+
+### `strengthSet` *(v13)*
+
+One logged set (`struct StrengthSetRow`). There are no inferred reps or exercises.
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| `workoutStartTs` | INTEGER NOT NULL | Part of PK. Workout start when logged, unix seconds. |
+| `setIndex` | INTEGER NOT NULL | Part of PK. Logged order within the workout; gaps are harmless. |
+| `workoutEndTs` | INTEGER NOT NULL | Workout end when logged, unix seconds. |
+| `exercise` | TEXT NOT NULL | Name as typed, trimmed. Not blank. |
+| `reps` | INTEGER NOT NULL | Above 0. |
+| `externalKg` | DOUBLE | Load as logged, 0 or more. NULL = none logged (bodyweight work); body mass is never filled in. |
+| `rir` | INTEGER | Repetitions in reserve, 0 or more, if reported. |
+| `collectedAt` | INTEGER NOT NULL | When the set was logged, unix seconds. |
+| `provenance` | TEXT NOT NULL | `user-entered`. |
 
 ## Index summary
 

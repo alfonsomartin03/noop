@@ -275,6 +275,8 @@ Windows are taken relative to your latest recorded day and auto-widen on sparse 
   icons.
 - **All Sessions** — a uniform table: date/time, sport, duration, avg HR, kcal, distance, and a
   **source badge** (WHOOP or Apple) per row.
+- **Session log** — opening a workout offers an optional CR10 effort rating and exercise sets (reps, external kg, optional
+  RIR). Session RPE load and per-exercise volume show as their own fields beside cardio strain and feed no score.
 
 ---
 

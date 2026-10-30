@@ -184,7 +184,7 @@ struct SleepView: View {
                     label: "Sleep Performance",
                     value: pctValue(perf.latest),
                     caption: vsTypical(perf.latest, perf.typical, suffix: "%"),
-                    accent: perf.latest.map { StrandPalette.recoveryColor($0) } ?? StrandPalette.textPrimary,
+                    accent: perf.latest.map { StrandPalette.scoreInk(StrandPalette.recoveryColor($0)) } ?? StrandPalette.textPrimary,
                     sparkline: spark(perf.series),
                     sparkColor: StrandPalette.accent)
 
@@ -200,7 +200,7 @@ struct SleepView: View {
                     label: "Consistency",
                     value: pctValue(cons.latest),
                     caption: vsTypical(cons.latest, cons.typical, suffix: "%"),
-                    accent: cons.latest.map { StrandPalette.recoveryColor($0) } ?? StrandPalette.textPrimary,
+                    accent: cons.latest.map { StrandPalette.scoreInk(StrandPalette.recoveryColor($0)) } ?? StrandPalette.textPrimary,
                     sparkline: spark(cons.series),
                     sparkColor: StrandPalette.metricCyan)
 
@@ -208,7 +208,7 @@ struct SleepView: View {
                     label: "Hours vs Needed",
                     value: pctValue(need.latest),
                     caption: vsTypical(need.latest, need.typical, suffix: "%"),
-                    accent: need.latest.map { StrandPalette.recoveryColor(min(100, $0)) } ?? StrandPalette.textPrimary,
+                    accent: need.latest.map { StrandPalette.scoreInk(StrandPalette.recoveryColor(min(100, $0))) } ?? StrandPalette.textPrimary,
                     sparkline: spark(need.series),
                     sparkColor: StrandPalette.accent)
 

@@ -71,11 +71,10 @@ where `mZ` is minutes in HR zone Z (the zone percentages WHOOP reports times dur
   (was 0.60 / 0.20 / 0.05 / 0.15, k 1.6, z0 −0.2, 14 nights). On the export the old form scored MAE ≈ 5.8, the refit 4.5.
   An average night now scores ~60 instead of 58.
 - **Strain** (`StrainScorer`, `AnalyticsEngine`): new `.whoop` method, now the default, using %HRmax zones and the fitted
-  weights; day strain is `dayStrain(workoutLoads:)` over the detected workouts only, with the 1.66 floor.
-  `.edwards` and `.banister` remain available.
+  weights; day strain was computed over the detected workouts only, with the 1.66 floor. **Superseded October 2026:**
+  load now covers every supported second and the floor is gone, see [WORKOUT_STRAIN_REPORT.md](WORKOUT_STRAIN_REPORT.md).
 - **Not validated end to end.** The fits used WHOOP's own zone minutes. The app's workout detection and HRmax
   (Tanaka age estimate) differ from WHOOP's, so check day strain against WHOOP once the strap has recorded
-  several days. Counting all-day zone minutes instead of workouts only would overshoot, because the floor already
-  stands in for non-workout load.
+  several days.
 - **Sleep staging** cannot be fitted from this export. To calibrate the stager, compare its output with WHOOP's on
   nights where the strap's own HR/R-R/motion was also recorded.
