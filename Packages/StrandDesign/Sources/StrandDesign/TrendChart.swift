@@ -137,9 +137,9 @@ public struct TrendChart: View {
         // Marks outside the value domain (out-of-range points, catmull-rom overshoot) would otherwise
         // draw past the plot area and across the page. Inset, then clip to the plot frame.
         .chartPlotStyle { $0.padding(.vertical, 5).padding(.horizontal, 6).clipped() }
-        .clipped()
         .chartXAxis {
-            AxisMarks(values: .automatic(desiredCount: 5)) { _ in
+            // Aligned, so the first and last dates stay inside the plot instead of truncating at its edge.
+            AxisMarks(preset: .aligned, values: .automatic(desiredCount: 5)) { _ in
                 AxisGridLine().foregroundStyle(StrandPalette.hairline.opacity(0.4))
                 AxisValueLabel().foregroundStyle(StrandPalette.textTertiary)
                     .font(StrandFont.footnote)

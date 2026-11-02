@@ -17,6 +17,8 @@ extension EnvironmentValues {
 struct ScreenScaffold<Content: View>: View {
     let title: String
     var subtitle: String? = nil
+    /// Gap between the heading and the content, and between top-level sections.
+    var spacing: CGFloat = NoopMetrics.sectionGap
     @ViewBuilder var content: () -> Content
     @Environment(\.screenEmbedded) private var embedded
 
@@ -35,12 +37,12 @@ struct ScreenScaffold<Content: View>: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: NoopMetrics.sectionGap) {
+            VStack(alignment: .leading, spacing: spacing) {
                 if !embedded { header }
                 content()
             }
             .padding(.horizontal, NoopMetrics.screenPadding)
-            .padding(.top, embedded ? 6 : 20)
+            .padding(.top, embedded ? 8 : 20)
             .padding(.bottom, 44)
             .frame(maxWidth: NoopMetrics.contentMaxWidth, alignment: .leading)
             .frame(maxWidth: .infinity)

@@ -178,6 +178,7 @@ public final class BLEManager: NSObject, ObservableObject {
         central = CBCentralManager(delegate: self, queue: .main)
         // Strap-as-clock: an incoming EVENT packet kicks a rate-limited catch-up sync.
         router.onSyncTrigger = { [weak self] in self?.requestSync(.strap) }
+        router.onLog = { [weak self] in self?.log($0) }
     }
 
     /// Build the WhoopStore + Collector + Backfiller asynchronously. Safe to call multiple
@@ -192,6 +193,10 @@ public final class BLEManager: NSObject, ObservableObject {
         let enableRawCapture = UserDefaults.standard.bool(forKey: "enableRawCapture")
         collector = Collector(store: store, deviceId: deviceId,
                               enableRawCapture: enableRawCapture)
+        // Keep a history of battery readings so drain can be measured, not just the current level.
+        state.onBatteryUpdate = { [weak self] pct in
+            Task { @MainActor in await self?.collector?.recordBattery(pct: pct) }
+        }
         backfiller = Backfiller(store: store, deviceId: deviceId,
                                 ackTrim: { [weak self] trim, endData in
                                     self?.ackHistoricalChunk(trim: trim, endData: endData)
@@ -213,6 +218,7 @@ public final class BLEManager: NSObject, ObservableObject {
         central = CBCentralManager(delegate: self, queue: .main)
         // Strap-as-clock: an incoming EVENT packet kicks a rate-limited catch-up sync.
         router.onSyncTrigger = { [weak self] in self?.requestSync(.strap) }
+        router.onLog = { [weak self] in self?.log($0) }
     }
 
     // MARK: Public API
@@ -399,16 +405,23 @@ public final class BLEManager: NSObject, ObservableObject {
         log("WHOOP 5.0: sending read-only probe (GET_CLOCK, REPORT_VERSION_INFO)")
         send(.getClock, payload: [])
         send(.reportVersionInfo, payload: [])
-        // Show the last broadcast choice the user made (the strap can't be asked); display only, nothing is sent.
-        if state.hrBroadcast == nil, let last = UserDefaults.standard.object(forKey: BLEManager.hrBroadcastKey) as? Bool {
-            state.hrBroadcast = last
+        // Show the last broadcast choice the user made (the strap can't be asked). When that choice is off, send it
+        // again: a reset strap or the WHOOP app can leave the broadcast on, and it's the only way to be sure of the
+        // state. Off is idempotent; the strap emits BLE_HR_PROFILE_DISABLED only if it was actually on. "On" is never
+        // sent here, so a strap the user hasn't chosen to broadcast is left alone.
+        if let last = UserDefaults.standard.object(forKey: BLEManager.hrBroadcastKey) as? Bool {
+            if state.hrBroadcast == nil { state.hrBroadcast = last }
+            if !last {
+                log("HR broadcast: user's choice is off — sending off")
+                send(.toggleGenericHRProfile, payload: [0x00], writeType: .withResponse)
+            }
         }
         autoPullWhoop5History()
         startBackfillTimer()   // 5.0 re-pulls every backfillIntervalSeconds too (the 4.0 handshake that starts it never runs here)
     }
 
     /// Pull whatever the strap has stored as soon as the 5.0 link is up, so the user never has to
-    /// tap "Pull stored data". Still safe mode (no ack, the strap keeps its data) and rate-limited
+    /// tap "Pull stored data". Acks follow `keepDataOnStrap`, like a manual pull, and it is rate-limited
     /// with the same floor as the 4.0 connect sync.
     private func autoPullWhoop5History() {
         guard !whoop5AutoPullDone else { return }
@@ -593,7 +606,7 @@ public final class BLEManager: NSObject, ObservableObject {
     /// Turn the strap's standard HR broadcast on/off (WHOOP 4.0). The strap answers with a
     /// BLE_HR_PROFILE_ENABLED/DISABLED event, which updates `state.hrBroadcast`.
     public func setHRBroadcast(_ on: Bool) {
-        // Never sent automatically: the broadcast is for OTHER devices (bike computers, watches), so only the user's toggle changes it.
+        // "On" is only ever sent because of this toggle: the broadcast is for OTHER devices (bike computers, watches).
         // The strap can't report its current state and only emits an event on a real change, so track the user's choice
         // here (optimistic) and remember it; a later BLE_HR_PROFILE_ENABLED/DISABLED event still overrides it.
         state.hrBroadcast = on
@@ -722,23 +735,22 @@ public final class BLEManager: NSObject, ObservableObject {
         bytes.map { String(format: "%02x", $0) }.joined()
     }
 
-    // MARK: WHOOP 5.0 stored data (history) — SAFE MODE
+    // MARK: WHOOP 5.0 stored data (history)
     //
-    // Reads the strap's stored records WITHOUT acknowledging them. The ack (HISTORICAL_DATA_RESULT) is the step
-    // after which a strap discards a chunk, so we never send it here: nothing is deleted. Raw frames are saved to
-    // a local file so the record layout can be worked out before any data is stored or trimmed.
+    // Pulls the strap's stored records and saves them to the database chunk by chunk. Each saved chunk is acked
+    // (HISTORICAL_DATA_RESULT) unless `keepDataOnStrap` is on. The ack is the step after which a strap discards a
+    // chunk, and the strap only sends the next chunk once the previous one is acked.
     // ASSUMPTION: the 5.0 trims only on ack, as documented for the 4.0 in this repo.
 
     /// Ask the strap what time span it holds (read-only).
-    // 5.0 history is read-only ('safe mode'): data is saved locally without acking, so the strap keeps its copy.
     public func queryWhoop5DataRange() {
         guard family == .whoop5, didBond else { log("Data range: needs a bonded WHOOP 5.0"); return }
         log("History: requesting data range (read-only)")
         send(.getDataRange, payload: [])
     }
 
-    /// Start a safe-mode pull: request history, capture raw frames to a local file, never acknowledge.
-    /// `automatic` pulls (started on connect) skip the raw-frame research file and the capture-frame cap;
+    /// Start a pull: request history, capture raw frames to a local file, ack saved chunks unless
+    /// `keepDataOnStrap` is on. `automatic` pulls (started on connect) skip the raw-frame research file and the capture-frame cap;
     /// the decoded records are still saved to the database when the pull ends.
     public func pullWhoop5History(automatic: Bool = false) {
         guard family == .whoop5, didBond, !whoop5HistoryActive else {
@@ -762,7 +774,9 @@ public final class BLEManager: NSObject, ObservableObject {
         state.syncNewestTs = nil
         historySeenTs = []
         state.historyStatus = "Requesting stored data…"
-        log("History: SAFE-MODE pull started (no acknowledgement will be sent; the strap keeps its data)")
+        log(BLEManager.keepDataOnStrap
+            ? "History: pull started (keep-on-strap is on: no acknowledgements; the strap keeps its data)"
+            : "History: pull started (each saved chunk is acknowledged; the strap may then discard it)")
         guard let p = peripheral, let ch = cmdCharacteristic else { endWhoop5History("not connected"); return }
         sendWhoop5(.sendHistoricalData, payload: [], peripheral: p, characteristic: ch, writeType: .withResponse)
         armHistoryIdle()
@@ -783,7 +797,9 @@ public final class BLEManager: NSObject, ObservableObject {
         historyIdleWork?.cancel()
         try? historyCapture?.close(); historyCapture = nil
         state.historyBusy = false
-        state.historyStatus = "Captured \(state.historyFrames) frames (\(reason)). Nothing was cleared from the strap."
+        state.historyStatus = "Captured \(state.historyFrames) frames (\(reason)). "
+            + (BLEManager.keepDataOnStrap ? "Nothing was cleared from the strap."
+                                          : "Saved batches were confirmed, so the strap may clear them.")
         saveDecodedHistory()
         log("History: pull ended — \(reason); frames=\(state.historyFrames); kinds=\(historyMetaSeen.joined(separator: ","))")
     }
@@ -1465,6 +1481,10 @@ extension BLEManager: CBPeripheralDelegate {
                         log("RX 5.0 cmd-response to=\(frame[10]) originSeq=\(frame[11]) result=\(frame[12]) len=\(frame.count) crc=\(chk.ok)")
                     } else if parsed.typeName == "EVENT", let ev = parsed.parsed["event"]?.stringValue {
                         log("RX 5.0 EVENT \(ev)")
+                    } else if parsed.typeName == "EVENT" {
+                        // parseFrame exposes no fields for 5.0, so event names aren't decoded (and FrameRouter returns
+                        // before its EVENT case). Log the header bytes so a broadcast on/off event can be identified.
+                        log("RX 5.0 EVENT (undecoded) len=\(frame.count) head=\(hex(Array(frame[8..<min(16, frame.count)])))")
                     } else if rxFrameCount <= 20 {
                         log("RX 5.0 on \(characteristic.uuid.uuidString.prefix(8)): type=\(parsed.typeName) len=\(frame.count) hdrCRC=\(chk.crc8OK.map(String.init) ?? "?") crc32=\(chk.crc32OK.map(String.init) ?? "?")")
                     }

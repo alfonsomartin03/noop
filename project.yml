@@ -78,3 +78,22 @@ targets:
       base:
         GENERATE_INFOPLIST_FILE: YES
         PRODUCT_BUNDLE_IDENTIFIER: com.noopapp.strandtests
+        # The app's PRODUCT_NAME is NOOP, so XcodeGen's default Strand.app host doesn't exist.
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/NOOP.app/Contents/MacOS/NOOP"
+schemes:
+  Strand:
+    build:
+      targets:
+        Strand: all
+        StrandTests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - StrandTests
+      # Keeps the test host from starting BLE or the store (see AppEntry in StrandApp.swift).
+      environmentVariables:
+        - variable: NOOP_TEST_HOST
+          value: "1"
+          isEnabled: true

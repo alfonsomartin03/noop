@@ -139,11 +139,12 @@ struct LiveStatusCard: View {
     }
 }
 
-/// WHOOP 5.0 stored-data pull (safe mode). Reads what the strap holds without clearing anything.
-// WHOOP 5.0 only. 'Safe mode' reads stored records without telling the strap to delete them.
+/// WHOOP 5.0 stored-data pull. Saves what the strap holds and confirms each batch unless "keep data on strap" is on.
+// WHOOP 5.0 only. A confirmed batch is one the strap is allowed to delete.
 struct StrapHistoryCard: View {
     @EnvironmentObject var live: LiveState
     @EnvironmentObject var model: AppModel
+    @AppStorage(BLEManager.keepDataOnStrapKey) private var keepDataOnStrap = false
 
     var body: some View {
         if live.family == "whoop5" {
@@ -170,7 +171,7 @@ struct StrapHistoryCard: View {
                     if live.historyBusy {
                         Button(role: .cancel) { model.ble.cancelWhoop5History() } label: { Label("Stop", systemImage: "stop.fill") }
                     } else {
-                        Button { model.ble.pullWhoop5History() } label: { Label("Pull stored data (safe mode)", systemImage: "arrow.down.circle") }
+                        Button { model.ble.pullWhoop5History() } label: { Label("Pull stored data", systemImage: "arrow.down.circle") }
                             .buttonStyle(.strandPrimary)
                             .disabled(!live.bonded)
                     }
@@ -178,7 +179,9 @@ struct StrapHistoryCard: View {
                 }
                 .controlSize(.regular)
 
-                Text("Safe mode only reads. It never tells the strap to clear anything, so your data stays on the strap. Raw frames are saved on this Mac so the 5.0 record format can be decoded.")
+                Text(keepDataOnStrap
+                     ? "\"Never delete data from the strap\" is on, so NOOP never confirms a batch and the strap keeps its copy, but each pull may stop after the first batch. Raw frames are saved on this Mac so the 5.0 record format can be decoded."
+                     : "NOOP confirms each batch after saving it on this Mac, and the strap may then clear it. To keep a copy on the strap, turn on \"Never delete data from the strap\" in Settings. Raw frames are saved on this Mac so the 5.0 record format can be decoded.")
                     .font(.system(size: 11)).foregroundStyle(StrandPalette.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
             }

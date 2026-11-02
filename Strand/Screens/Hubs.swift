@@ -26,7 +26,7 @@ private struct SegmentedHub<Seg: Hashable & CaseIterable & RawRepresentable, Bod
     }
 }
 
-/// Trends: all history in one place. Scores (recovery / strain / sleep trends), Sleep nights, Vitals, Activity.
+/// Trends: all history in one place. Scores, then Sleep, Vitals and Activity, each with its trends and its detail screen.
 struct TrendsHub: View {
     enum Seg: String, CaseIterable { case scores = "Scores", sleep = "Sleep", vitals = "Vitals", activity = "Activity" }
     @AppStorage("noop.trends.segment") private var raw = Seg.scores.rawValue
@@ -36,9 +36,18 @@ struct TrendsHub: View {
         SegmentedHub(title: "Trends", selection: sel) { seg in
             switch seg {
             case .scores: TrendsView()
-            case .sleep: SleepView()
-            case .vitals: HealthView()
-            case .activity: WorkoutsView()
+            case .sleep:
+                TrendTabSwitcher(storageKey: "noop.trends.sleep.detail", detailTitle: "Last night") {
+                    SleepTrendsView()
+                } detail: { SleepView() }
+            case .vitals:
+                TrendTabSwitcher(storageKey: "noop.trends.vitals.detail", detailTitle: "Live") {
+                    VitalsTrendsView()
+                } detail: { HealthView() }
+            case .activity:
+                TrendTabSwitcher(storageKey: "noop.trends.activity.detail", detailTitle: "Sessions") {
+                    ActivityTrendsView()
+                } detail: { WorkoutsView() }
             }
         }
     }

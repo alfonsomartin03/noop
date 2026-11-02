@@ -181,6 +181,15 @@ final class Collector {
         }
     }
 
+    // MARK: - Battery
+
+    /// Persist one battery reading at the current time. A failed write only loses this reading; the next change
+    /// brings a fresh one. `charging` and `mv` stay nil because the standard 0x2A19 level carries neither.
+    func recordBattery(pct: Double) async {
+        let sample = BatterySample(ts: now(), soc: pct, mv: nil)
+        _ = try? await store.insert(Streams(battery: [sample]), deviceId: deviceId)
+    }
+
     // MARK: - Decoded history (WHOOP 5.0 stored records)
 
     /// Persist already-decoded stored records. Idempotent: the store ignores rows whose (device, ts) already exist,

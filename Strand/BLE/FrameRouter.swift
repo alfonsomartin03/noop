@@ -10,6 +10,8 @@ public final class FrameRouter {
     /// Called when the strap pushes an EVENT packet (WHOOP's strap-as-clock catch-up signal). The
     /// BLEManager wires this to a rate-limited requestSync(.strap). nil in pure/unit contexts.
     var onSyncTrigger: (() -> Void)?
+    /// 4.0 only for now: 5.0 frames return from `handle` before the EVENT case.
+    var onLog: ((String) -> Void)?
 
     public init(state: LiveState) {
         self.state = state
@@ -66,8 +68,10 @@ public final class FrameRouter {
                 // replay, which goes through the Backfiller). Event strings are "NAME(rawValue)".
                 if ev.hasPrefix("BLE_HR_PROFILE_ENABLED") {
                     state.hrBroadcast = true
+                    onLog?("HR broadcast: strap reports it is now ON")
                 } else if ev.hasPrefix("BLE_HR_PROFILE_DISABLED") {
                     state.hrBroadcast = false
+                    onLog?("HR broadcast: strap reports it is now OFF (it had been on)")
                 }
                 if ev.hasPrefix("DOUBLE_TAP") {
                     state.onDoubleTap?()

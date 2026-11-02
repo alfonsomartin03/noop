@@ -15,7 +15,8 @@ public enum WhoopCommand: UInt8, CaseIterable {
     /// (matches a public WHOOP 4.0 write-up; see docs/HR_BROADCAST_RESEARCH.md). The strap confirms with
     /// BLE_HR_PROFILE_ENABLED/DISABLED events, which is how the UI verifies it. Safe/reversible.
     /// Verified live on a WHOOP 5.0 (2026-10-21): same cmd 14 + `[0x01]` gets result=1 and 0x2A37 packets start.
-    /// Only ever sent from the user's toggle — the broadcast is for other devices, never auto-enabled.
+    /// "On" is only ever sent from the user's toggle — the broadcast is for other devices, never auto-enabled.
+    /// "Off" is re-sent on each 5.0 connect while the user's saved choice is off.
     case toggleGenericHRProfile = 14
     case reportVersionInfo     = 7
     case setClock              = 10

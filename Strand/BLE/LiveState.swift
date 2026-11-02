@@ -27,7 +27,7 @@ public final class LiveState: ObservableObject {
     @Published public var hrPackets: Int = 0          // standard 0x2A37 heart-rate notifications received
     @Published public var strapFrames: Int = 0        // frames received on the strap's custom channels
     @Published public var lastDataAt: Date? = nil     // last notification of any kind (throttled to 1 Hz)
-    /// WHOOP 5.0 stored-data ("history") pull — SAFE MODE (reads only; never acknowledges, so the strap keeps its data).
+    /// WHOOP 5.0 stored-data ("history") pull. Saved chunks are acknowledged unless "keep data on strap" is on.
     @Published public var historyStatus: String = "Idle"
     @Published public var historyRange: String? = nil          // what the strap says it holds
     @Published public var historyFrames: Int = 0               // history-related frames captured this pull

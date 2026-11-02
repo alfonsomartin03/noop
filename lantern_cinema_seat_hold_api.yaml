@@ -1,0 +1,170 @@
+openapi: 3.1.0
+info:
+  title: Lantern Cinema Seat Hold API
+  version: 1.0.0
+  summary: Temporarily reserve seats while customer completes checkout.
+  description: >-
+    Creates a temporary hold for seats at a specific showing. A successful
+    hold lasts seven minutes (enough time for the customer to complete checkout)
+    and prevents another checkout from claiming the same
+    seats until the hold is confirmed, released, or expires.
+servers:
+  - url: https://api.lanterncinema.example.com
+    description: Lantern Cinema production API
+security:
+  - bearerAuth: []
+
+paths:
+  /v1/seat-holds:
+    post:
+      summary: Hold seats for checkout
+      description: Reserve all requested seats for seven minutes.
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          description: A unique key that helps prevent duplicate holds if the request is retried.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - performanceId
+                - seatIds
+              properties:
+                performanceId:
+                  type: string
+                  description: The selected movie showing.
+                seatIds:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: string
+                  description: The seat identifiers to hold.
+            example:
+              performanceId: perf_20261114_1930
+              seatIds:
+                - orch_B12
+                - orch_B13
+      responses:
+        '201':
+          description: The seats were held successfully.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  holdId:
+                    type: string
+                  performanceId:
+                    type: string
+                  seatIds:
+                    type: array
+                    items:
+                      type: string
+                  status:
+                    type: string
+                    example: active
+                  expiresAt:
+                    type: string
+                    format: date-time
+                  total:
+                    type: number
+                    description: Total price for the held seats in US dollars.
+              example:
+                holdId: hold_7F3K2
+                performanceId: perf_20261114_1930
+                seatIds:
+                  - orch_B12
+                  - orch_B13
+                status: active
+                expiresAt: '2026-11-14T19:12:00Z'
+                total: 31.00
+        '400':
+          description: The request is missing information or is not formatted correctly.
+        '409':
+          description: One or more requested seats are no longer available.
+
+  /v1/seat-holds/{holdId}:
+    parameters:
+      - name: holdId
+        in: path
+        required: true
+        description: The ID returned when the seats were held.
+        schema:
+          type: string
+    get:
+      summary: Check a seat hold
+      description: Get the current status and expiration time of a hold.
+      responses:
+        '200':
+          description: The hold was found.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  holdId:
+                    type: string
+                  performanceId:
+                    type: string
+                  seatIds:
+                    type: array
+                    items:
+                      type: string
+                  status:
+                    type: string
+                    enum:
+                      - active
+                      - confirmed
+                      - released
+                      - expired
+                  expiresAt:
+                    type: string
+                    format: date-time
+        '404':
+          description: No hold exists with this ID.
+        '410':
+          description: The hold expired and cannot be used for checkout.
+    delete:
+      summary: Release a seat hold
+      description: Make held seats available again if the customer leaves checkout.
+      responses:
+        '204':
+          description: The hold was released, or was already inactive.
+        '404':
+          description: No hold exists with this ID.
+        '500':
+          description: The hold could not be released because of a server error.
+
+  /v1/seat-holds/{holdId}/confirm:
+    parameters:
+      - name: holdId
+        in: path
+        required: true
+        description: The ID returned when the seats were held.
+        schema:
+          type: string
+    post:
+      summary: Confirm a seat hold
+      description: Confirm the seats after payment authorization succeeds.
+      responses:
+        '200':
+          description: The hold was confirmed and the seats are reserved for the customer.
+        '404':
+          description: No hold exists with this ID.
+        '409':
+          description: The hold is no longer active and cannot be confirmed.
+        '410':
+          description: The hold expired before it could be confirmed.
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

@@ -37,7 +37,7 @@ struct TodayView: View {
     private var shown: DailyMetric? { byDay[activeDay] }
 
     var body: some View {
-        ScreenScaffold(title: greetingWord, subtitle: dateLine) {
+        ScreenScaffold(title: greetingWord, subtitle: dateLine, spacing: Self.headerGap) {
             // One uniform gap between the notices, week strip and cards (the scaffold's section gap is too loose here).
             VStack(alignment: .leading, spacing: NoopMetrics.gap) {
                 PairingResetNotice()
@@ -62,6 +62,9 @@ struct TodayView: View {
         .task(id: "\(activeDay)-\(repo.dataVersion)") { await loadAll() }
     }
 
+    /// Heading to first content: a little more than the card gap, so the heading reads as the page's own.
+    private static let headerGap: CGFloat = 20
+
     private func open(_ d: TodayDetail) { detail = d }
     private func close() { detail = nil }
 
@@ -82,14 +85,8 @@ struct TodayView: View {
         let d = shown
         VStack(alignment: .leading, spacing: NoopMetrics.gap) {
             // A plain row (not the packing grid) so the gap to the heart-rate card below is exactly one card gap.
-            HStack(alignment: .top, spacing: NoopMetrics.gap) {
-                recoveryWidget(d).frame(maxWidth: .infinity)
-                sleepWidget(d).frame(maxWidth: .infinity)
-                strainWidget(d).frame(maxWidth: .infinity)
-            }
-            .frame(height: 410)
+            ScoreCardRow(first: { recoveryWidget(d) }, second: { sleepWidget(d) }, third: { strainWidget(d) })
             HeartRateDayCard(day: activeDay, metric: d, days: repo.days, stats: dayStats) { navigate(.live) }
-                .frame(height: 340)
         }
         .redacted(reason: repo.loaded ? [] : .placeholder)
     }
@@ -515,20 +512,22 @@ private struct HeartRateDayCard: View {
 
     var body: some View {
         StrandWidget("Heart rate", symbol: "heart.fill", tint: StrandPalette.metricRose, trailing: isToday ? "Live" : nil, action: openLive) {
-            HStack(alignment: .top, spacing: 24) {
-                VStack(alignment: .leading, spacing: 10) {
-                    headline
-                    Spacer(minLength: 0)
-                    ForEach(insights.prefix(5)) { ins in
-                        HStack(alignment: .top, spacing: 8) {
-                            Image(systemName: ins.icon).font(.system(size: 11, weight: .bold)).foregroundStyle(ins.tint).frame(width: 16)
-                            Text(ins.text).font(.system(size: 12)).foregroundStyle(StrandPalette.textSecondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                    }
+            SummaryChartLayout {
+                summary
+                chart
+            }
+        }
+    }
+
+    private var summary: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            headline
+            ForEach(insights.prefix(5)) { ins in
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: ins.icon).font(.system(size: 11, weight: .bold)).foregroundStyle(ins.tint).frame(width: 16)
+                    Text(ins.text).font(.system(size: 12)).foregroundStyle(StrandPalette.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                .frame(width: 300, alignment: .leading)
-                chart.frame(maxWidth: .infinity)
             }
         }
     }
