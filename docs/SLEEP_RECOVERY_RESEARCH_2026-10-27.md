@@ -1,6 +1,6 @@
 # NOOP sleep and recovery: evidence and engineering direction
 
-Research date: October 27, 2026. Prepared for improving NOOP's local calculations and informing a Claude implementation session.
+Research date: October 27, 2026. Prepared for improving NOOP's local calculations.
 
 This is a focused evidence review, not a registered systematic review or an exhaustive search of every publication. It combines peer-reviewed validation experiments, reviews and consensus statements, manufacturer technical material, public datasets, and inspection of the current working tree. Full-text passages were inspected where accessible; some papers were available only through abstracts/indexed excerpts. Those limitations are recorded in the source register. Manufacturer performance is not independent validation. A study of one hardware/software version does not validate another version—or NOOP's use of that hardware.
 

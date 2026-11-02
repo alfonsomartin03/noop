@@ -55,3 +55,6 @@ __pycache__/
 
 # Personal signing settings (Team ID)
 Local.xcconfig
+
+# Local task material (AI prompts and working notes)
+/.local/

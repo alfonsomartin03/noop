@@ -52,6 +52,6 @@ NOOP estimates and imported WHOOP scores have separate provenance. Imported scor
 | `project.yml` | XcodeGen project definition; the generated Xcode project is ignored |
 | `docs/` | Current guides, measurement research, and protocol evidence |
 
-Start with [contributing](docs/CONTRIBUTING.md), [architecture](docs/ARCHITECTURE.md), and the [documentation index](docs/README.md). The [Claude audit prompt](docs/CLAUDE_PROJECT_AUDIT_PROMPT.md) covers repository cleanup, performance, and cohesive macOS UI/behavior.
+Start with [contributing](docs/CONTRIBUTING.md), [architecture](docs/ARCHITECTURE.md), and the [documentation index](docs/README.md).
 
 NOOP is independent of WHOOP and is not a medical device. See [DISCLAIMER.md](DISCLAIMER.md) and [ATTRIBUTION.md](ATTRIBUTION.md) for limitations and upstream credits.

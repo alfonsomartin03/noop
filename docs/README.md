@@ -9,7 +9,6 @@ Current guides describe the macOS app and its retained packages. Research and ex
 - [Features](FEATURES.md) and [screen map](SCREEN_INVENTORY.md)
 - [Architecture](ARCHITECTURE.md), [packages](LIBRARY.md), and [data model](DATA_MODEL.md)
 - [Analytics](ANALYTICS.md) and [privacy/data handling](PRIVACY_SECURITY.md)
-- [Claude project audit prompt](CLAUDE_PROJECT_AUDIT_PROMPT.md)
 
 ## Measurement and implementation evidence
 
@@ -20,7 +19,6 @@ Current guides describe the macOS app and its retained packages. Research and ex
 - [Workout/strain research, October 30](WORKOUT_STRAIN_RESEARCH_2026-10-30.md)
 - [Historical sleep/strain audit](SLEEP_STRAIN_AUDIT.md)
 - [WHOOP export scoring analysis](WHOOP_REVERSE_ENGINEERING.md)
-- Earlier task prompts: [sleep/recovery](CLAUDE_SLEEP_RECOVERY_PROMPT.md), [workout/strain](CLAUDE_WORKOUT_STRAIN_PROMPT.md). These explain earlier work, not a fresh task list.
 
 ## Bluetooth evidence
 

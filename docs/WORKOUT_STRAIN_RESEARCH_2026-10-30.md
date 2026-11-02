@@ -1,6 +1,6 @@
 # NOOP: workout detection, training load, and strain
 
-Research and repository review: 30 October 2026. Companion: [Claude implementation prompt](CLAUDE_WORKOUT_STRAIN_PROMPT.md).
+Research and repository review: 30 October 2026.
 
 ## Main recommendation
 
