@@ -41,8 +41,11 @@ public enum WhoopCommand: UInt8, CaseIterable {
     /// the device's preset table). patternId indexes the device's preset patterns (GET_ALL_HAPTICS_PATTERN
     /// reports 7 on harvard); the official app fires id=2. Safe/reversible — just buzzes the motor.
     case runHapticsPattern     = 79
-    /// Stop an in-progress haptic pattern. Payload `[0x00]`. Safe/reversible.
+    /// Stop an in-progress haptic pattern. Payload `[0x00]` (4.0) / `[0x01]` (5.0, Asherlc). Safe/reversible.
     case stopHaptics           = 122
+    /// WHOOP 5.0 haptic (4.0's 79 is rejected by 5.0). Payload `Whoop5Alarm.notifyBuzz` (one loop) —
+    /// CONFIRMED on fw 50.43.1.0: SUCCESSFUL_PLAY, then HAPTICS_FIRED / HAPTICS_TERMINATED events (H07).
+    case runHapticPatternMaverick = 19
     /// The REAL control for the type-43 "R10/R11" realtime-raw stream (payload [0x01]=on / [0x00]=off).
     /// STOP_RAW_DATA(82) does NOT affect it; this one does. Sending [0x00] on connect stops the ~2/s
     /// raw flood that otherwise eats BLE airtime and dominates the strap's flash (blocking dense
@@ -95,6 +98,7 @@ public enum WhoopCommand: UInt8, CaseIterable {
         case .getAlarmTime:          return "Get Alarm Time"
         case .runAlarm:              return "Run Alarm"
         case .disableAlarm:          return "Disable Alarm"
+        case .runHapticPatternMaverick: return "Run Haptic (5.0)"
         }
     }
 

@@ -21,6 +21,9 @@ final class Repository: ObservableObject {
     @Published var days: [DailyMetric] = []
     /// Cached sleep sessions over the recent window, oldest→newest.
     @Published var sleeps: [CachedSleepSession] = []
+    /// NOOP's own sleep sessions of every kind (primary, interrupted, nap, uncertain) for the last few days, one row per
+    /// episode — the sleep screen's session list and correction controls read this.
+    @Published var recentSleepEpisodes: [CachedSleepSession] = []
     @Published var loaded = false
     /// Bumped whenever new strap data lands in the store; screens key their loads on it.
     @Published var dataVersion = 0
@@ -81,7 +84,10 @@ final class Repository: ObservableObject {
         let compSleep = (try? await store.sleepSessions(deviceId: computedDeviceId, from: lo, to: hi, limit: 4000)) ?? []
 
         self.days = Self.mergeDaily(imported: imported, computed: computed)
-        self.sleeps = Self.mergeSleep(imported: impSleep, computed: compSleep)
+        // Main sleep only for the nightly views; an interrupted night's episodes are recombined into one row (its awake
+        // gaps kept as wake) so the night isn't shown as its longest fragment.
+        self.sleeps = Self.mergeSleep(imported: impSleep, computed: Self.combineSessions(compSleep.filter(\.isMainSleep)))
+        self.recentSleepEpisodes = compSleep.filter { $0.endTs >= nowTs - 3 * 86_400 }
         self.officialDays = Set(imported.map(\.day))
         self.official = Dictionary(imported.map { ($0.day, $0) }, uniquingKeysWith: { _, b in b })
         self.estimates = Dictionary(computed.map { ($0.day, $0) }, uniquingKeysWith: { _, b in b })
@@ -127,6 +133,43 @@ final class Repository: ObservableObject {
 
     /// Same precedence for sleep sessions, keyed by the day the night ends on.
     // Sleep sessions are matched by the day the night ENDS; imported replaces computed.
+    /// Join episode rows that share a session id into one row spanning the session. Gaps become `wake` stages.
+    static func combineSessions(_ rows: [CachedSleepSession]) -> [CachedSleepSession] {
+        var out: [CachedSleepSession] = []
+        var bySession: [String: [CachedSleepSession]] = [:]
+        for r in rows {
+            if let id = r.sessionId { bySession[id, default: []].append(r) } else { out.append(r) }
+        }
+        let decoder = JSONDecoder(), encoder = JSONEncoder()
+        encoder.outputFormatting = .sortedKeys
+        for (_, eps) in bySession {
+            let e = eps.sorted { $0.startTs < $1.startTs }
+            guard e.count > 1, let first = e.first, let last = e.last else { out.append(contentsOf: eps); continue }
+            var stages: [StageSegment] = []
+            for (i, ep) in e.enumerated() {
+                if i > 0 { stages.append(StageSegment(start: e[i - 1].endTs, end: ep.startTs, stage: "wake")) }
+                if let j = ep.stagesJSON?.data(using: .utf8), let st = try? decoder.decode([StageSegment].self, from: j) {
+                    stages += st
+                }
+            }
+            let span = Double(last.endTs - first.startTs)
+            let eff = e.reduce(0.0) { $0 + ($1.efficiency ?? 0) * Double($1.endTs - $1.startTs) } / max(span, 1)
+            out.append(CachedSleepSession(
+                startTs: first.startTs, endTs: last.endTs, efficiency: eff,
+                restingHr: e.compactMap(\.restingHr).min(), avgHrv: weightedHRV(e),
+                stagesJSON: (try? encoder.encode(stages)).flatMap { String(data: $0, encoding: .utf8) },
+                kind: first.kind, sessionId: first.sessionId, reason: first.reason, confidence: first.confidence))
+        }
+        return out.sorted { $0.startTs < $1.startTs }
+    }
+
+    /// Duration-weighted HRV across a session's episodes (the same weighting the scorer uses for the night).
+    private static func weightedHRV(_ e: [CachedSleepSession]) -> Double? {
+        let pairs = e.compactMap { r in r.avgHrv.map { ($0, Double(r.endTs - r.startTs)) } }
+        let w = pairs.reduce(0) { $0 + $1.1 }
+        return w > 0 ? pairs.reduce(0) { $0 + $1.0 * $1.1 } / w : nil
+    }
+
     private static func mergeSleep(imported: [CachedSleepSession], computed: [CachedSleepSession]) -> [CachedSleepSession] {
         func endDay(_ s: CachedSleepSession) -> String {
             dayString(Date(timeIntervalSince1970: TimeInterval(s.endTs)))

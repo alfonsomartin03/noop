@@ -19,12 +19,22 @@ public struct CachedSleepSession: Equatable, Codable, Sendable {
     public let restingHr: Int?
     public let avgHrv: Double?
     public let stagesJSON: String?
+    /// "primary" | "interruptedPrimary" | "nap" | "uncertain"; nil = legacy/imported row (main sleep).
+    public let kind: String?
+    /// Episodes of one session share this id (an interrupted night has several rows).
+    public let sessionId: String?
+    public let reason: String?
+    public let confidence: Double?
     public init(startTs: Int, endTs: Int, efficiency: Double?, restingHr: Int?,
-                avgHrv: Double?, stagesJSON: String?) {
+                avgHrv: Double?, stagesJSON: String?, kind: String? = nil, sessionId: String? = nil,
+                reason: String? = nil, confidence: Double? = nil) {
         self.startTs = startTs; self.endTs = endTs
         self.efficiency = efficiency; self.restingHr = restingHr
         self.avgHrv = avgHrv; self.stagesJSON = stagesJSON
+        self.kind = kind; self.sessionId = sessionId; self.reason = reason; self.confidence = confidence
     }
+    /// Main sleep (legacy rows had no kind and were always main).
+    public var isMainSleep: Bool { kind == nil || kind == "primary" || kind == "interruptedPrimary" }
 }
 
 /// One cached daily-metrics row pulled from the server's /v1/daily. Natural key (deviceId, day).
@@ -75,16 +85,20 @@ extension WhoopStore {
         for s in sessions {
             try db.execute(sql: """
                 INSERT INTO sleepSession
-                    (deviceId, startTs, endTs, efficiency, restingHr, avgHrv, stagesJSON)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                    (deviceId, startTs, endTs, efficiency, restingHr, avgHrv, stagesJSON, kind, sessionId, reason, confidence)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(deviceId, startTs) DO UPDATE SET
                     endTs = excluded.endTs,
                     efficiency = excluded.efficiency,
                     restingHr = excluded.restingHr,
                     avgHrv = excluded.avgHrv,
-                    stagesJSON = excluded.stagesJSON
+                    stagesJSON = excluded.stagesJSON,
+                    kind = excluded.kind,
+                    sessionId = excluded.sessionId,
+                    reason = excluded.reason,
+                    confidence = excluded.confidence
                 """, arguments: [deviceId, s.startTs, s.endTs, s.efficiency,
-                                 s.restingHr, s.avgHrv, s.stagesJSON])
+                                 s.restingHr, s.avgHrv, s.stagesJSON, s.kind, s.sessionId, s.reason, s.confidence])
             n += db.changesCount
         }
         return n
@@ -137,14 +151,16 @@ extension WhoopStore {
     public func sleepSessions(deviceId: String, from: Int, to: Int, limit: Int) async throws -> [CachedSleepSession] {
         try syncRead { db in
             try Row.fetchAll(db, sql: """
-                SELECT startTs, endTs, efficiency, restingHr, avgHrv, stagesJSON FROM sleepSession
+                SELECT startTs, endTs, efficiency, restingHr, avgHrv, stagesJSON, kind, sessionId, reason, confidence FROM sleepSession
                 WHERE deviceId = ? AND startTs >= ? AND startTs <= ?
                 ORDER BY startTs ASC LIMIT ?
                 """, arguments: [deviceId, from, to, limit])
                 .map {
                     CachedSleepSession(startTs: $0["startTs"], endTs: $0["endTs"],
                                        efficiency: $0["efficiency"], restingHr: $0["restingHr"],
-                                       avgHrv: $0["avgHrv"], stagesJSON: $0["stagesJSON"])
+                                       avgHrv: $0["avgHrv"], stagesJSON: $0["stagesJSON"],
+                                       kind: $0["kind"], sessionId: $0["sessionId"], reason: $0["reason"],
+                                       confidence: $0["confidence"])
                 }
         }
     }
@@ -192,6 +208,53 @@ extension WhoopStore {
         try syncWrite { db in
             try db.execute(sql: "DELETE FROM sleepSession WHERE deviceId = ? AND endTs >= ? AND endTs < ?",
                            arguments: [deviceId, from, to])
+        }
+    }
+}
+
+// MARK: - Sleep corrections (user source data)
+
+public struct SleepCorrectionRow: Equatable, Sendable {
+    public let id: String
+    public let action: String
+    public let startTs: Int
+    public let endTs: Int
+    public let atTs: Int?
+    public let newStartTs: Int?
+    public let newEndTs: Int?
+    public let createdAt: Int
+    public init(id: String, action: String, startTs: Int, endTs: Int, atTs: Int?, newStartTs: Int?, newEndTs: Int?, createdAt: Int) {
+        self.id = id; self.action = action; self.startTs = startTs; self.endTs = endTs
+        self.atTs = atTs; self.newStartTs = newStartTs; self.newEndTs = newEndTs; self.createdAt = createdAt
+    }
+}
+
+extension WhoopStore {
+    public func saveSleepCorrection(_ c: SleepCorrectionRow) async throws {
+        try syncWrite { db in
+            try db.execute(sql: """
+                INSERT INTO sleepCorrection (id, action, startTs, endTs, atTs, newStartTs, newEndTs, createdAt)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET action = excluded.action, startTs = excluded.startTs, endTs = excluded.endTs,
+                    atTs = excluded.atTs, newStartTs = excluded.newStartTs, newEndTs = excluded.newEndTs
+                """, arguments: [c.id, c.action, c.startTs, c.endTs, c.atTs, c.newStartTs, c.newEndTs, c.createdAt])
+        }
+    }
+
+    public func deleteSleepCorrection(id: String) async throws {
+        try syncWrite { db in try db.execute(sql: "DELETE FROM sleepCorrection WHERE id = ?", arguments: [id]) }
+    }
+
+    /// Corrections touching [from, to], oldest first.
+    public func sleepCorrections(from: Int, to: Int) async throws -> [SleepCorrectionRow] {
+        try syncRead { db in
+            try Row.fetchAll(db, sql: """
+                SELECT * FROM sleepCorrection WHERE endTs >= ? AND startTs <= ? ORDER BY createdAt ASC
+                """, arguments: [from, to]).map {
+                SleepCorrectionRow(id: $0["id"], action: $0["action"], startTs: $0["startTs"], endTs: $0["endTs"],
+                                   atTs: $0["atTs"], newStartTs: $0["newStartTs"], newEndTs: $0["newEndTs"],
+                                   createdAt: $0["createdAt"])
+            }
         }
     }
 }

@@ -181,6 +181,9 @@ public final class BLEManager: NSObject, ObservableObject {
     /// Called when a pull's download finished (strap sent HISTORY_COMPLETE and every chunk was saved),
     /// so the app can run processing. The bool is false for a pull that ended early.
     var onSyncDownloadFinished: ((Bool) -> Void)?
+    /// Alarm/haptic command answers and events, for AlarmController's sync verification and dismissal.
+    var onAlarmResponse: ((Whoop5CommandResponse) -> Void)?
+    var onAlarmEvent: ((Whoop5Event) -> Void)?
     static let whoop5RetryDelaySeconds = 5
 
     /// Stable device id; matches the server's existing device for sync parity. Overridable.
@@ -402,6 +405,14 @@ public final class BLEManager: NSObject, ObservableObject {
         .getDataRange:       { _ in [] },
         .sendHistoricalData: { _ in [] },   // history pull (see pullWhoop5History)
         .historicalDataResult: { $0 },      // HISTORY_END ack: [0x01] + end_data (see ackWhoop5HistoryChunk)
+        // Alarm / haptics: payloads verified live on fw 50.43.1.0 (ALARM_CAPABILITIES.md). Fixed forms only;
+        // SET takes a payload built by Whoop5Alarm.setPayload and is refused in any other shape (sendWhoop5).
+        .runHapticPatternMaverick: { _ in Whoop5Alarm.notifyBuzz },
+        .stopHaptics:        { _ in [0x01] },
+        .setAlarmTime:       { $0 },
+        .getAlarmTime:       { _ in Whoop5Alarm.getPayload() },
+        .runAlarm:           { _ in Whoop5Alarm.runPayload() },
+        .disableAlarm:       { _ in Whoop5Alarm.disableAllPayload },
     ]
     private var whoop5SkippedLogged = Set<UInt8>()
 
@@ -415,6 +426,10 @@ public final class BLEManager: NSObject, ObservableObject {
         }
         guard didBond else {
             log("send(\(command.label)) deferred — WHOOP 5.0 link not bonded yet")
+            return
+        }
+        if command == .setAlarmTime, !(payload.count == 20 && payload[0] == 4 && payload[1] == Whoop5Alarm.alarmID) {
+            log("send(Set Alarm Time) refused on WHOOP 5.0 — payload is not the verified [4, 1, time, pattern] form")
             return
         }
         seq = seq &+ 1
@@ -1104,6 +1119,34 @@ public final class BLEManager: NSObject, ObservableObject {
         log("Alarm: armed for \(date) (epoch \(epochSec))")
     }
 
+    /// Vibrate the strap for a wake alarm. WHOOP 5.0: no vibration command is verified on this firmware yet
+    /// (docs/reverse-engineering/ALARM_CAPABILITIES.md), so nothing is sent and this returns false — the caller must
+    /// not report the strap as having vibrated. Wire the verified command here once a supervised test confirms it.
+    func vibrateStrapForAlarm() -> Bool {
+        // WHOOP 5.0, verified H02b: SET_ALARM_TIME (id 1) then RUN_ALARM fires the stored alarm's pattern now
+        // (SUCCESSFUL_PLAY + APP_DRIVEN_ALARM_EXECUTED + HAPTICS_FIRED; the wearer can stop it with a double tap).
+        // Returns true when the commands were sent; the strap's HAPTICS_FIRED event is the confirmation.
+        guard family == .whoop5, didBond, let strapNow = strapNow() else { return false }
+        send(.setAlarmTime, payload: Whoop5Alarm.setPayload(strapSeconds: UInt32(strapNow + 60)), writeType: .withResponse)
+        send(.runAlarm, payload: [], writeType: .withResponse)
+        log("Alarm: strap alarm run now (set + run, id \(Whoop5Alarm.alarmID))")
+        return true
+    }
+
+    /// Store an alarm on the strap for `deadline` (Mac time), converted to strap time with the measured offset.
+    /// The caller verifies with `readStrapAlarm()`; returns false when not possible (no 5.0 link or no clock estimate).
+    func armWhoop5Alarm(at deadline: Date) -> Bool {
+        guard family == .whoop5, didBond, let c = state.clock else { return false }
+        let strapSecs = UInt32(clamping: Int(c.deviceTime(fromHost: deadline.timeIntervalSince1970).rounded()))
+        send(.setAlarmTime, payload: Whoop5Alarm.setPayload(strapSeconds: strapSecs), writeType: .withResponse)
+        log("Alarm: stored on strap for \(deadline.formatted(date: .abbreviated, time: .standard)) (strap \(strapSecs))")
+        return true
+    }
+    func readStrapAlarm() { send(.getAlarmTime, payload: [], writeType: .withResponse) }
+    func clearStrapAlarms() { send(.disableAlarm, payload: [], writeType: .withResponse) }
+    /// Strap seconds now, from the clock estimate.
+    func strapNow() -> Int? { state.clock.map { Int($0.deviceTime(fromHost: Date().timeIntervalSince1970).rounded()) } }
+
     /// Disarm the currently-armed firmware alarm.
     func disableStrapAlarm() {
         send(.disableAlarm, payload: [0x01])
@@ -1209,6 +1252,9 @@ extension BLEManager {
             if r.result != .success { state.realtimeStreaming = false }
         case 14:
             if r.result != .success { log("HR broadcast: strap answered \(r.result)") }
+        case 19, 66, 67, 68, 69, 122:
+            log("Alarm: \(name) → \(r.result) status=\(Whoop5Alarm.status(r).map { "\($0)" } ?? "-")")
+            onAlarmResponse?(r)
         default:
             break
         }
@@ -1240,6 +1286,11 @@ extension BLEManager {
     /// within two minutes of the strap's current time — change UI state; the same event replayed in a history
     /// pull hours later must not.
     private func handleWhoop5Event(_ e: Whoop5Event) {
+        switch e.kind {
+        case .alarmSet, .strapAlarmExecuted, .appAlarmExecuted, .alarmDisabled, .hapticsFired, .hapticsTerminated, .doubleTap:
+            onAlarmEvent?(e)
+        default: break
+        }
         let line = "\(e.kind.name) at \(Date(timeIntervalSince1970: TimeInterval(e.unix)).formatted(date: .omitted, time: .standard)) body=\(e.body.count) B"
         state.record(event: line)
         state.lastEvent = e.kind.name

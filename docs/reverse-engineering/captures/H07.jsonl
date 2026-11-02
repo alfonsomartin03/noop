@@ -1,0 +1,90 @@
+{"exp":"H07","kind":"note","session":"AC4AA16A","t":1793643280.077764,"text":"central state=5 auth=3"}
+{"exp":"H07","kind":"note","session":"AC4AA16A","t":1793643280.0866151,"text":"strap already connected to this Mac (shared link) — attaching"}
+{"exp":"H07","kind":"note","session":"AC4AA16A","t":1793643280.0874529,"text":"connected; discovering all services"}
+{"exp":"H07","kind":"service","primary":true,"session":"AC4AA16A","t":1793643280.0882049,"uuid":"180D"}
+{"exp":"H07","kind":"service","primary":true,"session":"AC4AA16A","t":1793643280.0883389,"uuid":"180A"}
+{"exp":"H07","kind":"service","primary":true,"session":"AC4AA16A","t":1793643280.0884089,"uuid":"180F"}
+{"exp":"H07","kind":"service","primary":true,"session":"AC4AA16A","t":1793643280.08847,"uuid":"FD4B0001-CCE1-4033-93CE-002D5875F58A"}
+{"exp":"H07","kind":"characteristic","notifying":false,"props":["notify"],"service":"180D","session":"AC4AA16A","t":1793643280.0889349,"uuid":"2A37"}
+{"exp":"H07","kind":"characteristic","notifying":false,"props":["read"],"service":"180A","session":"AC4AA16A","t":1793643280.0891399,"uuid":"2A29"}
+{"exp":"H07","kind":"characteristic","notifying":false,"props":["read"],"service":"180A","session":"AC4AA16A","t":1793643280.0892439,"uuid":"2A24"}
+{"exp":"H07","kind":"characteristic","notifying":false,"props":["read"],"service":"180A","session":"AC4AA16A","t":1793643280.0893412,"uuid":"2A25"}
+{"exp":"H07","kind":"characteristic","notifying":false,"props":["read"],"service":"180A","session":"AC4AA16A","t":1793643280.089432,"uuid":"2A26"}
+{"exp":"H07","kind":"characteristic","notifying":false,"props":["read"],"service":"180A","session":"AC4AA16A","t":1793643280.089535,"uuid":"2A27"}
+{"exp":"H07","kind":"characteristic","notifying":false,"props":["read","notify"],"service":"180F","session":"AC4AA16A","t":1793643280.0896649,"uuid":"2A19"}
+{"exp":"H07","kind":"characteristic","notifying":false,"props":["writeNoResp","write"],"service":"FD4B0001-CCE1-4033-93CE-002D5875F58A","session":"AC4AA16A","t":1793643280.089777,"uuid":"FD4B0002-CCE1-4033-93CE-002D5875F58A"}
+{"exp":"H07","kind":"characteristic","notifying":false,"props":["notify"],"service":"FD4B0001-CCE1-4033-93CE-002D5875F58A","session":"AC4AA16A","t":1793643280.0898509,"uuid":"FD4B0003-CCE1-4033-93CE-002D5875F58A"}
+{"exp":"H07","kind":"characteristic","notifying":false,"props":["notify"],"service":"FD4B0001-CCE1-4033-93CE-002D5875F58A","session":"AC4AA16A","t":1793643280.089936,"uuid":"FD4B0004-CCE1-4033-93CE-002D5875F58A"}
+{"exp":"H07","kind":"characteristic","notifying":false,"props":["notify"],"service":"FD4B0001-CCE1-4033-93CE-002D5875F58A","session":"AC4AA16A","t":1793643280.0900149,"uuid":"FD4B0005-CCE1-4033-93CE-002D5875F58A"}
+{"exp":"H07","kind":"characteristic","notifying":false,"props":["notify"],"service":"FD4B0001-CCE1-4033-93CE-002D5875F58A","session":"AC4AA16A","t":1793643280.0900989,"uuid":"FD4B0007-CCE1-4033-93CE-002D5875F58A"}
+{"characteristic":"2A37","exp":"H07","kind":"descriptor","session":"AC4AA16A","t":1793643280.090312,"uuid":"2902"}
+{"exp":"H07","hex":"57484f4f5020496e632e","kind":"read","len":10,"service":"180A","session":"AC4AA16A","t":1793643280.9854879,"uuid":"2A29","value":"WHOOP Inc."}
+{"exp":"H07","kind":"note","session":"AC4AA16A","t":1793643280.985662,"text":"READ 2A29 = WHOOP Inc."}
+{"ch":"FD4B0002-CCE1-4033-93CE-002D5875F58A","cmd":11,"dir":"tx","exp":"H07","hex":"aa0108000001e67123c90b00c8ab49ee","kind":"frame","len":16,"name":"GET_CLOCK","seq":201,"session":"AC4AA16A","t":1793643281.6662159}
+{"exp":"H07","kind":"note","session":"AC4AA16A","t":1793643281.6664581,"text":"TX cmd=11 GET_CLOCK seq=201 aa0108000001e67123c90b00c8ab49ee"}
+{"exp":"H07","hex":"352e3000","kind":"read","len":4,"service":"180A","session":"AC4AA16A","t":1793643282.516825,"uuid":"2A24","value":"5.0\u0000"}
+{"exp":"H07","kind":"note","session":"AC4AA16A","t":1793643282.5170321,"text":"READ 2A24 = 5.0\u0000"}
+{"exp":"H07","kind":"read","len":11,"service":"180A","session":"AC4AA16A","t":1793643283.7902689,"uuid":"2A25","value":"<redacted>"}
+{"exp":"H07","kind":"note","session":"AC4AA16A","t":1793643283.790472,"text":"READ 2A25 = <redacted>"}
+{"exp":"H07","hex":"35302e34332e312e30","kind":"read","len":9,"service":"180A","session":"AC4AA16A","t":1793643284.5557289,"uuid":"2A26","value":"50.43.1.0"}
+{"exp":"H07","kind":"note","session":"AC4AA16A","t":1793643284.555907,"text":"READ 2A26 = 50.43.1.0"}
+{"exp":"H07","hex":"574735305f723532","kind":"read","len":8,"service":"180A","session":"AC4AA16A","t":1793643285.320411,"uuid":"2A27","value":"WG50_r52"}
+{"exp":"H07","kind":"note","session":"AC4AA16A","t":1793643285.320631,"text":"READ 2A27 = WG50_r52"}
+{"characteristic":"2A19","exp":"H07","kind":"descriptor","session":"AC4AA16A","t":1793643285.3207231,"uuid":"2902"}
+{"exp":"H07","kind":"read","len":1,"service":"180F","session":"AC4AA16A","t":1793643287.3608022,"uuid":"2A19","value":18}
+{"exp":"H07","kind":"note","session":"AC4AA16A","t":1793643287.361258,"text":"READ 2A19 = 18"}
+{"characteristic":"FD4B0003-CCE1-4033-93CE-002D5875F58A","exp":"H07","kind":"descriptor","session":"AC4AA16A","t":1793643287.361443,"uuid":"2902"}
+{"exp":"H07","kind":"note","session":"AC4AA16A","t":1793643289.011353,"text":"TIMEOUT cmd=11 GET_CLOCK seq=201 — no final response (not retried)"}
+{"cmd":11,"exp":"H07","kind":"result","outcome":"timeout","seq":201,"session":"AC4AA16A","t":1793643289.0115051}
+{"ch":"FD4B0002-CCE1-4033-93CE-002D5875F58A","cmd":19,"dir":"tx","exp":"H07","hex":"aa0114000001e1e123ca13012f9800000000000000000100e1d710e6","kind":"frame","len":28,"name":"RUN_HAPTIC_PATTERN_MAVERICK","seq":202,"session":"AC4AA16A","t":1793643289.01173}
+{"exp":"H07","kind":"note","session":"AC4AA16A","t":1793643289.0118999,"text":"TX cmd=19 RUN_HAPTIC_PATTERN_MAVERICK seq=202 aa0114000001e1e123ca13012f9800000000000000000100e1d710e6"}
+{"error":"","exp":"H07","kind":"subscribe","notifying":true,"session":"AC4AA16A","t":1793643289.1449521,"uuid":"FD4B0003-CCE1-4033-93CE-002D5875F58A"}
+{"characteristic":"FD4B0004-CCE1-4033-93CE-002D5875F58A","exp":"H07","kind":"descriptor","session":"AC4AA16A","t":1793643289.14518,"uuid":"2902"}
+{"error":"","exp":"H07","kind":"subscribe","notifying":true,"session":"AC4AA16A","t":1793643289.6565509,"uuid":"FD4B0004-CCE1-4033-93CE-002D5875F58A"}
+{"characteristic":"FD4B0005-CCE1-4033-93CE-002D5875F58A","exp":"H07","kind":"descriptor","session":"AC4AA16A","t":1793643289.6569481,"uuid":"2902"}
+{"error":"","exp":"H07","kind":"subscribe","notifying":true,"session":"AC4AA16A","t":1793643291.9498,"uuid":"FD4B0005-CCE1-4033-93CE-002D5875F58A"}
+{"characteristic":"FD4B0007-CCE1-4033-93CE-002D5875F58A","exp":"H07","kind":"descriptor","session":"AC4AA16A","t":1793643291.9500189,"uuid":"2902"}
+{"error":"","exp":"H07","kind":"subscribe","notifying":true,"session":"AC4AA16A","t":1793643292.460463,"uuid":"FD4B0007-CCE1-4033-93CE-002D5875F58A"}
+{"characteristic":"2A37","exp":"H07","kind":"descriptor_value","session":"AC4AA16A","t":1793643293.9915061,"uuid":"2902","value":"1"}
+{"error":"","exp":"H07","kind":"write_ack","session":"AC4AA16A","t":1793643294.7549081,"uuid":"FD4B0002-CCE1-4033-93CE-002D5875F58A"}
+{"ch":"FD4B0003-CCE1-4033-93CE-002D5875F58A","exp":"H07","kind":"fragment","len":28,"session":"AC4AA16A","t":1793643294.75668}
+{"exp":"H07","kind":"note","session":"AC4AA16A","t":1793643294.7569408,"text":"RX response cmd=11 seq=201 result=1 len=28 (not ours)"}
+{"ch":"FD4B0003-CCE1-4033-93CE-002D5875F58A","cmd":11,"crc32":true,"dir":"rx","exp":"H07","hdr_crc":true,"hex":"aa011400010021b1244d0bc9010cd3e86ac2350000000000b99d6326","kind":"frame","len":28,"result":1,"seq":201,"session":"AC4AA16A","t":1793643294.757098,"type":36}
+{"characteristic":"2A19","exp":"H07","kind":"descriptor_value","session":"AC4AA16A","t":1793643295.2651119,"uuid":"2902","value":"1"}
+{"characteristic":"FD4B0003-CCE1-4033-93CE-002D5875F58A","exp":"H07","kind":"descriptor_value","session":"AC4AA16A","t":1793643295.775547,"uuid":"2902","value":"1"}
+{"error":"","exp":"H07","kind":"write_ack","session":"AC4AA16A","t":1793643296.034148,"uuid":"FD4B0002-CCE1-4033-93CE-002D5875F58A"}
+{"ch":"FD4B0003-CCE1-4033-93CE-002D5875F58A","exp":"H07","kind":"fragment","len":20,"session":"AC4AA16A","t":1793643296.2861428}
+{"exp":"H07","kind":"note","session":"AC4AA16A","t":1793643296.286422,"text":"ALARM response cmd=19 result=2 status(body[1])=VALID_PATTERN body=010100"}
+{"exp":"H07","kind":"note","session":"AC4AA16A","t":1793643296.2864861,"text":"RX response cmd=19 seq=202 result=2 len=20 latency=7274ms"}
+{"ch":"FD4B0003-CCE1-4033-93CE-002D5875F58A","cmd":19,"crc32":true,"dir":"rx","exp":"H07","hdr_crc":true,"hex":"aa010c0001002711244e13ca0201010053ae1d98","kind":"frame","latency_ms":7274,"len":20,"result":2,"seq":202,"session":"AC4AA16A","t":1793643296.2866101,"type":36}
+{"ch":"FD4B0004-CCE1-4033-93CE-002D5875F58A","exp":"H07","kind":"fragment","len":28,"session":"AC4AA16A","t":1793643296.286752}
+{"ch":"FD4B0004-CCE1-4033-93CE-002D5875F58A","crc32":true,"dir":"rx","exp":"H07","hdr_crc":true,"hex":"aa011400010021b1309a3c000ed3e86a701d0400000000005efc5652","kind":"frame","len":28,"session":"AC4AA16A","t":1793643296.287035,"type":48}
+{"exp":"H07","kind":"note","session":"AC4AA16A","t":1793643296.287205,"text":"EVENT 60 strap_t=1793643278 body=00000000 on FD4B0004"}
+{"ch":"FD4B0003-CCE1-4033-93CE-002D5875F58A","exp":"H07","kind":"fragment","len":20,"session":"AC4AA16A","t":1793643296.2877579}
+{"exp":"H07","kind":"note","session":"AC4AA16A","t":1793643296.2879601,"text":"ALARM response cmd=19 result=1 status(body[1])=SUCCESSFUL_PLAY body=010500"}
+{"exp":"H07","kind":"note","session":"AC4AA16A","t":1793643296.288023,"text":"RX response cmd=19 seq=202 result=1 len=20 latency=7276ms"}
+{"cmd":19,"exp":"H07","kind":"result","latency_ms":7276,"outcome":"result 1","seq":202,"session":"AC4AA16A","t":1793643296.288063}
+{"ch":"FD4B0003-CCE1-4033-93CE-002D5875F58A","cmd":19,"crc32":true,"dir":"rx","exp":"H07","hdr_crc":true,"hex":"aa010c0001002711244f13ca010105000dcfb348","kind":"frame","latency_ms":7276,"len":20,"result":1,"seq":202,"session":"AC4AA16A","t":1793643296.2882009,"type":36}
+{"characteristic":"FD4B0004-CCE1-4033-93CE-002D5875F58A","exp":"H07","kind":"descriptor_value","session":"AC4AA16A","t":1793643296.540673,"uuid":"2902","value":"1"}
+{"exp":"H07","kind":"note","session":"AC4AA16A","t":1793643296.6024899,"text":"script: waiting 3 s"}
+{"characteristic":"FD4B0005-CCE1-4033-93CE-002D5875F58A","exp":"H07","kind":"descriptor_value","session":"AC4AA16A","t":1793643297.0504131,"uuid":"2902","value":"1"}
+{"ch":"FD4B0004-CCE1-4033-93CE-002D5875F58A","exp":"H07","kind":"fragment","len":28,"session":"AC4AA16A","t":1793643297.5603371}
+{"ch":"FD4B0004-CCE1-4033-93CE-002D5875F58A","crc32":true,"dir":"rx","exp":"H07","hdr_crc":true,"hex":"aa011400010021b1309b64000fd3e86aeb31040001000000582211a6","kind":"frame","len":28,"session":"AC4AA16A","t":1793643297.560638,"type":48}
+{"exp":"H07","kind":"note","session":"AC4AA16A","t":1793643297.5607491,"text":"EVENT 100 strap_t=1793643279 body=01000000 on FD4B0004"}
+{"characteristic":"FD4B0007-CCE1-4033-93CE-002D5875F58A","exp":"H07","kind":"descriptor_value","session":"AC4AA16A","t":1793643297.561574,"uuid":"2902","value":"1"}
+{"ch":"FD4B0002-CCE1-4033-93CE-002D5875F58A","cmd":122,"dir":"tx","exp":"H07","hex":"aa0108000001e67123cb7a018707eeac","kind":"frame","len":16,"name":"STOP_HAPTICS","seq":203,"session":"AC4AA16A","t":1793643299.7524881}
+{"exp":"H07","kind":"note","session":"AC4AA16A","t":1793643299.7527208,"text":"TX cmd=122 STOP_HAPTICS seq=203 aa0108000001e67123cb7a018707eeac"}
+{"error":"","exp":"H07","kind":"write_ack","session":"AC4AA16A","t":1793643299.8251009,"uuid":"FD4B0002-CCE1-4033-93CE-002D5875F58A"}
+{"ch":"FD4B0003-CCE1-4033-93CE-002D5875F58A","exp":"H07","kind":"fragment","len":20,"session":"AC4AA16A","t":1793643299.8276691}
+{"exp":"H07","kind":"note","session":"AC4AA16A","t":1793643299.8278761,"text":"ALARM response cmd=122 result=2 status(body[1])=UNKNOWN body=010000"}
+{"exp":"H07","kind":"note","session":"AC4AA16A","t":1793643299.82795,"text":"RX response cmd=122 seq=203 result=2 len=20 latency=75ms"}
+{"ch":"FD4B0003-CCE1-4033-93CE-002D5875F58A","cmd":122,"crc32":true,"dir":"rx","exp":"H07","hdr_crc":true,"hex":"aa010c000100271124507acb02010000a30f7ca4","kind":"frame","latency_ms":75,"len":20,"result":2,"seq":203,"session":"AC4AA16A","t":1793643299.828063,"type":36}
+{"ch":"FD4B0003-CCE1-4033-93CE-002D5875F58A","exp":"H07","kind":"fragment","len":20,"session":"AC4AA16A","t":1793643300.7555609}
+{"exp":"H07","kind":"note","session":"AC4AA16A","t":1793643300.7562351,"text":"ALARM response cmd=122 result=0 status(body[1])=UNKNOWN body=010000"}
+{"exp":"H07","kind":"note","session":"AC4AA16A","t":1793643300.7563601,"text":"RX response cmd=122 seq=203 result=0 len=20 latency=1003ms"}
+{"cmd":122,"exp":"H07","kind":"result","latency_ms":1003,"outcome":"result 0","seq":203,"session":"AC4AA16A","t":1793643300.7564201}
+{"ch":"FD4B0003-CCE1-4033-93CE-002D5875F58A","cmd":122,"crc32":true,"dir":"rx","exp":"H07","hdr_crc":true,"hex":"aa010c000100271124517acb000100009ccc02a8","kind":"frame","latency_ms":1003,"len":20,"result":0,"seq":203,"session":"AC4AA16A","t":1793643300.7566319,"type":36}
+{"ch":"FD4B0003-CCE1-4033-93CE-002D5875F58A","exp":"H07","kind":"fragment","len":24,"session":"AC4AA16A","t":1793643305.495091}
+{"exp":"H07","kind":"note","session":"AC4AA16A","t":1793643305.495316,"text":"RX response cmd=26 seq=55 result=1 len=24 (not ours)"}
+{"ch":"FD4B0003-CCE1-4033-93CE-002D5875F58A","cmd":26,"crc32":true,"dir":"rx","exp":"H07","hdr_crc":true,"hex":"aa0110000100208124521a3701120000000000004e730706","kind":"frame","len":24,"result":1,"seq":55,"session":"AC4AA16A","t":1793643305.4954519,"type":36}
+{"exp":"H07","kind":"note","session":"AC4AA16A","t":1793643306.3358409,"text":"finished: capture window 25 s elapsed"}

@@ -78,7 +78,8 @@ public enum IncrementalScorer {
     public static func algorithmKey(scoringVersion: Int, generation: Int) -> String {
         [String(scoringVersion), String(generation), CardioLoad.loadVersion, CardioLoad.detectorVersion,
          StrainScorer.indexVersion, SupportedHR.policyVersion, HRCalibration.version,
-         MetricIdentity.noopVitalsVersion, SleepStager.stagingMethod].joined(separator: "|")
+         MetricIdentity.noopVitalsVersion, SleepStager.stagingMethod,
+         SleepSessionClassifier.version].joined(separator: "|")
     }
 
     static func configKey(_ p: UserProfile, maxHROverride: Double?) -> String {
@@ -152,7 +153,21 @@ public enum IncrementalScorer {
 
         let generation = try await store.cursor(generationCursor(computedId)) ?? 0
         let algorithm = algorithmKey(scoringVersion: q.scoringVersion, generation: generation)
-        let config = configKey(q.profile, maxHROverride: q.maxHROverride)
+        let profileConfig = configKey(q.profile, maxHROverride: q.maxHROverride)
+
+        // Sleep context: the wearer's habit (from their stored main sleeps) and their corrections. A correction only
+        // re-scores the days it touches (it is part of that day's key). The habit is NOT part of any key: it is learned
+        // from rows this scorer writes, so keying on it would re-score unchanged days. Days that re-score anyway (new
+        // data) pick up the current habit; finalized days keep the labels they were scored with.
+        let corrections = (try await store.sleepCorrections(from: 0, to: Int.max)).map(SleepCorrections.model)
+        let pastMains = (try await store.sleepSessions(deviceId: computedId, from: 0, to: Int.max, limit: 4000))
+            .filter(\.isMainSleep).map { (start: $0.startTs, end: $0.endTs) }
+        let habit = SleepHabit.learn(primaries: SleepCorrections.mergeEpisodes(pastMains))
+        let config = profileConfig
+        func correctionsKey(_ r: (from: Int, to: Int)) -> String {
+            let lo = r.from - contextBeforeS, hi = r.to + contextAfterS
+            return corrections.filter { $0.end >= lo && $0.start <= hi }.map { "\($0.id):\($0.action.rawValue)" }.joined(separator: ",")
+        }
 
         let known = (try await store.workouts(deviceId: q.rawId, from: 0, to: Int.max, limit: 5000))
             + (try await store.workouts(deviceId: "apple-health", from: 0, to: Int.max, limit: 5000))
@@ -165,7 +180,7 @@ public enum IncrementalScorer {
             // An old day beyond `maxDays` is only reconsidered when something reached it; a stale version there waits for
             // the re-score, which widens `maxDays` to cover it.
             reasons[day] = reason(state: states[day], range: r, algorithmKey: algorithm, configKey: config,
-                                  knownKey: knownSessionsKey(knownSessions(r)), hasNewInput: touched.contains(day))
+                                  knownKey: knownSessionsKey(knownSessions(r)) + correctionsKey(r), hasNewInput: touched.contains(day))
         }
         let horizon = ranges.keys.sorted().suffix(q.maxDays).first ?? today
         reasons = reasons.filter { $0.key >= horizon || touched.contains($0.key) }
@@ -221,7 +236,7 @@ public enum IncrementalScorer {
                     let calibration = res?.load?.calibration
                     return DayScoreRow(day: day, algorithmKey: algorithm, configKey: config, inputRevision: revision,
                                        calibrationKey: fingerprint(calibration.map { "\($0)" } ?? "-"),
-                                       baselineKey: baselineKey(baselines), knownSessionsKey: knownSessionsKey(sessions),
+                                       baselineKey: baselineKey(baselines), knownSessionsKey: knownSessionsKey(sessions) + correctionsKey(range),
                                        rangeStart: range.from, rangeEnd: range.to, finalized: closed, hasResult: res != nil)
                 }
                 // A night ending on this day can begin the previous evening: read from 16 h before the day starts
@@ -244,7 +259,8 @@ public enum IncrementalScorer {
                 }
                 let res = AnalyticsEngine.analyzeDay(day: day, hr: hr, rr: rr, resp: resp, gravity: grav, profile: q.profile,
                                                      baselines: baselines, maxHROverride: q.maxHROverride, dayRange: range,
-                                                     calibration: frozen[day], knownSessions: sessions, following: following)
+                                                     calibration: frozen[day], knownSessions: sessions, following: following,
+                                                     sleepHabit: habit, sleepCorrections: corrections)
                 newStates.append(state(res))
                 return res
             },

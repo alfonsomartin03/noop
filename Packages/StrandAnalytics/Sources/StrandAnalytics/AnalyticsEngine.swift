@@ -63,6 +63,8 @@ public enum AnalyticsEngine {
         public let napSessions: [SleepSession]
         /// The day's load with its coverage, calibration and reasons. Nil only with no day range and no HR at all.
         public let load: DayLoadRecord?
+        /// Every sleep session ending on this day with its label (primary / nap / uncertain), episodes and gaps kept.
+        public var classifiedSleep: [ClassifiedSleepSession] = []
 
         public init(daily: DailyMetric, sleepSessions: [SleepSession],
                     cachedSleep: [CachedSleepSession], workouts: [ExerciseSession],
@@ -135,7 +137,9 @@ public enum AnalyticsEngine {
                                   dayRange: (from: Int, to: Int)? = nil,
                                   calibration frozen: HRCalibration? = nil,
                                   knownSessions: [TimeSpan] = [],
-                                  following: FollowingData? = nil) -> DayResult {
+                                  following: FollowingData? = nil,
+                                  sleepHabit: SleepHabit = .fallback,
+                                  sleepCorrections: [SleepCorrection] = []) -> DayResult {
 
         // Validated HR for every downstream score: de-duplicated, in range, isolated optical spikes removed.
         let (hr, hrQuality) = HRQuality.cleanWithReport(rawHR)
@@ -143,11 +147,16 @@ public enum AnalyticsEngine {
         // ── Sleep detection + staging ─────────────────────────────────────────
         let allSessions = SleepStager.detectSleep(hr: hr, rr: rr, resp: resp, gravity: gravity,
                                                     sleepHRHint: (baselines.restingHR?.usable == true ? baselines.restingHR?.baseline : nil))
-        // Sessions attributed to `day` = those whose end falls on `day` (UTC).
-        // Only night sleep feeds the daily totals / recovery / cache; naps (and sedentary rest, which the
-        // stager rejects) must not inflate the night. Naps stay available in `napSessions`.
-        let matched = allSessions.filter { dayString($0.end) == day && $0.kind == .main }
-        let napSessions = allSessions.filter { dayString($0.end) == day && $0.kind == .nap }
+        // Layers C/D: group episodes into sessions and label them with context (habit, corrections). Exactly one
+        // primary session per wake day; its episodes — and only those — feed recovery, HRV, resting HR and the
+        // night's totals. Naps add to 24-h sleep; uncertain sessions count nowhere until the user confirms them.
+        let classified = SleepSessionClassifier.classify(allSessions, habit: sleepHabit, corrections: sleepCorrections,
+                                                         wakeDay: { dayString($0) })
+        let dayClassified = classified.filter { dayString($0.end) == day }
+        let primary = dayClassified.first { $0.isPrimary }
+        let matched = primary?.episodes ?? []
+        let napSessions = dayClassified.filter { $0.kind == .nap }.flatMap(\.episodes)
+        let countedEpisodes = classified.filter { $0.kind != .uncertain }.flatMap(\.episodes)
 
         // ── Daily sleep aggregates (AASM, in-bed weighted) ────────────────────
         var deepS = 0.0, remS = 0.0, lightS = 0.0, tstS = 0.0
@@ -201,7 +210,7 @@ public enum AnalyticsEngine {
         // else its last nap), from EVERY detected session (yesterday afternoon's nap included), overlaps counted once.
         // The part of that window before the data read for this day is unobserved and reported as such.
         let anchor = matched.map(\.end).max() ?? napSessions.map(\.end).max()
-        let sleep24hMin: Double? = anchor.map { Double(SleepAccounting.sleep24h(allSessions.map(\.stages), endingAt: $0)) / 60.0 }
+        let sleep24hMin: Double? = anchor.map { Double(SleepAccounting.sleep24h(countedEpisodes.map(\.stages), endingAt: $0)) / 60.0 }
         let dataStart = [rawHR.map(\.ts).min(), gravity.map(\.ts).min()].compactMap { $0 }.min()
         let observedFraction: Double = {
             guard let a = anchor, let d = dataStart else { return 1 }
@@ -285,17 +294,24 @@ public enum AnalyticsEngine {
 
         // ── Cache rows ────────────────────────────────────────────────────────
         // Rows in the shape the cache table stores, so callers can persist them directly.
-        let cachedSleep = matched.map { s in
-            CachedSleepSession(
-                startTs: s.start, endTs: s.end,
-                efficiency: s.efficiency,
-                restingHr: s.restingHR,
-                avgHrv: s.avgHRV,
-                stagesJSON: encodeStages(s.stages))
+        // One row per EPISODE of every session ending today, tagged with its session and label, so the sleep screen
+        // can show naps and interrupted nights and the user can correct them. Recovery still reads only the primary.
+        let cachedSleep = dayClassified.flatMap { c in
+            c.episodes.map { s in
+                CachedSleepSession(
+                    startTs: s.start, endTs: s.end,
+                    efficiency: s.efficiency,
+                    restingHr: s.restingHR,
+                    avgHrv: s.avgHRV,
+                    stagesJSON: encodeStages(s.stages),
+                    kind: c.kind.rawValue, sessionId: c.id, reason: c.reason, confidence: c.confidence)
+            }
         }
 
-        return DayResult(daily: daily, sleepSessions: matched, cachedSleep: cachedSleep,
-                         workouts: workouts, recovery: recovery, strain: strain, assessment: assessment,
-                         napSessions: napSessions, load: load)
+        var result = DayResult(daily: daily, sleepSessions: matched, cachedSleep: cachedSleep,
+                               workouts: workouts, recovery: recovery, strain: strain, assessment: assessment,
+                               napSessions: napSessions, load: load)
+        result.classifiedSleep = dayClassified
+        return result
     }
 }

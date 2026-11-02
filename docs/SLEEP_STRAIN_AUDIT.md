@@ -1,5 +1,7 @@
 # Sleep / strain / recovery: lineage, algorithms, limits
 
+> Historical context: this document records an earlier audit/task, not the current feature list or an outstanding implementation checklist. Check [current analytics](ANALYTICS.md), [features](FEATURES.md), and source/tests before relying on its implementation claims.
+
 All scores are **NOOP estimates** (WHOOP-*like*, fitted to a WHOOP export; not WHOOP's proprietary algorithm, not clinical).
 
 ## Data lineage

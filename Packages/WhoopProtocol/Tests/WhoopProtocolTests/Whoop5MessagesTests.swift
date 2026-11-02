@@ -119,6 +119,45 @@ final class Whoop5MessagesTests: XCTestCase {
         XCTAssertEqual(Whoop5EventKind(34), .realtimeHROff)
     }
 
+    // MARK: alarms / haptics (live H02–H07 frames)
+
+    func testAlarmIdZeroRejectedIdOneAccepted() throws {
+        let bad = try response("rx_cmd66_res0_h02")
+        XCTAssertEqual(bad.result, .failure)
+        XCTAssertEqual(Whoop5Alarm.status(bad), .invalidAlarmID)
+        let ok = try response("rx_cmd66_res1_h02b")
+        XCTAssertEqual(ok.result, .success)
+        XCTAssertEqual(Whoop5Alarm.status(ok), .validPattern)
+    }
+
+    func testAlarmReadbackAndEmptySlot() throws {
+        XCTAssertEqual(Whoop5Alarm.storedTime(try response("rx_cmd67_res1_h02b")), 1_793_643_447)
+        XCTAssertNil(Whoop5Alarm.storedTime(try response("rx_cmd67_res0_h05")))
+    }
+
+    func testRunAlarmAndBuzzPlay() throws {
+        XCTAssertEqual(Whoop5Alarm.status(try response("rx_cmd68_res1_h02b")), .successfulPlay)
+        XCTAssertEqual(Whoop5Alarm.status(try response("rx_cmd19_res1_h07")), .successfulPlay)
+        XCTAssertEqual(try response("rx_cmd69_res1_h05").result, .success)
+    }
+
+    func testLiveAlarmEvents() throws {
+        XCTAssertEqual(try Whoop5Event.decode(frame("rx_live_event56_h02b")).get().kind, .alarmSet)
+        XCTAssertEqual(try Whoop5Event.decode(frame("rx_live_event58_h02b")).get().kind, .appAlarmExecuted)
+        XCTAssertEqual(try Whoop5Event.decode(frame("rx_live_event60_h07")).get().kind, .hapticsFired)
+        XCTAssertEqual(try Whoop5Event.decode(frame("rx_live_event14_h02b")).get().kind, .doubleTap)
+        let term = try Whoop5Event.decode(frame("rx_live_event100_h02b")).get()
+        XCTAssertEqual(term.kind, .hapticsTerminated)
+        XCTAssertEqual(term.body[1], 2)          // user terminated
+        XCTAssertEqual(try Whoop5Event.decode(frame("rx_live_event100_h07")).get().body[1], 0)   // expired
+    }
+
+    func testAlarmPayloadsMatchWhatTheStrapAccepted() {
+        // The accepted H02b SET frame (seq 202): rebuilt byte for byte from the typed builder.
+        let f = buildWhoop5CommandFrame(seq: 202, command: 66, data: Whoop5Alarm.setPayload(strapSeconds: 1_793_643_447))
+        XCTAssertEqual(f, hexBytes("aa011c000001e38123ca420401b7d3e86a00002f980000000000000000071e00625d8a8d"))
+    }
+
     func testUnknownEventKeepsBody() throws {
         let e = try Whoop5Event.decode(frame("rx_event120")).get()
         XCTAssertEqual(e.number, 120)

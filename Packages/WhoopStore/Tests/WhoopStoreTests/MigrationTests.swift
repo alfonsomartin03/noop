@@ -40,6 +40,6 @@ final class MigrationTests: XCTestCase {
             let cols = try await store.columnNamesForTest(table: table)
             XCTAssertTrue(cols.contains("synced"), "\(table) missing synced column")
         }
-        XCTAssertEqual(WhoopStoreInfo.schemaVersion, 14)
+        XCTAssertEqual(WhoopStoreInfo.schemaVersion, 15)
     }
 }

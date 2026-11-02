@@ -164,6 +164,13 @@ public enum Whoop5EventKind: Equatable, Sendable {
     case realtimeHROn                // 33 BLE_REALTIME_HR_ON — CONFIRMED: matched both TOGGLE_REALTIME_HR [1] sends
     case realtimeHROff               // 34 BLE_REALTIME_HR_OFF — CONFIRMED: matched both [0] sends
     case extendedBatteryInformation  // 63 (name SUPPORTED; arrives with event 3)
+    case doubleTap                   // 14 — CONFIRMED: arrived as the wearer stopped a buzz (H02b)
+    case alarmSet                    // 56 STRAP_DRIVEN_ALARM_SET — CONFIRMED (H02b, H04): body [rev 3][id][sec u32][subsec u16][pattern]
+    case strapAlarmExecuted          // 57 STRAP_DRIVEN_ALARM_EXECUTED (SUPPORTED, Goose)
+    case appAlarmExecuted            // 58 APP_DRIVEN_ALARM_EXECUTED — CONFIRMED after RUN_ALARM
+    case alarmDisabled               // 59 STRAP_DRIVEN_ALARM_DISABLED (SUPPORTED, Goose)
+    case hapticsFired                // 60 — CONFIRMED (H07, H02b)
+    case hapticsTerminated           // 100 — CONFIRMED; body[1]: 0 expired, 2 user terminated (Goose names)
     case unknown(Int)
 
     public init(_ n: Int) {
@@ -177,6 +184,13 @@ public enum Whoop5EventKind: Equatable, Sendable {
         case 33: self = .realtimeHROn
         case 34: self = .realtimeHROff
         case 63: self = .extendedBatteryInformation
+        case 14: self = .doubleTap
+        case 56: self = .alarmSet
+        case 57: self = .strapAlarmExecuted
+        case 58: self = .appAlarmExecuted
+        case 59: self = .alarmDisabled
+        case 60: self = .hapticsFired
+        case 100: self = .hapticsTerminated
         default: self = .unknown(n)
         }
     }
@@ -192,6 +206,13 @@ public enum Whoop5EventKind: Equatable, Sendable {
         case .realtimeHROn: return "BLE_REALTIME_HR_ON"
         case .realtimeHROff: return "BLE_REALTIME_HR_OFF"
         case .extendedBatteryInformation: return "EXTENDED_BATTERY_INFORMATION"
+        case .doubleTap: return "DOUBLE_TAP"
+        case .alarmSet: return "STRAP_DRIVEN_ALARM_SET"
+        case .strapAlarmExecuted: return "STRAP_DRIVEN_ALARM_EXECUTED"
+        case .appAlarmExecuted: return "APP_DRIVEN_ALARM_EXECUTED"
+        case .alarmDisabled: return "STRAP_DRIVEN_ALARM_DISABLED"
+        case .hapticsFired: return "HAPTICS_FIRED"
+        case .hapticsTerminated: return "HAPTICS_TERMINATED"
         case .unknown(let n): return "EVENT_\(n)"
         }
     }
@@ -223,5 +244,40 @@ public struct Whoop5Event: Equatable, Sendable {
         let soc = Double(le16(body, 1)) / 10, mv = le16(body, 5)
         guard (0...100).contains(soc), (2500...5000).contains(mv) else { return nil }
         return (soc, mv, body[10] & 1 == 1)
+    }
+}
+
+// MARK: - Alarms and haptics (WHOOP 5.0)
+
+/// 5.0 alarm / haptic command payloads, as verified on fw 50.43.1.0 (docs/reverse-engineering/ALARM_CAPABILITIES.md).
+/// Alarm id 0 is rejected (INVALID_ALARM_ID); id 1 is accepted. Times are STRAP clock seconds.
+public enum Whoop5Alarm {
+    public static let alarmID: UInt8 = 1
+    /// Goose's default alarm pattern: waveform [47, 152, 0…], loop control 0, 7 loops, 30 s. Accepted (VALID_PATTERN).
+    public static let defaultPattern: [UInt8] = [47, 152, 0, 0, 0, 0, 0, 0, 0, 0, 7, 30]
+    /// Asherlc's one-loop notify buzz for command 19 (CONFIRMED: SUCCESSFUL_PLAY + HAPTICS_FIRED).
+    public static let notifyBuzz: [UInt8] = [0x01, 47, 152, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0]
+
+    public static func setPayload(strapSeconds: UInt32, id: UInt8 = alarmID) -> [UInt8] {
+        [4, id, UInt8(strapSeconds & 0xFF), UInt8(strapSeconds >> 8 & 0xFF), UInt8(strapSeconds >> 16 & 0xFF),
+         UInt8(strapSeconds >> 24 & 0xFF), 0, 0] + defaultPattern
+    }
+    public static func getPayload(id: UInt8 = alarmID) -> [UInt8] { [4, id] }
+    public static func runPayload(id: UInt8 = alarmID) -> [UInt8] { [2, id] }
+    public static let disableAllPayload: [UInt8] = [2, 0xFF]
+
+    /// Status byte of a 66/67/68/69/19/122 response body (body[1]); names from Goose.
+    public enum Status: UInt8, Sendable {
+        case unknown = 0, validPattern, invalidEffect, invalidLoops, invalidDuration, successfulPlay, hapticsFailure,
+             hapticsTimeout, hapticsBusy, hapticsStopped, invalidAlarmTime, invalidAlarmID
+    }
+    public static func status(_ r: Whoop5CommandResponse) -> Status? {
+        r.body.count >= 2 ? Status(rawValue: r.body[1]) : nil
+    }
+    /// GET_ALARM_TIME read-back: the stored strap time, or nil when the slot is empty (time 0 / failure).
+    public static func storedTime(_ r: Whoop5CommandResponse) -> UInt32? {
+        guard r.command == 67, r.result == .success, r.body.count >= 6 else { return nil }
+        let t = UInt32(r.body[2]) | UInt32(r.body[3]) << 8 | UInt32(r.body[4]) << 16 | UInt32(r.body[5]) << 24
+        return t == 0 ? nil : t
     }
 }

@@ -25,6 +25,8 @@ final class AppModel: ObservableObject {
     let intelligence: IntelligenceEngine
     /// Low-battery / charging-complete notifications.
     let batteryMonitor = BatteryMonitor()
+    /// Wake alarms (host-driven; see AlarmController).
+    let alarms = AlarmController()
 
     /// Import status surfaced to Settings → Data.
     @Published var importing = false
@@ -72,11 +74,30 @@ final class AppModel: ObservableObject {
         if BatteryMonitor.isEnabled(BatteryMonitor.lowEnabledKey) || BatteryMonitor.isEnabled(BatteryMonitor.fullEnabledKey) {
             BatteryMonitor.requestAuthorization()
         }
+        alarms.attach(live: live, ble: ble)
+        // Sleeping-HR reference for smart wake: the most recent nightly resting HR.
+        alarms.sleepingHR = { [weak self] in self?.repo.days.last(where: { $0.restingHr != nil })?.restingHr.map(Double.init) }
+        // Sleep-goal progress: tonight's session so far (from the latest sync) against the estimated need.
+        alarms.sleepProgress = { [weak self] in
+            guard let self else { return nil }
+            let now = Int(Date().timeIntervalSince1970)
+            let recent = self.repo.recentSleepEpisodes.filter { $0.endTs > now - 3 * 3600 }
+            guard let sid = recent.max(by: { $0.endTs < $1.endTs })?.sessionId else { return nil }
+            let asleep = recent.filter { $0.sessionId == sid }
+                .reduce(0.0) { $0 + Double($1.endTs - $1.startTs) * ($1.efficiency ?? 0.9) } / 60
+            let past = self.repo.days.suffix(14).compactMap(\.totalSleepMin)
+            let need = SleepNeed.summarize(officialNeed: nil, officialDebt: nil, asleep: asleep, recentAsleep: past)?.needMin
+            return need.map { (asleep, $0) }
+        }
         // A finished (or stopped) pull goes straight to processing, shown as its own stage.
         ble.onSyncDownloadFinished = { [weak self] complete in self?.runPostSyncProcessing(downloadComplete: complete) }
         // Smooth HR centrally so it's solid everywhere it's shown.
         // Both signals feed one smoother, so every screen shows the same steady bpm.
         live.$heartRate.sink { [weak self] _ in self?.ingestHR() }.store(in: &hrCancellables)
+        // Each (re)connect measures the strap clock; re-store the next alarm on the strap then, so a deadline set while
+        // disconnected (or consumed when it rang) is put back and verified by read-back.
+        live.$clock.compactMap { $0 }.removeDuplicates { abs($0.measuredAt - $1.measuredAt) < 60 }
+            .sink { [weak self] _ in self?.alarms.syncDeviceAlarm() }.store(in: &hrCancellables)
         live.$rr.sink { [weak self] _ in self?.ingestHR() }.store(in: &hrCancellables)
 
         // Turn the strap's offloaded raw data into dashboard scores on launch and every 15
@@ -151,6 +172,29 @@ final class AppModel: ObservableObject {
             } else {
                 self.live.lastSyncOutcome = "Data saved, but updating scores failed: \(self.intelligence.note ?? "unknown error")"
             }
+        }
+    }
+
+    /// Save a sleep correction and re-score the days it touches. The correction is stored as source data, so later
+    /// syncs and re-scores keep applying it; automatic labels never override it.
+    func correctSleep(_ c: SleepCorrection) {
+        Task { @MainActor in
+            guard let store = await repo.storeHandle() else { return }
+            do { try await store.saveSleepCorrection(SleepCorrections.row(c)) } catch { return }
+            await intelligence.analyzeRecent()
+            await repo.refresh()
+            repo.dataVersion += 1
+        }
+    }
+
+    /// Remove a correction (back to automatic classification for that span).
+    func undoSleepCorrection(id: String) {
+        Task { @MainActor in
+            guard let store = await repo.storeHandle() else { return }
+            try? await store.deleteSleepCorrection(id: id)
+            await intelligence.analyzeRecent()
+            await repo.refresh()
+            repo.dataVersion += 1
         }
     }
 

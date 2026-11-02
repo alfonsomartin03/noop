@@ -109,6 +109,32 @@ New protocol facts from this run:
   1-s steps, runs ~20 min apart (one gap 1201 s). Meaning UNKNOWN (ryanbr/noop calls it "R26"). The previous NOOP
   build dropped these while acking their chunks, so earlier v0x1a data was trimmed without being kept.
 
+## H01 — GET_ALARM_TIME, read-only (2026-11-02 12:55)
+
+Sent 67 `[4, 0]` (Goose's 5.0 form) `aa010c000001e74123c943040000000086be1237` → FAILURE in 32 ms with a 23-byte body
+`04 00…00`. Unsupported commands answer UNSUPPORTED with a 3-byte body, so the 5.0 alarm command family is present on
+fw 50.43.1.0. FAILURE most likely means slot 0 is empty (HYPOTHESIS). No side effects. See ALARM_CAPABILITIES.md.
+
+## Sleep-session classifier on real data (2026-11-02 13:04)
+
+After the new classifier re-scored the stored history: Oct 22 – Nov 2 = 12 primary sessions (one per night), no naps,
+no interrupted nights, all at the habitual time. Nov 1 is 12 h 11 min (00:01–11:12 across the DST fall-back; HR at
+sleeping level until ~11:10) — plausible lie-in, unconfirmed. No reference comparison possible: the WHOOP export ends
+Oct 21 and NOOP's computed sleep starts Oct 22.
+
+## H02–H06 — approved alarm tests, slot 0 (2026-11-02 13:07–13:12)
+
+SET 66 and RUN 68 for alarm id 0 → FAILURE, status INVALID_ALARM_ID (body `[rev][0x0b][00]`); nothing stored, no
+vibration expected. GET 67 → FAILURE (empty). DISABLE-ALL 69 `[2,0xFF]` → SUCCESS. H04 not run (no stored alarm).
+Follow-ups with id 1 and haptic 19 proposed in ALARM_CAPABILITIES.md (need approval: different bytes).
+
+## H07, H02b–H06b, H04 — approved (2026-11-02 13:14–13:27)
+
+Haptic 19 (one loop) played (SUCCESSFUL_PLAY + HAPTICS_FIRED). Alarm id 1: SET SUCCESS, GET read-back, RUN plays and
+consumes the slot. **H04: a stored alarm rang at its exact strap time with nothing connected (event 57), and was
+stopped by a double tap (14 + 100 reason 2).** Live events stream on fd4b0004. A fresh connection without the hello
+accepted every command. Details: ALARM_CAPABILITIES.md. **Wearer confirmed feeling all three buzzes** (H07, H06b, H04).
+
 ## Next experiments (need approval or the wearer)
 
 1. **E05** strap off-wrist for 2 min, then on: look for wrist events and the console wear-detect line.

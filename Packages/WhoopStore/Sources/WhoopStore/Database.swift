@@ -333,6 +333,28 @@ extension WhoopStore {
                 t.primaryKey(["deviceId", "day"])
             }
         }
+        migrator.registerMigration("v15") { db in
+            // Sleep sessions carry their classification (primary / interruptedPrimary / nap / uncertain) and the session
+            // they belong to, so naps and interrupted nights can be shown and corrected. NULL kind = a legacy row, which
+            // was always main sleep.
+            try db.alter(table: "sleepSession") { t in
+                t.add(column: "kind", .text)
+                t.add(column: "sessionId", .text)
+                t.add(column: "reason", .text)
+                t.add(column: "confidence", .double)
+            }
+            // User sleep corrections. Source data like workoutLabel: no deviceId, never touched by re-scoring.
+            try db.create(table: "sleepCorrection") { t in
+                t.column("id", .text).notNull().primaryKey()
+                t.column("action", .text).notNull()
+                t.column("startTs", .integer).notNull()
+                t.column("endTs", .integer).notNull()
+                t.column("atTs", .integer)
+                t.column("newStartTs", .integer)
+                t.column("newEndTs", .integer)
+                t.column("createdAt", .integer).notNull()
+            }
+        }
         return migrator
     }
 }

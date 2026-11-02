@@ -22,6 +22,7 @@ let READ_ONLY_ALLOWLIST: [UInt8: String] = [
     2: "GET_MAX_PROTOCOL_VERSION",
     7: "REPORT_VERSION_INFO",
     11: "GET_CLOCK",
+    67: "GET_ALARM_TIME",
     26: "GET_BATTERY_LEVEL",
     34: "GET_DATA_RANGE",
     80: "GET_ALL_HAPTICS_PATTERN",
@@ -35,6 +36,35 @@ let READ_ONLY_ALLOWLIST: [UInt8: String] = [
 let REVERSIBLE_ALLOWLIST: [UInt8: String] = [
     3: "TOGGLE_REALTIME_HR",
 ]
+/// Alarm commands approved by the owner on 2026-11-02 for experiments H02–H06 (docs/reverse-engineering/
+/// ALARM_CAPABILITIES.md). Payloads are Goose's 5.0 forms, slot 0 only, Goose's default pattern only. Usable only
+/// with --alarm-approved and an --alarm-script; nothing else can be sent.
+let APPROVED_ALARM_PATTERN: [UInt8] = [47, 152, 0, 0, 0, 0, 0, 0, 0, 0, 7, 30]   // waveform(8) loop u16 overall dur
+/// H07 (approved 2026-11-02): Asherlc's 5.0 notify buzz, one loop (`maverickBuzzParameters`), stopped with 122 [1].
+let APPROVED_BUZZ: [UInt8] = [0x01, 47, 152, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0]
+enum ScriptStep { case cmd(UInt8, [UInt8]), setAlarm(secondsFromNow: Int, id: UInt8), wait(Int) }
+func parseAlarmScript(_ s: String) -> [ScriptStep]? {
+    var out: [ScriptStep] = [.cmd(11, [])]   // GET_CLOCK first: alarm times are written in STRAP time
+    for item in s.split(separator: ",") {
+        let parts = item.split(separator: ":")
+        switch parts.first {
+        // Alarm ids 0 (H02–H06) and 1 (H02b–H06b) are the only approved ids.
+        case "set", "set1": guard parts.count == 2, let n = Int(parts[1]), (60...900).contains(n) else { return nil }
+            out.append(.setAlarm(secondsFromNow: n, id: parts[0] == "set1" ? 1 : 0))
+        case "get": out.append(.cmd(67, [4, 0]))
+        case "get1": out.append(.cmd(67, [4, 1]))
+        case "run": out.append(.cmd(68, [2, 0]))
+        case "run1": out.append(.cmd(68, [2, 1]))
+        case "buzz": out.append(.cmd(19, APPROVED_BUZZ)); out.append(.wait(3)); out.append(.cmd(122, [0x01]))
+        case "disable": out.append(.cmd(69, [2, 0xFF]))
+        case "wait": guard parts.count == 2, let n = Int(parts[1]), (1...600).contains(n) else { return nil }; out.append(.wait(n))
+        default: return nil
+        }
+    }
+    return out
+}
+/// Read-only commands that need a fixed argument (from Goose's 5.0 client): GET_ALARM_TIME reads alarm slot 0.
+let READ_ONLY_PAYLOADS: [UInt8: [UInt8]] = [67: [4, 0]]
 /// Responses whose body may identify the device; logged as length only.
 let REDACTED_RESPONSES: Set<UInt8> = [145, 141, 76]
 /// Device Information characteristics that identify the unit (serial number, system ID).
@@ -53,6 +83,8 @@ struct Options {
     var experiment = "EXP"
     var out: String? = nil
     var toggle: UInt8? = nil
+    var alarmApproved = false
+    var alarmScript: [ScriptStep]? = nil
 }
 
 func parseOptions() -> Options {
@@ -75,6 +107,13 @@ func parseOptions() -> Options {
                 exit(2)
             }
             o.toggle = n
+        case "--alarm-approved": o.alarmApproved = true
+        case "--alarm-script":
+            guard let steps = parseAlarmScript(it.next() ?? "") else {
+                FileHandle.standardError.write("refusing alarm script: only set|set1:60..900,get|get1,run|run1,buzz,disable,wait:N\n".data(using: .utf8)!)
+                exit(2)
+            }
+            o.alarmScript = steps
         case "--hello": o.hello = true
         case "--exp": o.experiment = it.next() ?? o.experiment
         case "--out": o.out = it.next()
@@ -82,6 +121,10 @@ func parseOptions() -> Options {
             FileHandle.standardError.write("unknown option \(a)\n".data(using: .utf8)!)
             exit(2)
         }
+    }
+    if o.alarmScript != nil && !o.alarmApproved {
+        FileHandle.standardError.write("refusing alarm script without --alarm-approved\n".data(using: .utf8)!)
+        exit(2)
     }
     return o
 }
@@ -103,6 +146,9 @@ final class Probe: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     var out: FileHandle?
     var pendingChars = 0
     var queue: [(cmd: UInt8, data: [UInt8])] = []
+    var script: [ScriptStep] = []
+    /// Strap seconds from the latest GET_CLOCK and the host time it arrived.
+    var strapClock: (strap: Double, host: Date)?
     var toggleOffSent = false
     var inflight: (cmd: UInt8, seq: UInt8, sentAt: Date, deadline: Date)?
     var seq: UInt8 = 200            // distinct from the app's low sequence numbers, so responses are attributable
@@ -269,14 +315,35 @@ final class Probe: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
             if self.opt.hello {
                 self.write(DeviceFamily.whoop5ClientHello, cmd: 145, seq: 1, to: c, on: p)
             }
-            self.queue = self.opt.commands.map { ($0, []) }
+            self.queue = self.opt.commands.map { ($0, READ_ONLY_PAYLOADS[$0] ?? []) }
+            self.script = self.opt.alarmScript ?? []
             if let t = self.opt.toggle { self.queue.append((t, [1])) }
             self.next()
         }
     }
 
     func next() {
-        guard inflight == nil, let p = peripheral, let c = command, !queue.isEmpty else { return }
+        guard inflight == nil else { return }
+        if queue.isEmpty, !script.isEmpty {
+            switch script.removeFirst() {
+            case .cmd(let c, let d): queue.append((c, d))
+            case .wait(let n):
+                say("script: waiting \(n) s")
+                DispatchQueue.main.asyncAfter(deadline: .now() + .seconds(n)) { [weak self] in self?.next() }
+                return
+            case .setAlarm(let n, let id):
+                guard let ck = strapClock else { say("script: no strap clock — skipping SET_ALARM_TIME"); next(); return }
+                let strapNow = ck.strap + Date().timeIntervalSince(ck.host)
+                let target = UInt32(strapNow.rounded()) + UInt32(n)
+                let wall = Date().addingTimeInterval(Double(n))
+                say("script: SET_ALARM_TIME id \(id) in \(n) s → strap \(target) (≈ Mac \(wall.formatted(date: .omitted, time: .standard)))")
+                record(["kind": "alarm_target", "strap_unix": Int(target), "host_expected": wall.timeIntervalSince1970])
+                let t = target
+                queue.append((66, [4, id, UInt8(t & 0xFF), UInt8(t >> 8 & 0xFF), UInt8(t >> 16 & 0xFF), UInt8(t >> 24 & 0xFF), 0, 0]
+                                  + APPROVED_ALARM_PATTERN))
+            }
+        }
+        guard let p = peripheral, let c = command, !queue.isEmpty else { return }
         let (cmd, data) = queue.removeFirst()
         seq = seq == 255 ? 200 : seq + 1
         let frame = buildWhoop5CommandFrame(seq: seq, command: cmd, data: data)
@@ -354,6 +421,17 @@ final class Probe: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         var redact = false
         if (type == 36 || type == 38), frame.count > 12 {
             let cmd = frame[10], oseq = frame[11], result = frame[12]
+            if cmd == 11, result == 1, frame.count >= 17 {
+                let t = UInt32(frame[13]) | UInt32(frame[14]) << 8 | UInt32(frame[15]) << 16 | UInt32(frame[16]) << 24
+                strapClock = (Double(t), Date())
+            }
+            if [19, 66, 67, 68, 69, 122].contains(cmd) {
+                let body = Array(frame[13..<(frame.count - 4)])
+                let names = ["UNKNOWN", "VALID_PATTERN", "INVALID_EFFECT", "INVALID_LOOPS", "INVALID_DURATION", "SUCCESSFUL_PLAY",
+                             "HAPTICS_FAILURE", "HAPTICS_TIMEOUT", "HAPTICS_BUSY", "HAPTICS_STOPPED", "INVALID_ALARM_TIME", "INVALID_ALARM_ID"]
+                let st = body.count >= 2 ? (Int(body[1]) < names.count ? names[Int(body[1])] : "STATUS_\(body[1])") : "-"
+                say("ALARM response cmd=\(cmd) result=\(result) status(body[1])=\(st) body=\(hex(body))")
+            }
             f["cmd"] = Int(cmd); f["seq"] = Int(oseq); f["result"] = Int(result)
             redact = REDACTED_RESPONSES.contains(cmd)
             if let fl = inflight, fl.cmd == cmd, fl.seq == oseq {
@@ -378,12 +456,20 @@ final class Probe: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         }
         f["hex"] = redact ? "<redacted \(frame.count) bytes>" : hex(frame)
         record(f)
-        if type != 36 && type != 38 { say("RX \(ch.uuidString.prefix(8)) type=\(type) len=\(frame.count) crc=\(chk.ok)") }
+        if type == 48, frame.count >= 20 {
+            let ev = Int(frame[10]) | Int(frame[11]) << 8
+            let t = Int(frame[12]) | Int(frame[13]) << 8 | Int(frame[14]) << 16 | Int(frame[15]) << 24
+            let blen = Int(frame[18]) | Int(frame[19]) << 8
+            let body = Array(frame[20..<min(20 + blen, frame.count - 4)])
+            say("EVENT \(ev) strap_t=\(t) body=\(hex(body)) on \(ch.uuidString.prefix(8))")
+            f["event"] = ev; f["event_body"] = hex(body)
+        } else if type != 36 && type != 38 { say("RX \(ch.uuidString.prefix(8)) type=\(type) len=\(frame.count) crc=\(chk.ok)") }
     }
 }
 
 func commandName(_ c: UInt8) -> String {
-    READ_ONLY_ALLOWLIST[c] ?? REVERSIBLE_ALLOWLIST[c] ?? (c == 145 ? "GET_HELLO" : "?")
+    if let n = [19: "RUN_HAPTIC_PATTERN_MAVERICK", 66: "SET_ALARM_TIME", 68: "RUN_ALARM", 69: "DISABLE_ALARM_ALL", 122: "STOP_HAPTICS"][c] { return n }
+    return READ_ONLY_ALLOWLIST[c] ?? REVERSIBLE_ALLOWLIST[c] ?? (c == 145 ? "GET_HELLO" : "?")
 }
 
 func propNames(_ p: CBCharacteristicProperties) -> [String] {

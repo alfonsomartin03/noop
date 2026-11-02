@@ -18,7 +18,7 @@ Wire differences from 4.0 documented by Goose and not yet tested here: alarm com
 | 11 | GET_CLOCK | R | [] | SUCCESS | 28 | CONFIRMED | auto (read-only) | body: unix sec u32 @0, subsec u32 @4 (1/32768 s per Goose), 3 zero bytes. 5.7 s latency as first command after attach (E02). |
 | 14 | TOGGLE_GENERIC_HR_PROFILE | U | [0]/[1] | SUCCESS | 20 | CONFIRMED | reversible, approval per experiment | HR broadcast off/on; on starts 2A37 within seconds (NOOP, 2026-10-21); off logs event 25 on next history pull. |
 | 16 | TOGGLE_R7_DATA_COLLECTION | U |  |  |  | SUPPORTED | restricted: needs reviewed procedure + approval |  |
-| 19 | RUN_HAPTIC_PATTERN_MAVERICK | U |  |  |  | SUPPORTED | restricted: needs reviewed procedure + approval |  |
+| 19 | RUN_HAPTIC_PATTERN_MAVERICK | U | [1,47,152,0,0,0,0,0,0,0,0,1,0] | PENDING→SUCCESS (SUCCESSFUL_PLAY) | 20 | CONFIRMED | restricted: needs reviewed procedure + approval | H07: one-loop buzz; events 60 then 100 (expired). |
 | 20 | ABORT_HISTORICAL_TRANSMITS | U |  |  |  | SUPPORTED | restricted: needs reviewed procedure + approval |  |
 | 22 | SEND_HISTORICAL_DATA | U | [] | SUCCESS | 20 | CONFIRMED | reversible, approval per experiment | starts history: START/records/END… then COMPLETE on fd4b0005 (app logs). |
 | 23 | HISTORICAL_DATA_RESULT | U | [01]+end_data(8) | SUCCESS | 20 | CONFIRMED | restricted: deletes from strap (trim); only after data is durably stored | ack of HISTORY_END. Firmware then logs 'History burst success. Trim: block:page', i.e. it advances the strap's trim pointer. Without it the strap re-sends the same chunk. |
@@ -42,10 +42,10 @@ Wire differences from 4.0 documented by Goose and not yet tested here: alarm com
 | 52 | SET_DP_TYPE | C |  |  |  | UNSAFE | prohibited |  |
 | 53 | FORCE_DP_TYPE | C |  |  |  | UNSAFE | prohibited |  |
 | 63 | SEND_R10_R11_REALTIME | U |  |  |  | SUPPORTED | reversible, approval per experiment | Goose sends [1]/[0]. Not exercised on 5.0 here. |
-| 66 | SET_ALARM_TIME | U |  |  |  | SUPPORTED | restricted: needs reviewed procedure + approval |  |
-| 67 | GET_ALARM_TIME | R |  |  |  | SUPPORTED | auto (read-only) |  |
-| 68 | RUN_ALARM | U |  |  |  | SUPPORTED | restricted: needs reviewed procedure + approval |  |
-| 69 | DISABLE_ALARM | U |  |  |  | SUPPORTED | restricted: needs reviewed procedure + approval |  |
+| 66 | SET_ALARM_TIME | U | [4,1]+strap time+pattern | SUCCESS (VALID_PATTERN) | 20 | CONFIRMED | restricted: needs reviewed procedure + approval | H02b/H04: id 1 accepted, event 56; rang autonomously at the stored time (event 57). id 0 → INVALID_ALARM_ID. |
+| 67 | GET_ALARM_TIME | R | [4,1] | SUCCESS | 40 | CONFIRMED | auto (read-only) | H03b: returns stored time + pattern; time 0 when the slot is empty. |
+| 68 | RUN_ALARM | U | [2,1] | PENDING→SUCCESS (SUCCESSFUL_PLAY) | 20 | CONFIRMED | restricted: needs reviewed procedure + approval | H06b: plays the stored alarm now (event 58 + 60) and clears the slot. |
+| 69 | DISABLE_ALARM | U | [2,255] | SUCCESS | 20 | CONFIRMED | restricted: needs reviewed procedure + approval | H05: disable-all accepted. |
 | 76 | GET_ADVERTISING_NAME_HARVARD | R |  |  |  | SUPPORTED | auto (read-only) |  |
 | 77 | SET_ADVERTISING_NAME_HARVARD | U |  |  |  | SUPPORTED | restricted: needs reviewed procedure + approval |  |
 | 79 | RUN_HAPTICS_PATTERN | U |  |  |  | SUPPORTED | restricted: needs reviewed procedure + approval |  |
@@ -69,7 +69,7 @@ Wire differences from 4.0 documented by Goose and not yet tested here: alarm com
 | 119 | SET_DEVICE_CONFIG_VALUE | C |  |  |  | UNSAFE | prohibited |  |
 | 120 | SET_FEATURE_FLAG_VALUE | C |  |  |  | UNSAFE | prohibited |  |
 | 121 | GET_DEVICE_CONFIG_VALUE | R |  |  |  | SUPPORTED | auto (read-only) |  |
-| 122 | STOP_HAPTICS | U |  |  |  | SUPPORTED | restricted: needs reviewed procedure + approval |  |
+| 122 | STOP_HAPTICS | U | [1] | PENDING→FAILURE when nothing plays | 20 | CONFIRMED | restricted: needs reviewed procedure + approval | H07: sent after the buzz ended. |
 | 123 | SELECT_WRIST | U |  |  |  | SUPPORTED | restricted: needs reviewed procedure + approval |  |
 | 124 | TOGGLE_LABRADOR_DATA_GENERATION | U |  |  |  | SUPPORTED | restricted: needs reviewed procedure + approval |  |
 | 125 | TOGGLE_LABRADOR_RAW_SAVE | U |  |  |  | SUPPORTED | restricted: needs reviewed procedure + approval |  |

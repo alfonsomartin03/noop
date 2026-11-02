@@ -1,5 +1,7 @@
 # Claude prompt: improve NOOP workout detection and strain
 
+> Historical context: this document records an earlier audit/task, not the current feature list or an outstanding implementation checklist. Check [current analytics](ANALYTICS.md), [features](FEATURES.md), and source/tests before relying on its implementation claims.
+
 Copy the text below into Claude. If Claude can access this repository, also have it read `docs/WORKOUT_STRAIN_RESEARCH_2026-10-30.md`. The prompt includes the essential requirements independently of that file.
 
 ---

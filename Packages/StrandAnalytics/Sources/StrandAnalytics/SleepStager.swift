@@ -127,6 +127,9 @@ public enum SleepStager {
     public static let awakeRefMinSamples: Int = 300
     /// Duration bounds (minutes): a nap needs ≥30 min; ≥180 min is a night (unless a short daytime siesta).
     public static let napMinMin: Int = 30
+    /// Shortest span kept as a sleep CANDIDATE (20–30 min ones stay `uncertain` in SleepSessionClassifier until
+    /// confirmed: the 15-min stillness window can't resolve them reliably). Heuristic, under validation.
+    public static let candidateMinMin: Int = 20
     public static let mainMinMin: Int = 180
     /// Daytime (local hours) sleeps shorter than `siestaMaxMin` are naps even if ≥ 3 h.
     public static let siestaStartHour: Int = 10
@@ -426,18 +429,19 @@ public enum SleepStager {
 
     static func median(_ v: [Double]) -> Double? { v.isEmpty ? nil : HRVAnalyzer.median(v) }
 
-    /// Night / nap / not-sleep verdict for one stillness run. `awakeRef` = median HR while moving.
+    /// Sleep / not-sleep verdict for one stillness run, from its own evidence and LENGTH only. Time of day never
+    /// changes whether a span is sleep (it used to: a 3.5-h day sleep had to pass the stricter nap bars, which hid
+    /// shift workers' main sleep). Short spans need stronger evidence because brief quiet rest mimics them.
+    /// The returned kind is only a length hint; SleepSessionClassifier assigns the real label with context.
     static func classifyCandidate(start: Int, end: Int, ev: Evidence) -> SleepKind? {
         let durMin = (end - start) / 60
-        if durMin < napMinMin { return nil }
-        let hour = Calendar.current.component(.hour, from: Date(timeIntervalSince1970: TimeInterval(start)))
-        let daytime = hour >= siestaStartHour && hour < siestaEndHour
-        let isNap = durMin < mainMinMin || (daytime && durMin < siestaMaxMin)
-        let minQuiet = isNap ? napMinQuietFrac : mainMinQuietFrac
-        let minDip = isNap ? napMinHRDip : mainMinHRDip
+        if durMin < candidateMinMin { return nil }
+        let isShort = durMin < mainMinMin
+        let minQuiet = isShort ? napMinQuietFrac : mainMinQuietFrac
+        let minDip = isShort ? napMinHRDip : mainMinHRDip
         guard let q = ev.quietFrac, q >= minQuiet else { return nil }
         if let dip = ev.hrDip, dip < minDip { return nil }
-        return isNap ? .nap : .main
+        return isShort ? .nap : .main
     }
 
     /// Whether the gap between two sleep fragments is a wake INSIDE one session. Missing data never bridges.
@@ -559,7 +563,7 @@ public enum SleepStager {
         // phone) into one span; 3) judge each joined span with the strict bars for its length / time of day.
         var coreQuietMerged: [Double?] = []
         var fragments: [Period] = []
-        for p in runs where p.stage == "sleep" && (p.end - p.start) >= napMinMin * 60 {
+        for p in runs where p.stage == "sleep" && (p.end - p.start) >= candidateMinMin * 60 {
             let ev = evidence(p.start, p.end)
             if (ev.quietFrac ?? 0) >= mainMinQuietFrac, (ev.hrDip ?? 1) >= min(mainMinHRDip, napMinHRDip) {
                 fragments.append(p)
@@ -837,11 +841,19 @@ public enum SleepStager {
         let r = kernel.count / 2
         if r == 0 || x.isEmpty { return x }
         // Reflect padding: numpy 'reflect' mirrors WITHOUT repeating the edge sample.
+        // Indices reflect back and forth, so a series shorter than the kernel radius (a 20–30 min nap against the
+        // 10-min HR kernel) pads correctly instead of reading out of range. Identical to before when n > r.
+        let n = x.count
+        func reflect(_ i: Int) -> Int {
+            if n == 1 { return 0 }
+            let period = 2 * (n - 1)
+            var k = i % period
+            if k < 0 { k += period }
+            return k < n ? k : period - k
+        }
         var padded = [Double]()
-        padded.reserveCapacity(x.count + 2 * r)
-        for i in 0..<r { padded.append(x[r - i]) }            // x[r], x[r-1], ... x[1]
-        padded.append(contentsOf: x)
-        for i in 0..<r { padded.append(x[x.count - 2 - i]) }  // x[n-2], x[n-3], ...
+        padded.reserveCapacity(n + 2 * r)
+        for i in stride(from: -r, to: n + r, by: 1) { padded.append(x[reflect(i)]) }
         // Valid convolution, then take the first x.count outputs.
         var out = [Double]()
         out.reserveCapacity(x.count)

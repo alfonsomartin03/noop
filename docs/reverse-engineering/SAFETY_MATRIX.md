@@ -48,3 +48,10 @@ connect); re-armed only after a reading ≥ 25 %; never while charging is confir
 Charging complete: only when a verified source reports charging AND 100 %; once per charging session. No WHOOP 5.0
 charging source is verified yet (event 3's charging bit is SUPPORTED only), so this alert cannot fire today.
 Readings older than 10 minutes never trigger an alert. Disabled alerts still advance state (no backlog later).
+
+## Alarm and haptic commands (verified 2026-11-02, fw 50.43.1.0)
+
+NOOP may send: SET_ALARM_TIME 66 only as `[4, 1, strap-time u32, 00 00, Goose default pattern]` (any other shape is
+refused in `sendWhoop5`); GET 67 `[4,1]`; RUN 68 `[2,1]`; DISABLE-ALL 69 `[2,0xFF]` only when NOOP itself stored the
+alarm (`alarm.ownsStrapAlarm`), so an alarm set by another app is never cleared; haptic 19 one-loop notify buzz and
+STOP 122 `[1]`. Alarm id 0 is invalid. Every alarm write is verified by read-back before the UI says "on strap".

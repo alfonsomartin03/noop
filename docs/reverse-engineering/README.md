@@ -26,6 +26,7 @@ Device under test: model `5.0`, firmware `50.43.1.0`, hardware `WG50_r52` (Devic
 | [SAFETY_MATRIX.md](SAFETY_MATRIX.md) | Allowed, restricted, prohibited operations |
 | [TEST_RESULTS.md](TEST_RESULTS.md) | Repeatable tests and outcomes |
 | [AUDIT.md](AUDIT.md) | Phase 1 audit of the app's BLE code |
+| [ALARM_CAPABILITIES.md](ALARM_CAPABILITIES.md) | Haptics/alarm investigation, capability matrix, proposed experiments |
 | [whoop5_commands.json](whoop5_commands.json) | Machine-readable command registry |
 | [captures/](captures/) | Redacted live captures (JSONL) |
 

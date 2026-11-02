@@ -1,5 +1,7 @@
 # Claude implementation prompt: improve NOOP sleep and recovery calculations
 
+> Historical context: this document records an earlier audit/task, not the current feature list or an outstanding implementation checklist. Check [current analytics](ANALYTICS.md), [features](FEATURES.md), and source/tests before relying on its implementation claims.
+
 Copy everything below the divider into Claude with access to the NOOP repository. The companion research brief is optional but useful: `docs/SLEEP_RECOVERY_RESEARCH_2026-10-27.md`. This prompt includes the essential context and sources so it also works by itself.
 
 ---

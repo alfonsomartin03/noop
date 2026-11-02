@@ -153,5 +153,125 @@
   "name": "rx_ble_connection_up",
   "source": "NOOP history capture 2026-10-13",
   "hex": "aa0110000100208130740b003cb3ce6a7a740000bea902b5"
+ },
+ {
+  "name": "rx_cmd66_res0_h02",
+  "source": "live alarm/haptic experiments 2026-11-02",
+  "hex": "aa010c0001002711243e42ca00040b00c0478ae5"
+ },
+ {
+  "name": "rx_cmd67_res0_h02",
+  "source": "live alarm/haptic experiments 2026-11-02",
+  "hex": "aa01200001002f81243f43cb00040000000000000000000000000000000000000000000028e9e27b"
+ },
+ {
+  "name": "rx_cmd68_res0_h02",
+  "source": "live alarm/haptic experiments 2026-11-02",
+  "hex": "aa010c0001002711244044cc00020b00b9864904"
+ },
+ {
+  "name": "rx_cmd66_res0_h05",
+  "source": "live alarm/haptic experiments 2026-11-02",
+  "hex": "aa010c0001002711244742ca00040b0038d27a9c"
+ },
+ {
+  "name": "rx_cmd69_res1_h05",
+  "source": "live alarm/haptic experiments 2026-11-02",
+  "hex": "aa010c0001002711244845cb01020000c5799215"
+ },
+ {
+  "name": "rx_cmd67_res0_h05",
+  "source": "live alarm/haptic experiments 2026-11-02",
+  "hex": "aa01200001002f81244943cc000400000000000000000000000000000000000000000000ad1ed549"
+ },
+ {
+  "name": "rx_cmd19_res2_h07",
+  "source": "live alarm/haptic experiments 2026-11-02",
+  "hex": "aa010c0001002711244e13ca0201010053ae1d98"
+ },
+ {
+  "name": "rx_live_event60_h07",
+  "source": "live alarm/haptic experiments 2026-11-02",
+  "hex": "aa011400010021b1309a3c000ed3e86a701d0400000000005efc5652"
+ },
+ {
+  "name": "rx_cmd19_res1_h07",
+  "source": "live alarm/haptic experiments 2026-11-02",
+  "hex": "aa010c0001002711244f13ca010105000dcfb348"
+ },
+ {
+  "name": "rx_live_event100_h07",
+  "source": "live alarm/haptic experiments 2026-11-02",
+  "hex": "aa011400010021b1309b64000fd3e86aeb31040001000000582211a6"
+ },
+ {
+  "name": "rx_cmd122_res2_h07",
+  "source": "live alarm/haptic experiments 2026-11-02",
+  "hex": "aa010c000100271124507acb02010000a30f7ca4"
+ },
+ {
+  "name": "rx_cmd122_res0_h07",
+  "source": "live alarm/haptic experiments 2026-11-02",
+  "hex": "aa010c000100271124517acb000100009ccc02a8"
+ },
+ {
+  "name": "rx_live_event56_h02b",
+  "source": "live alarm/haptic experiments 2026-11-02",
+  "hex": "aa01280001002de130ab38003ed3e86a7a7418000301b7d3e86a00002f980000000000000000071e0000000029452369"
+ },
+ {
+  "name": "rx_cmd66_res1_h02b",
+  "source": "live alarm/haptic experiments 2026-11-02",
+  "hex": "aa010c0001002711245442ca0104010084db1f88"
+ },
+ {
+  "name": "rx_cmd67_res1_h02b",
+  "source": "live alarm/haptic experiments 2026-11-02",
+  "hex": "aa01200001002f81245543cb010401b7d3e86a00002f980000000000000000071e0000005341607f"
+ },
+ {
+  "name": "rx_cmd68_res2_h02b",
+  "source": "live alarm/haptic experiments 2026-11-02",
+  "hex": "aa010c0001002711245644cc020200000d3eba49"
+ },
+ {
+  "name": "rx_live_event58_h02b",
+  "source": "live alarm/haptic experiments 2026-11-02",
+  "hex": "aa0110000100208130ac3a003fd3e86aa350000044fc7b37"
+ },
+ {
+  "name": "rx_live_event60_h02b",
+  "source": "live alarm/haptic experiments 2026-11-02",
+  "hex": "aa011400010021b130ad3c003fd3e86a3353040000000000d4e35a39"
+ },
+ {
+  "name": "rx_cmd68_res1_h02b",
+  "source": "live alarm/haptic experiments 2026-11-02",
+  "hex": "aa010c0001002711245744cc01020500126e0f80"
+ },
+ {
+  "name": "rx_live_event14_h02b",
+  "source": "live alarm/haptic experiments 2026-11-02",
+  "hex": "aa0110000100208130c30e004fd3e86ac2550000e57f4ebc"
+ },
+ {
+  "name": "rx_live_event100_h02b",
+  "source": "live alarm/haptic experiments 2026-11-02",
+  "hex": "aa011400010021b130c464004fd3e86a0a57040001020000493afbe8"
+ },
+ {
+  "name": "rx_live_event121_h02b",
+  "source": "live alarm/haptic experiments 2026-11-02",
+  "hex": "aa011400010021b130c579004fd3e86a0a57040001010000cf130e82"
+ },
+ {
+  "name": "rx_live_event3_h02b",
+  "source": "live alarm/haptic experiments 2026-11-02",
+  "hex": "aa01240001002eb130d9030064d3e86aa330140002bc0000007b0e000000001c0e010014010000000543a7d4"
+ },
+ {
+  "name": "rx_live_event29_h02b",
+  "source": "live alarm/haptic experiments 2026-11-02",
+  "hex": "aa011c00010023d130dc1d0081d3e86aae270c00390000000000bc000b00010024ccc878"
  }
 ]

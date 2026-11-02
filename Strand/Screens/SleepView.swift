@@ -51,6 +51,8 @@ struct SleepView: View {
                 if let resolved {
                     VStack(alignment: .leading, spacing: NoopMetrics.sectionGap) {
                         hero(resolved)
+                        SleepSessionsCard()
+                        AlarmSection()
                         SleepNeedCard()
                         metricGrid(resolved)
                         stagesVsTypical(resolved)

@@ -142,14 +142,15 @@
    "name": "RUN_HAPTIC_PATTERN_MAVERICK",
    "goose_gate": "U",
    "device": "WHOOP 5.0 (Goose table); numbers shared with 4.0 enum unless noted",
-   "payload_sent": null,
-   "observed_result": null,
-   "response_len": null,
-   "confidence": "SUPPORTED",
-   "notes": "",
+   "payload_sent": "[1,47,152,0,0,0,0,0,0,0,0,1,0]",
+   "observed_result": "PENDING\u2192SUCCESS (SUCCESSFUL_PLAY)",
+   "response_len": 20,
+   "confidence": "CONFIRMED",
+   "notes": "H07: one-loop buzz; events 60 then 100 (expired).",
    "safety": "restricted: needs reviewed procedure + approval",
    "sources": [
-    "b-nnett/goose commands.rs"
+    "b-nnett/goose commands.rs",
+    "live: this strap"
    ]
   },
   {
@@ -506,14 +507,15 @@
    "name": "SET_ALARM_TIME",
    "goose_gate": "U",
    "device": "WHOOP 5.0 (Goose table); numbers shared with 4.0 enum unless noted",
-   "payload_sent": null,
-   "observed_result": null,
-   "response_len": null,
-   "confidence": "SUPPORTED",
-   "notes": "",
+   "payload_sent": "[4,1]+strap time+pattern",
+   "observed_result": "SUCCESS (VALID_PATTERN)",
+   "response_len": 20,
+   "confidence": "CONFIRMED",
+   "notes": "H02b/H04: id 1 accepted, event 56; rang autonomously at the stored time (event 57). id 0 \u2192 INVALID_ALARM_ID.",
    "safety": "restricted: needs reviewed procedure + approval",
    "sources": [
-    "b-nnett/goose commands.rs"
+    "b-nnett/goose commands.rs",
+    "live: this strap"
    ]
   },
   {
@@ -521,14 +523,15 @@
    "name": "GET_ALARM_TIME",
    "goose_gate": "R",
    "device": "WHOOP 5.0 (Goose table); numbers shared with 4.0 enum unless noted",
-   "payload_sent": null,
-   "observed_result": null,
-   "response_len": null,
-   "confidence": "SUPPORTED",
-   "notes": "",
+   "payload_sent": "[4,1]",
+   "observed_result": "SUCCESS",
+   "response_len": 40,
+   "confidence": "CONFIRMED",
+   "notes": "H03b: returns stored time + pattern; time 0 when the slot is empty.",
    "safety": "auto (read-only)",
    "sources": [
-    "b-nnett/goose commands.rs"
+    "b-nnett/goose commands.rs",
+    "live: this strap"
    ]
   },
   {
@@ -536,14 +539,15 @@
    "name": "RUN_ALARM",
    "goose_gate": "U",
    "device": "WHOOP 5.0 (Goose table); numbers shared with 4.0 enum unless noted",
-   "payload_sent": null,
-   "observed_result": null,
-   "response_len": null,
-   "confidence": "SUPPORTED",
-   "notes": "",
+   "payload_sent": "[2,1]",
+   "observed_result": "PENDING\u2192SUCCESS (SUCCESSFUL_PLAY)",
+   "response_len": 20,
+   "confidence": "CONFIRMED",
+   "notes": "H06b: plays the stored alarm now (event 58 + 60) and clears the slot.",
    "safety": "restricted: needs reviewed procedure + approval",
    "sources": [
-    "b-nnett/goose commands.rs"
+    "b-nnett/goose commands.rs",
+    "live: this strap"
    ]
   },
   {
@@ -551,14 +555,15 @@
    "name": "DISABLE_ALARM",
    "goose_gate": "U",
    "device": "WHOOP 5.0 (Goose table); numbers shared with 4.0 enum unless noted",
-   "payload_sent": null,
-   "observed_result": null,
-   "response_len": null,
-   "confidence": "SUPPORTED",
-   "notes": "",
+   "payload_sent": "[2,255]",
+   "observed_result": "SUCCESS",
+   "response_len": 20,
+   "confidence": "CONFIRMED",
+   "notes": "H05: disable-all accepted.",
    "safety": "restricted: needs reviewed procedure + approval",
    "sources": [
-    "b-nnett/goose commands.rs"
+    "b-nnett/goose commands.rs",
+    "live: this strap"
    ]
   },
   {
@@ -914,14 +919,15 @@
    "name": "STOP_HAPTICS",
    "goose_gate": "U",
    "device": "WHOOP 5.0 (Goose table); numbers shared with 4.0 enum unless noted",
-   "payload_sent": null,
-   "observed_result": null,
-   "response_len": null,
-   "confidence": "SUPPORTED",
-   "notes": "",
+   "payload_sent": "[1]",
+   "observed_result": "PENDING\u2192FAILURE when nothing plays",
+   "response_len": 20,
+   "confidence": "CONFIRMED",
+   "notes": "H07: sent after the buzz ended.",
    "safety": "restricted: needs reviewed procedure + approval",
    "sources": [
-    "b-nnett/goose commands.rs"
+    "b-nnett/goose commands.rs",
+    "live: this strap"
    ]
   },
   {
