@@ -1,18 +1,31 @@
-# Screen inventory and consolidation
+# Screen inventory
 
-Primary navigation went from a 9-item sidebar to a floating pill with 3 destinations: **Overview, Trends, Settings** (⌘1–⌘3).
+Primary navigation is a floating pill with three destinations, **Overview, Trends, Settings** (⌘1–⌘3). Everything else
+opens from a card, a segment or the menu bar.
 
-| Before | Verdict | Now |
-|---|---|---|
-| Today | KEEP | **Overview** (detail views for Recovery / Sleep / Strain / HR still open in place from its cards) |
-| Live | RELOCATE | Sheet opened from the Overview heart-rate card and Settings → Advanced; "Done" closes it. Realtime-HR start/stop lifecycle unchanged. |
-| Sleep | MERGE | Trends → Sleep |
-| Workouts | MERGE | Trends → Activity (no 4th tab: list + detail sheet does not justify one) |
-| Vitals | MERGE | Trends → Vitals |
-| Trends | KEEP | Trends → Scores |
-| Data Explorer | RELOCATE | Settings → Advanced |
-| Import & Export | RELOCATE | Settings → Data |
-| Settings | KEEP | Settings → General |
+| Surface | Where | Notes |
+| --- | --- | --- |
+| Overview | ⌘1, `TodayView` | Week strip; Recovery, Sleep, Strain cards open their detail in place (`TodayDetailViews`); the heart-rate card opens the live-strap sheet |
+| Trends | ⌘2, `TrendsHub` | Segments Scores, Sleep, Vitals, Activity, each with a history view and a detail view (Last night, Live, Sessions) |
+| Settings | ⌘3, `SettingsHub` | General (strap, battery and charging, alarms, profile), Data (import, comparison, backup), Advanced (diagnostics, data explorer, live strap) |
+| Live strap | Sheet from Overview → Heart rate and Settings → Advanced | Live heart rate and battery first; connection controls, link status, sync, packets and log in a collapsed "Connection details" section. Realtime HR runs only while it is open; Done or Esc closes it |
+| Workout / sleep detail | Sheets from Trends → Activity and Sleep | Labels, perceived effort, strength sets, sleep corrections |
+| Battery badge | Top right of every destination | Opens Settings |
+| Menu-bar extra | `MenuBarContent` | Live HR, recovery, battery, connect / live-feed actions |
+| Onboarding | Overlay on first launch | Pairing and profile |
 
-Removed: `DataPendingNote` (unreferenced), the sidebar + sidebar status row (its connection/battery info is the top-right battery chip, which now opens Settings). Not removed: every other type is referenced; BLE, collection and store code untouched.
-Kept on purpose: the menu-bar extra, the onboarding wizard, and the per-metric detail views inside Overview. The screens themselves are reused unchanged inside the segments, so their internal duplication (e.g. sleep shown on Overview, Sleep and Trends) is not yet collapsed.
+## Shared presentation
+
+- Live heart rate everywhere (Overview, Vitals, live sheet, menu bar) is `LiveHeartRate.bpm`: one smoothed value, and
+  live zones use the scoring `HRZones` bands with the profile's max HR (below 50 % reads "Below Zone 1").
+- Battery everywhere (badge, menu bar, Settings → Strap, live sheet, onboarding) is `BatteryPresentation`: low below the
+  low-battery alert threshold (20 %), stale after the alert policy's 10 minutes or on disconnect, charging only from a
+  verified fresh reading.
+- Charging: Settings → Strap and the live sheet show `StrapBatteryPanel` (the `ChargingIllustration` from StrandDesign).
+  When verified charging starts (or the panel appears while charging), light flows from the pack into the strap for
+  four short cycles, then rests as a steady glow with the bolt: each animated frame costs a window update, so the ongoing
+  indication is still. At 100 % it holds steady; a stale or disconnected reading is drawn dimmed, with the pack lifted
+  off. Reduce Motion draws every state still. Charging is what the strap reports: its charging or pack events, or on a
+  WHOOP 5.0 the GET_BATTERY_PACK_INFO reply NOOP sends with each battery read (see
+  `reverse-engineering/SAFETY_MATRIX.md`). The attached reply hasn't been captured on hardware yet.
+- Recovery state words come from `StrandPalette.recoveryState` on every surface.

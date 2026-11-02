@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Synthetic Apple Health export for StrandImport tests. Hand-written values, no personal data. -->
+<!DOCTYPE HealthData>
+<HealthData locale="en_US">
+ <ExportDate value="2024-01-03 09:00:00 +0100"/>
+ <Me HKCharacteristicTypeIdentifierBiologicalSex="HKBiologicalSexNotSet"/>
+ <Record type="HKQuantityTypeIdentifierBodyMass" sourceName="Scale" unit="kg" creationDate="2024-01-01 07:30:00 +0100" startDate="2024-01-01 07:30:00 +0100" endDate="2024-01-01 07:30:00 +0100" value="70.5"/>
+ <Record type="HKQuantityTypeIdentifierHeartRate" sourceName="Apple Watch" unit="count/min" creationDate="2024-01-02 08:00:00 +0100" startDate="2024-01-02 08:00:00 +0100" endDate="2024-01-02 08:00:00 +0100" value="61"/>
+ <Record type="HKQuantityTypeIdentifierRestingHeartRate" sourceName="Apple Watch" unit="count/min" creationDate="2024-01-02 09:00:00 +0100" startDate="2024-01-02 00:00:00 +0100" endDate="2024-01-02 09:00:00 +0100" value="52"/>
+ <Record type="HKQuantityTypeIdentifierOxygenSaturation" sourceName="Apple Watch" unit="%" creationDate="2024-01-02 03:00:00 +0100" startDate="2024-01-02 03:00:00 +0100" endDate="2024-01-02 03:00:00 +0100" value="0.97"/>
+ <Record type="HKQuantityTypeIdentifierRespiratoryRate" sourceName="Apple Watch" unit="count/min" creationDate="2024-01-02 03:10:00 +0100" startDate="2024-01-02 03:10:00 +0100" endDate="2024-01-02 03:10:00 +0100" value="14.5"/>
+ <Record type="HKQuantityTypeIdentifierStepCount" sourceName="iPhone" unit="count" creationDate="2024-01-02 12:10:00 +0100" startDate="2024-01-02 12:00:00 +0100" endDate="2024-01-02 12:10:00 +0100" value="850"/>
+ <Record type="HKQuantityTypeIdentifierDietaryWater" sourceName="iPhone" unit="mL" creationDate="2024-01-02 12:00:00 +0100" startDate="2024-01-02 12:00:00 +0100" endDate="2024-01-02 12:00:00 +0100" value="250"/>
+ <Record type="HKCategoryTypeIdentifierSleepAnalysis" sourceName="Apple Watch" creationDate="2024-01-02 07:00:00 +0100" startDate="2024-01-01 23:15:00 +0100" endDate="2024-01-02 00:15:00 +0100" value="HKCategoryValueSleepAnalysisAsleepCore"/>
+ <Record type="HKCategoryTypeIdentifierSleepAnalysis" sourceName="Apple Watch" creationDate="2024-01-02 07:00:00 +0100" startDate="2024-01-02 00:15:00 +0100" endDate="2024-01-02 01:15:00 +0100" value="HKCategoryValueSleepAnalysisAsleepDeep"/>
+ <Record type="HKCategoryTypeIdentifierSleepAnalysis" sourceName="Apple Watch" creationDate="2024-01-02 07:00:00 +0100" startDate="2024-01-02 01:15:00 +0100" endDate="2024-01-02 01:20:00 +0100" value="HKCategoryValueSleepAnalysisAwake"/>
+ <Correlation type="HKCorrelationTypeIdentifierBloodPressure" sourceName="Apple Watch" creationDate="2024-01-02 08:00:00 +0100" startDate="2024-01-02 08:00:00 +0100" endDate="2024-01-02 08:00:00 +0100">
+  <Record type="HKQuantityTypeIdentifierHeartRate" sourceName="Apple Watch" unit="count/min" creationDate="2024-01-02 08:00:00 +0100" startDate="2024-01-02 08:00:00 +0100" endDate="2024-01-02 08:00:00 +0100" value="61"/>
+ </Correlation>
+ <Workout workoutActivityType="HKWorkoutActivityTypeRunning" duration="45" durationUnit="min" totalDistance="8.05" totalDistanceUnit="km" totalEnergyBurned="540" totalEnergyBurnedUnit="kcal" sourceName="Apple Watch" creationDate="2024-01-02 17:45:00 +0100" startDate="2024-01-02 17:00:00 +0100" endDate="2024-01-02 17:45:00 +0100"/>
+</HealthData>

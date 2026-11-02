@@ -53,6 +53,9 @@ public final class LiveState: ObservableObject {
     @Published public var clock: ClockEstimate? = nil
     /// Battery with its source and age. `batteryPct` stays as the plain value existing views read.
     @Published public var battery: BatteryStatus? = nil
+    /// Charging as the strap itself last reported it this connection (a charging event, or whether the charging pack is
+    /// attached). nil = not reported. Cleared on disconnect; never inferred from a rising percentage.
+    @Published public var chargingReport: ChargingReport? = nil
     /// Realtime HR stream (type 40) state: on while frames keep arriving.
     @Published public var realtimeStreaming = false
     /// Recent strap events (newest first, capped) for the diagnostics panel; unknown numbers are kept.
@@ -85,12 +88,23 @@ public final class LiveState: ObservableObject {
 
     /// Funnel for typed battery readings (2A19, GET_BATTERY_LEVEL). Keeps `batteryPct` and the hook in step.
     public func updateBattery(_ r: BatteryReading) {
+        // A level reading carries no charging flag of its own; take the strap's latest charging report with it, so the
+        // badge and the charging-complete alert see the same state.
+        let r = r.charging != nil ? r : BatteryReading(percent: r.percent, charging: chargingReport?.charging, at: r.at, source: r.source)
         battery = BatteryStatus(reading: r)
         setBattery(Double(r.percent))
         onBatteryReading?(r)
     }
     /// Typed battery hook (wired by AppModel to the notification monitor).
     public var onBatteryReading: ((BatteryReading) -> Void)?
+
+    /// The strap reported charging on/off. Re-stamps the current battery reading so every surface updates at once.
+    public func updateCharging(_ charging: Bool, source: ChargingReport.Source, at: Date = Date()) {
+        chargingReport = ChargingReport(charging: charging, at: at, source: source)
+        if let b = battery, b.charging != charging {
+            battery = BatteryStatus(reading: BatteryReading(percent: b.percent, charging: charging, at: b.at.timeIntervalSince1970, source: b.source))
+        }
+    }
 
     public func record(event line: String) {
         recentEvents.insert(line, at: 0)
@@ -107,7 +121,7 @@ public final class LiveState: ObservableObject {
 
     /// Clear per-connection telemetry (called on disconnect).
     public func resetTelemetry() {
-        family = nil; historyBusy = false; realtimeStreaming = false; clock = nil; hrSubscribed = false; hrBroadcast = nil; hrPackets = 0; strapFrames = 0; lastDataAt = nil
+        family = nil; historyBusy = false; realtimeStreaming = false; clock = nil; chargingReport = nil; hrSubscribed = false; hrBroadcast = nil; hrPackets = 0; strapFrames = 0; lastDataAt = nil
     }
 
     // Capped at 200 lines so the debug log can't grow without bound.
@@ -128,6 +142,21 @@ public struct BatteryStatus: Equatable {
         percent = r.percent; at = Date(timeIntervalSince1970: r.at); source = r.source; charging = r.charging
     }
     public func isStale(now: Date = Date(), after: TimeInterval = 600) -> Bool { now.timeIntervalSince(at) > after }
+}
+
+/// One charging report from the strap, with where it came from.
+public struct ChargingReport: Equatable {
+    public enum Source: String, Equatable {
+        /// CHARGING_ON / CHARGING_OFF event.
+        case chargingEvent
+        /// BATTERY_PACK_CONNECTED / BATTERY_PACK_REMOVED event, or the GET_BATTERY_PACK_INFO reply.
+        case batteryPack
+        /// The charging flag in a WHOOP 4.0 BATTERY_LEVEL event.
+        case batteryEvent
+    }
+    public let charging: Bool
+    public let at: Date
+    public let source: Source
 }
 
 /// Standard Device Information service values. Cached in UserDefaults so Settings can show them offline.

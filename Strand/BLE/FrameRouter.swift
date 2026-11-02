@@ -66,6 +66,14 @@ public final class FrameRouter {
                     state.hrBroadcast = false
                     onLog?("HR broadcast: strap reports it is now OFF (it had been on)")
                 }
+                // Charging as the strap reports it: charging / pack events, or the BATTERY_LEVEL event's charging flag.
+                if ev.hasPrefix("CHARGING_ON") { state.updateCharging(true, source: .chargingEvent) }
+                else if ev.hasPrefix("CHARGING_OFF") { state.updateCharging(false, source: .chargingEvent) }
+                else if ev.hasPrefix("BATTERY_PACK_CONNECTED") { state.updateCharging(true, source: .batteryPack) }
+                else if ev.hasPrefix("BATTERY_PACK_REMOVED") { state.updateCharging(false, source: .batteryPack) }
+                else if ev.hasPrefix("BATTERY_LEVEL"), let c = parsed.parsed["battery_charging"]?.intValue {
+                    state.updateCharging(c != 0, source: .batteryEvent)
+                }
                 if ev.hasPrefix("DOUBLE_TAP") {
                     state.onDoubleTap?()
                 } else if ev.hasPrefix("WRIST_ON") {

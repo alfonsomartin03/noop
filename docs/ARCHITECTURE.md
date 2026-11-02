@@ -17,7 +17,7 @@ WHOOP ZIP/folder → StrandImport → WhoopImporter → WhoopStore
 Settings → Data ↔ DataBackup ↔ user-selected database backup
 ```
 
-`AppModel` owns app coordination, connection/collection services, and the published state used by the UI. `LiveState` carries changing strap readings. `Repository` supplies stored/derived screen data. `IntelligenceEngine` coordinates scoring; its scoring pass dispatches `IncrementalScorer` on a utility task. Scoring is persisted under a separate `-noop` device identity, with imported rows kept distinct.
+`AppModel` owns app coordination, connection/collection services, and the published state used by the UI. `LiveState` carries changing strap readings; `LiveHeartRate` turns them into the one smoothed live number and publishes only when it changes, so per-beat updates don't invalidate views that observe `AppModel`. `Repository` supplies stored/derived screen data. `IntelligenceEngine` coordinates scoring; its scoring pass dispatches `IncrementalScorer` on a utility task. Scoring is persisted under a separate `-noop` device identity, with imported rows kept distinct.
 
 ## Boundaries
 

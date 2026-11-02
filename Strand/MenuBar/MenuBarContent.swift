@@ -16,43 +16,21 @@ import WhoopStore
 // MARK: - Label
 
 /// The compact menu-bar item: a zone-tinted dot + the live HR number.
-public struct MenuBarLabel: View {
-    @EnvironmentObject private var repo: Repository
+struct MenuBarLabel: View {
     @EnvironmentObject private var live: LiveState
+    @EnvironmentObject private var heart: LiveHeartRate
+    @EnvironmentObject private var profile: ProfileStore
 
-    public init() {}
-
-    /// HR to display: reported value when >0, else derived from the latest R-R.
-    private var displayHR: Int? {
-        if let hr = live.heartRate, hr > 0 { return hr }
-        if let last = live.rr.last, last > 0 { return Int((60_000.0 / Double(last)).rounded()) }
-        return nil
-    }
-
-    // A glanceable HR-zone estimate using a typical adult max (~190 bpm). The full
-    // profile-aware zoning lives on the main screens; the menu bar only needs a tint.
-    private let assumedHrMax: Double = 190
-
-    /// HR zone 1...5 from %max, or nil when there's no live reading.
-    private var zone: Int? {
-        guard let hr = displayHR else { return nil }
-        let pct = Double(hr) / assumedHrMax
-        switch pct {
-        case ..<0.60: return 1
-        case ..<0.70: return 2
-        case ..<0.80: return 3
-        case ..<0.90: return 4
-        default:      return 5
-        }
-    }
+    /// The same smoothed number and profile-based zone as the main window.
+    private var displayHR: Int? { heart.bpm }
 
     private var dotColor: Color {
         guard live.connected else { return StrandPalette.textTertiary }
-        if let zone { return StrandPalette.hrZoneColor(zone) }
+        if let hr = displayHR { return StrandPalette.hrZoneColor(LiveHeartRate.zone(bpm: hr, maxHR: profile.hrMax)) }
         return StrandPalette.statusPositive
     }
 
-    public var body: some View {
+    var body: some View {
         HStack(spacing: 4) {
             Image(systemName: live.connected ? "heart.fill" : "heart")
                 .font(.system(size: 11, weight: .semibold))
@@ -68,20 +46,15 @@ public struct MenuBarLabel: View {
 // MARK: - Popover content
 
 /// The popover shown when the menu-bar item is clicked.
-public struct MenuBarContent: View {
+struct MenuBarContent: View {
     @EnvironmentObject private var repo: Repository
     @EnvironmentObject private var live: LiveState
+    @EnvironmentObject private var heart: LiveHeartRate
     @EnvironmentObject private var model: AppModel
-
-    public init() {}
 
     // MARK: Derived values
 
-    private var displayHR: Int? {
-        if let hr = live.heartRate, hr > 0 { return hr }
-        if let last = live.rr.last, last > 0 { return Int((60_000.0 / Double(last)).rounded()) }
-        return nil
-    }
+    private var displayHR: Int? { heart.bpm }
 
     private var recovery: Double? { repo.today?.recovery }
 
@@ -90,16 +63,7 @@ public struct MenuBarContent: View {
     }
 
     private var connectionTitle: String {
-        live.bonded ? "STREAMING" : live.connected ? "CONNECTED" : "OFFLINE"
-    }
-
-    private var batteryTone: StrandTone {
-        guard let pct = live.batteryPct else { return .neutral }
-        switch pct {
-        case ..<15: return .critical
-        case ..<35: return .warning
-        default:    return .positive
-        }
+        live.bonded ? "Streaming" : live.connected ? "Connected" : "Offline"
     }
 
     /// Public-palette color for a tone (StrandTone.color is module-internal).
@@ -114,7 +78,7 @@ public struct MenuBarContent: View {
         }
     }
 
-    public var body: some View {
+    var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             header
             recoveryBlock
@@ -136,10 +100,7 @@ public struct MenuBarContent: View {
                 Text("NOOP")
                     .font(StrandFont.headline)
                     .foregroundStyle(StrandPalette.textPrimary)
-                Text("ALL YOUR DATA · NONE OF THE CLOUD")
-                    .font(StrandFont.overline)
-                    .tracking(StrandFont.overlineTracking)
-                    .foregroundStyle(StrandPalette.textTertiary)
+                Text("All your data, none of the cloud").strandOverline()
             }
             Spacer(minLength: 8)
             StatePill(connectionTitle, tone: connectionTone, pulsing: live.bonded)
@@ -158,10 +119,7 @@ public struct MenuBarContent: View {
             }
             Spacer(minLength: 0)
             VStack(alignment: .trailing, spacing: 2) {
-                Text("HEART RATE")
-                    .font(StrandFont.overline)
-                    .tracking(StrandFont.overlineTracking)
-                    .foregroundStyle(StrandPalette.textTertiary)
+                Text("Heart rate").strandOverline()
                 HStack(alignment: .firstTextBaseline, spacing: 4) {
                     Text(displayHR.map(String.init) ?? "—")
                         .font(StrandFont.number(40))
@@ -185,10 +143,7 @@ public struct MenuBarContent: View {
                 Text("—")
                     .font(StrandFont.number(28))
                     .foregroundStyle(StrandPalette.textTertiary)
-                Text("NO DATA")
-                    .font(StrandFont.overline)
-                    .tracking(StrandFont.overlineTracking)
-                    .foregroundStyle(StrandPalette.textTertiary)
+                Text("No data").strandOverline()
             }
         }
         .frame(width: 96, height: 96)
@@ -199,14 +154,14 @@ public struct MenuBarContent: View {
     // Compact sleep / strain / HRV summary.
     private var statsRow: some View {
         HStack(spacing: 0) {
-            statCell(
-                "BATTERY",
-                live.batteryPct.map { "\(Int($0.rounded()))%" } ?? "—",
-                tint: live.batteryPct == nil ? StrandPalette.textPrimary : toneColor(batteryTone)
-            )
+            let battery = BatteryPresentation(live: live)
+            statCell("Battery", battery.valueText, tint: battery.percent == nil ? StrandPalette.textTertiary : battery.ink)
+                .help(battery.statusText)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(battery.accessibilityLabel)
             cellDivider
             statCell(
-                "RESTING HR",
+                "Resting HR",
                 repo.today?.restingHr.map { "\($0)" } ?? "—",
                 tint: StrandPalette.textPrimary
             )
@@ -221,10 +176,7 @@ public struct MenuBarContent: View {
 
     private func statCell(_ label: String, _ value: String, tint: Color) -> some View {
         VStack(spacing: 3) {
-            Text(label)
-                .font(StrandFont.overline)
-                .tracking(StrandFont.overlineTracking)
-                .foregroundStyle(StrandPalette.textTertiary)
+            Text(label).strandOverline()
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
             Text(value)
@@ -249,11 +201,11 @@ public struct MenuBarContent: View {
         VStack(spacing: 8) {
             if live.bonded {
                 menuButton(
-                    live.heartRate != nil ? "Stop live feed" : "Start live feed",
-                    systemImage: live.heartRate != nil ? "pause.fill" : "play.fill",
+                    live.realtimeStreaming ? "Stop live feed" : "Start live feed",
+                    systemImage: live.realtimeStreaming ? "pause.fill" : "play.fill",
                     tone: .accent
                 ) {
-                    if live.heartRate != nil { model.stopRealtimeHR() } else { model.startRealtimeHR() }
+                    if live.realtimeStreaming { model.stopRealtimeHR() } else { model.startRealtimeHR() }
                 }
             } else {
                 menuButton(
@@ -357,6 +309,8 @@ private func previewEnv(
     .environmentObject(repo)
     .environmentObject(live)
     .environmentObject(model)
+    .environmentObject(model.heart)
+    .environmentObject(model.profile)
     .preferredColorScheme(.dark)
 }
 
@@ -369,6 +323,8 @@ private func previewEnv(
         .environmentObject(repo)
         .environmentObject(live)
         .environmentObject(model)
+        .environmentObject(model.heart)
+        .environmentObject(model.profile)
 }
 
 #Preview("Popover — offline / no data") {
@@ -379,5 +335,7 @@ private func previewEnv(
         .environmentObject(repo)
         .environmentObject(live)
         .environmentObject(model)
+        .environmentObject(model.heart)
+        .environmentObject(model.profile)
 }
 #endif

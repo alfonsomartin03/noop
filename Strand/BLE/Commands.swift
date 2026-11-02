@@ -24,6 +24,8 @@ public enum WhoopCommand: UInt8, CaseIterable {
     case sendHistoricalData    = 22
     case historicalDataResult  = 23
     case getBatteryLevel       = 26
+    /// GET_BATTERY_PACK_INFO (5.0): read-only; answers whether the charging pack is attached (COMMAND_REGISTRY.md).
+    case getBatteryPackInfo    = 151
     case getDataRange          = 34
     case getHelloHarvard       = 35
     case getAdvertisingNameHarvard = 76
@@ -81,6 +83,7 @@ public enum WhoopCommand: UInt8, CaseIterable {
         case .sendHistoricalData:    return "Send Historical Data"
         case .historicalDataResult:  return "Historical Data Result"
         case .getBatteryLevel:       return "Get Battery Level"
+        case .getBatteryPackInfo:    return "Get Battery Pack Info"
         case .getDataRange:          return "Get Data Range"
         case .getHelloHarvard:       return "Get Hello (Harvard)"
         case .getAdvertisingNameHarvard: return "Get Advertising Name (Harvard)"

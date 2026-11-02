@@ -16,8 +16,6 @@ struct TodayView: View {
     @EnvironmentObject var profile: ProfileStore
     @Environment(\.navigate) private var navigate
 
-    // 14-day sparkline series, keyed by metric key. Loaded once in .task.
-    @State private var sparks: [String: [Double]] = [:]
     /// Day picked in the calendar strip (yyyy-MM-dd); nil follows the newest day with data.
     @State private var selectedDay: String?
     /// Which square is open, or nil for the dashboard.
@@ -106,7 +104,7 @@ struct TodayView: View {
                     }
                 }
                 .frame(width: 150, height: 150)
-                Text(synthesisWord(score)).font(.system(size: 24, weight: .bold)).foregroundStyle(StrandPalette.scoreInk(tint))
+                Text(score.map { StrandPalette.recoveryState($0).capitalized } ?? "No data").font(.system(size: 24, weight: .bold)).foregroundStyle(StrandPalette.scoreInk(tint))
                 Spacer(minLength: 0)
                 VStack(spacing: 6) {
                     chip("HRV", d?.avgHrv.map { "\(Int($0.rounded())) ms" }, StrandPalette.metricPurple)
@@ -214,37 +212,6 @@ struct TodayView: View {
         steps = apple?.steps
     }
 
-    /// Trailing-window values for a metric, with the sparse-data fallback:
-    /// if the trailing window has <2 points, fall back to ALL history so sparse
-    /// series (weight) still render a value + line instead of an empty state.
-    // If the recent window has fewer than 2 points, fall back to all history so sparse metrics (e.g. weight) still draw.
-    private func sparkValues(_ key: String, source: String, window: Int) async -> [Double] {
-        let all = await repo.series(key: key, source: source)   // full history, asc
-        guard !all.isEmpty else { return [] }
-        let windowed = trailingWindow(all, days: window)
-        let chosen = windowed.count >= 2 ? windowed : all
-        return chosen.map { $0.value }
-    }
-
-    /// Keep only points within `days` of the most recent point (parsing yyyy-MM-dd in UTC).
-    // Window is measured back from the newest data point, not from today, so old imports still show a trend.
-    private func trailingWindow(_ points: [(day: String, value: Double)], days: Int) -> [(day: String, value: Double)] {
-        guard let lastDay = points.last?.day, let lastDate = Self.dayParser.date(from: lastDay) else { return points }
-        let cutoff = lastDate.addingTimeInterval(-Double(days) * 86_400)
-        return points.filter { p in
-            guard let dt = Self.dayParser.date(from: p.day) else { return false }
-            return dt >= cutoff
-        }
-    }
-
-    /// Latest value of a loaded sparkline series, formatted — for tiles whose hero
-    /// can't be read off `appleDailyRows` (e.g. respiratory from apple-health).
-    private func latestString(_ key: String, decimals: Int, unit: String = "") -> String {
-        guard let last = sparks[key]?.last else { return "—" }
-        let n = decimals == 0 ? intString(last) : String(format: "%.\(decimals)f", last)
-        return unit.isEmpty ? n : "\(n) \(unit)"
-    }
-
     // MARK: - Derived text
 
     /// Greeting word used as the section's trailing label (no lone text block).
@@ -265,86 +232,12 @@ struct TodayView: View {
         return f.string(from: Date())
     }
 
-    /// A short recovery state word for the synthesis hero.
-    // Recovery score -> one-word state for the hero (<25 Depleted ... >=88 Peak).
-    private func synthesisWord(_ score: Double?) -> String {
-        guard let s = score else { return "No Data" }
-        switch s {
-        case ..<25:  return "Depleted"
-        case ..<50:  return "Low"
-        case ..<70:  return "Steady"
-        case ..<88:  return "Primed"
-        default:     return "Peak"
-        }
-    }
-
-    /// Plain-English synthesis of recovery + sleep.
-    private func synthesisDetail(_ d: DailyMetric?) -> String {
-        guard let d, let rec = d.recovery else {
-            return "No metrics yet. Import your Whoop export or wear the strap to begin."
-        }
-        let recPart: String
-        switch rec {
-        case ..<50:  recPart = "Recovery is low"
-        case ..<70:  recPart = "Recovery is steady"
-        default:     recPart = "Recovery is strong"
-        }
-        let sleepPart: String
-        if let mins = d.totalSleepMin {
-            let h = mins / 60.0
-            sleepPart = h >= 7 ? " and sleep was consistent" : " but sleep ran short"
-        } else {
-            sleepPart = ""
-        }
-        return recPart + sleepPart + "."
-    }
-
-    private func ringSupporting(_ d: DailyMetric?) -> String {
-        let hrv = d?.avgHrv.map { "\(Int($0.rounded())) ms" } ?? "— ms"
-        let rhr = d?.restingHr.map { "\($0)" } ?? "—"
-        return "HRV \(hrv) · RHR \(rhr)"
-    }
 
     private func sleepValue(_ d: DailyMetric?) -> String {
         guard let m = d?.totalSleepMin else { return "—" }
         let h = Int(m) / 60, mm = Int(m) % 60
         return "\(h)h \(mm)m"
     }
-
-
-    private func workoutDuration(_ w: WorkoutRow) -> String {
-        let secs = w.durationS ?? Double(max(w.endTs - w.startTs, 0))
-        let mins = Int((secs / 60).rounded())
-        if mins >= 60 { return "\(mins / 60)h \(mins % 60)m" }
-        return "\(mins)m"
-    }
-
-    private func workoutCaption(_ w: WorkoutRow) -> String {
-        let f = DateFormatter()
-        f.locale = Locale(identifier: "en_US_POSIX")
-        f.dateFormat = "d MMM"
-        let date = f.string(from: Date(timeIntervalSince1970: TimeInterval(w.startTs)))
-        if let hr = w.avgHr { return "\(date) · \(hr) bpm" }
-        return date
-    }
-
-    /// Thousands-grouped integer string (steps / calories).
-    private func intString(_ v: Double) -> String {
-        let f = NumberFormatter()
-        f.numberStyle = .decimal
-        f.maximumFractionDigits = 0
-        return f.string(from: NSNumber(value: v)) ?? "\(Int(v.rounded()))"
-    }
-
-    // MARK: - Date parsing (yyyy-MM-dd, en_US_POSIX, UTC)
-
-    static let dayParser: DateFormatter = {
-        let f = DateFormatter()
-        f.locale = Locale(identifier: "en_US_POSIX")
-        f.timeZone = TimeZone(identifier: "UTC")
-        f.dateFormat = "yyyy-MM-dd"
-        return f
-    }()
 }
 
 
@@ -543,8 +436,6 @@ enum SyncFormat {
 /// Heart rate for the picked day: the day's curve from the strap, the live reading when the day is today, and a few
 /// plain-language insights computed from the same samples.
 private struct HeartRateDayCard: View {
-    @EnvironmentObject var live: LiveState
-    @EnvironmentObject var model: AppModel
     let day: String
     let metric: DailyMetric?
     let days: [DailyMetric]
@@ -578,12 +469,8 @@ private struct HeartRateDayCard: View {
     // MARK: Headline numbers
 
     @ViewBuilder private var headline: some View {
-        if isToday, let bpm = model.bpm {
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text("\(bpm)").font(.system(size: 52, weight: .bold).monospacedDigit()).foregroundStyle(StrandPalette.metricRose)
-                    .shadow(color: StrandPalette.metricRose.opacity(0.5), radius: 10)
-                Text("bpm now").font(.system(size: 13, weight: .medium)).foregroundStyle(StrandPalette.textSecondary)
-            }
+        if isToday {
+            LiveHeadline(average: stats?.average)
         } else if let avg = stats?.average {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text("\(avg)").font(.system(size: 52, weight: .bold).monospacedDigit()).foregroundStyle(StrandPalette.textPrimary)
@@ -597,6 +484,31 @@ private struct HeartRateDayCard: View {
                 stat("Low", "\(lo.bpm)", StrandPalette.metricCyan)
                 stat("Avg", s.average.map(String.init) ?? "—", StrandPalette.textPrimary)
                 stat("Peak", "\(hi.bpm)", StrandPalette.statusCritical)
+            }
+        }
+    }
+
+    /// Today's headline: the live number while one is streaming, else the day's average. The only part of the card that
+    /// follows the live feed, so a new beat redraws this text and not the chart or insights.
+    private struct LiveHeadline: View {
+        @EnvironmentObject var heart: LiveHeartRate
+        let average: Int?
+        var body: some View {
+            if let bpm = heart.bpm {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text("\(bpm)").font(StrandFont.number(52, weight: .bold)).foregroundStyle(StrandPalette.metricRose)
+                    Text("bpm now").font(.system(size: 13, weight: .medium)).foregroundStyle(StrandPalette.textSecondary)
+                }
+                .accessibilityElement(children: .combine)
+            } else if let average {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text("\(average)").font(StrandFont.number(52, weight: .bold)).foregroundStyle(StrandPalette.textPrimary)
+                    Text("bpm average").font(.system(size: 13, weight: .medium)).foregroundStyle(StrandPalette.textSecondary)
+                }
+                .accessibilityElement(children: .combine)
+            } else {
+                Text("—").font(.system(size: 52, weight: .bold)).foregroundStyle(StrandPalette.textTertiary)
+                    .accessibilityLabel("No heart rate")
             }
         }
     }
@@ -714,6 +626,7 @@ private struct HeartRateDayCard: View {
     return TodayView()
         .environmentObject(repo)
         .environmentObject(ProfileStore())
+        .environmentObject(LiveHeartRate())
         .frame(width: 920, height: 940)
         .preferredColorScheme(.dark)
 }

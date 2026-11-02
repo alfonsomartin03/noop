@@ -12,19 +12,9 @@ import WhoopStore
 // Vitals: live heart-rate hero plus a grid of daily vitals.
 struct HealthView: View {
     @EnvironmentObject var repo: Repository
-    @EnvironmentObject var live: LiveState
-    @EnvironmentObject var profile: ProfileStore
+    @EnvironmentObject var heart: LiveHeartRate
 
-    // MARK: - Derived live HR
-
-    /// HR to display: reported value when >0, else derived from the latest R-R
-    /// interval (the strap streams R-R even when its HR field reads 0).
-    private var displayHR: Int? {
-        if let hr = live.heartRate, hr > 0 { return hr }
-        if let last = live.rr.last, last > 0 { return Int((60_000.0 / Double(last)).rounded()) }
-        return nil
-    }
-    private var hasLiveHR: Bool { displayHR != nil }
+    private var hasLiveHR: Bool { heart.bpm != nil }
 
     // MARK: - Body
 
@@ -61,15 +51,11 @@ struct HealthView: View {
 // Shows the smoothed live bpm with its zone; falls back to a resting display when there is no live reading.
 private struct HeartRateSection: View {
     @EnvironmentObject var live: LiveState
+    @EnvironmentObject var heart: LiveHeartRate
     @EnvironmentObject var profile: ProfileStore
 
-    /// HR to display: reported value when >0, else derived from the latest R-R
-    /// interval (the strap streams R-R even when its HR field reads 0).
-    private var displayHR: Int? {
-        if let hr = live.heartRate, hr > 0 { return hr }
-        if let last = live.rr.last, last > 0 { return Int((60_000.0 / Double(last)).rounded()) }
-        return nil
-    }
+    /// The shared smoothed live HR (see `LiveHeartRate`), so this matches Overview and the menu bar.
+    private var displayHR: Int? { heart.bpm }
     private var hrIsDerived: Bool { (live.heartRate ?? 0) <= 0 && !live.rr.isEmpty }
 
     /// HR as a fraction of HR-max (0…1).
@@ -78,17 +64,6 @@ private struct HeartRateSection: View {
         return min(max(Double(hr) / Double(profile.hrMax), 0), 1)
     }
 
-    /// Current zone 1…5 from %HR-max (WHOOP/Karvonen-style bands: 50/60/70/80/90).
-    // Maps the fraction of HRmax to the zone number for the label and colour.
-    private func hrZone(_ fraction: Double) -> Int {
-        switch fraction {
-        case ..<0.60: return 1
-        case ..<0.70: return 2
-        case ..<0.80: return 3
-        case ..<0.90: return 4
-        default:      return 5
-        }
-    }
 
     /// A short HR series for the hero sparkline, derived from streamed R-R intervals
     /// (newest last). Falls back to a flat line at the current HR when R-R is sparse.
@@ -107,7 +82,7 @@ private struct HeartRateSection: View {
         let displayHR = self.displayHR
         let hasLiveHR = displayHR != nil
         let fraction = hrFraction(displayHR)
-        let zone = hrZone(fraction)
+        let zone = displayHR.map { LiveHeartRate.zone(bpm: $0, maxHR: profile.hrMax) } ?? 0
         let series = hrSeries(displayHR)
 
         return VStack(alignment: .leading, spacing: NoopMetrics.gap) {
@@ -123,7 +98,7 @@ private struct HeartRateSection: View {
                           fraction: fraction, zone: zone, series: series)
             } footer: {
                 ChartFooter([
-                    ("Zone", hasLiveHR ? "Z\(zone)" : "—"),
+                    ("Zone", hasLiveHR ? (zone >= 1 ? "Z\(zone)" : "<Z1") : "—"),
                     ("% Max", hasLiveHR ? "\(Int((fraction * 100).rounded()))%" : "—"),
                     ("Max HR", "\(profile.hrMax)"),
                     ("State", hasLiveHR ? "STREAMING" : "IDLE"),
@@ -170,7 +145,7 @@ private struct HeartRateSection: View {
 
     private func zoneLabel(hasLiveHR: Bool, zone: Int, fraction: Double) -> String {
         guard hasLiveHR else { return "Idle" }
-        return "Zone \(zone) · \(Int((fraction * 100).rounded()))%"
+        return "\(LiveHeartRate.zoneLabel(zone)) · \(Int((fraction * 100).rounded()))%"
     }
 }
 
@@ -298,6 +273,7 @@ private struct Vital: Identifiable {
     return HealthView()
         .environmentObject(repo)
         .environmentObject(live)
+        .environmentObject(LiveHeartRate(following: live))
         .environmentObject(ProfileStore())
         .frame(width: 900, height: 760)
         .preferredColorScheme(.dark)

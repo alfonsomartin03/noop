@@ -66,6 +66,31 @@ final class WidgetSnapshotTests: XCTestCase {
         .background(StrandPalette.surfaceBase)
     }
 
+    private var charging: some View {
+        HStack(spacing: 20) {
+            ForEach(Array([(ChargingIllustration.Phase.idle, 62, false), (.charging, 48, false), (.full, 100, false), (.idle, 31, true)].enumerated()),
+                    id: \.offset) { _, s in
+                ChargingIllustration(phase: s.0, percent: s.1, dimmed: s.2, height: 110).frame(width: 220)
+            }
+        }
+        .padding(24)
+        .background(StrandPalette.surfaceBase)
+    }
+
+    /// The four charging-illustration states side by side (idle, charging, full, stale), light and dark.
+    func testRenderChargingStates() throws {
+        guard let dir = ProcessInfo.processInfo.environment["STRAND_SNAPSHOT_DIR"] else { throw XCTSkip("no dir") }
+        for (name, dark) in [("light", false), ("dark", true)] {
+            var png: Data?
+            NSAppearance(named: dark ? .darkAqua : .aqua)!.performAsCurrentDrawingAppearance {
+                let r = ImageRenderer(content: charging.environment(\.colorScheme, dark ? .dark : .light))
+                r.scale = 2
+                if let cg = r.cgImage { png = NSBitmapImageRep(cgImage: cg).representation(using: .png, properties: [:]) }
+            }
+            try XCTUnwrap(png).write(to: URL(fileURLWithPath: "\(dir)/charging-\(name).png"))
+        }
+    }
+
     // Renders the widget grid to PNG for eyeballing; not a pixel-diff assertion.
     func testRenderSnapshots() throws {
         guard let dir = ProcessInfo.processInfo.environment["STRAND_SNAPSHOT_DIR"] else { throw XCTSkip("no dir") }

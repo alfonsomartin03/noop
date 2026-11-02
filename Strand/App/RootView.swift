@@ -31,12 +31,12 @@ extension EnvironmentValues {
     }
 }
 
-// Shell: one persistent content area with a floating pill. Observes only Repository so ~1 Hz heart-rate updates
-// don't re-render the whole window (the battery badge owns its own LiveState subscription).
+// Shell: one persistent content area with a floating pill. It observes no model object, so neither ~1 Hz strap updates
+// nor repository refreshes redraw the whole window; each screen and the battery badge subscribe to what they show.
+// AppModel loads the repository at launch.
 struct RootView: View {
-    @EnvironmentObject var repo: Repository
-    @State private var selection: NavItem = .overview
-    @State private var showLive = false
+    @State private var selection: NavItem = LaunchMode.fixtureTab.flatMap { NavItem(rawValue: $0.capitalized) } ?? .overview
+    @State private var showLive = LaunchMode.fixtureLiveSheet
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -64,7 +64,6 @@ struct RootView: View {
             }
         }
         .sheet(isPresented: $showLive) { LiveSheet { showLive = false } }
-        .task { await repo.refresh() }
     }
 
     @ViewBuilder private var content: some View {
@@ -130,56 +129,36 @@ private struct FloatingNav: View {
     }
 }
 
-/// Strap charge at the top of every screen: a battery glyph that fills and changes colour with the level, plus the %.
-/// A reading older than 10 minutes (or from before a disconnect) is dimmed and says when it was taken; the charging
-/// bolt appears only when a verified source reports charging. Its own view so battery updates only re-render this badge.
+/// Strap charge at the top of every screen: a battery glyph tinted by level, plus the %. Thresholds, staleness and
+/// charging come from `BatteryPresentation`, the same rules as Settings and the menu bar: a stale reading is dimmed and
+/// says when it was taken, and the bolt appears only when a verified source reports charging. Its own view so battery
+/// updates only re-render this badge.
 private struct BatteryBadge: View {
     @EnvironmentObject var live: LiveState
     let open: () -> Void
 
-    private var status: BatteryStatus? { live.battery }
-    private var pct: Int? { status?.percent ?? (live.connected ? live.batteryPct.map { Int($0.rounded()) } : nil) }
-    private var stale: Bool { !live.connected || (status?.isStale() ?? false) }
-    private var charging: Bool { status?.charging == true && !stale }
-    private var tint: Color {
-        guard let p = pct, !stale else { return StrandPalette.textTertiary }
-        return p < 20 ? StrandPalette.statusCritical : p < 50 ? StrandPalette.statusWarning : StrandPalette.statusPositive
-    }
-    private var symbol: String {
-        if charging { return "battery.100percent.bolt" }
-        guard let p = pct else { return "battery.0percent" }
-        switch p {
-        case ..<13: return "battery.0percent"
-        case ..<38: return "battery.25percent"
-        case ..<63: return "battery.50percent"
-        case ..<88: return "battery.75percent"
-        default:    return "battery.100percent"
+    var body: some View {
+        // Re-evaluated each minute so the badge dims when a reading ages out, not only on the next packet.
+        TimelineView(.periodic(from: .now, by: 60)) { context in
+            let b = BatteryPresentation(live: live, now: context.date)
+            Button(action: open) { chip(b) }
+                .buttonStyle(.plain)
+                .help(b.percent.map { "WHOOP strap battery: \($0)% · \(b.statusText)" } ?? b.statusText)
+                .accessibilityLabel(b.accessibilityLabel)
+                .accessibilityHint("Opens Settings")
         }
     }
-    private var help: String {
-        guard let p = pct else { return live.connected ? "Reading strap battery…" : "Strap not connected" }
-        var s = "WHOOP strap battery: \(p)%"
-        if charging { s += ", charging" }
-        if let at = status?.at, stale { s += " — last updated \(at.formatted(date: .omitted, time: .shortened))" }
-        if p < 20 && !stale { s += ". Low: charge soon to avoid gaps in recording." }
-        return s
-    }
 
-    var body: some View {
-        Button(action: open) { chip }.buttonStyle(.plain)
-    }
-
-    private var chip: some View {
+    private func chip(_ b: BatteryPresentation) -> some View {
         HStack(spacing: 6) {
-            Image(systemName: symbol).font(.system(size: 16, weight: .semibold)).foregroundStyle(tint)
-            Text(pct.map { "\($0)%" } ?? "—").font(.system(size: 13, weight: .bold).monospacedDigit())
-                .foregroundStyle(pct == nil || stale ? StrandPalette.textTertiary : StrandPalette.textPrimary)
+            Image(systemName: b.symbol).font(.system(size: 16, weight: .semibold)).foregroundStyle(b.tint)
+            Text(b.valueText).font(StrandFont.number(13, weight: .bold))
+                .foregroundStyle(b.percent == nil || b.stale ? StrandPalette.textTertiary : StrandPalette.textPrimary)
         }
         .padding(.horizontal, 12).padding(.vertical, 6)
         .background(StrandPalette.surfaceRaised, in: Capsule())
-        .overlay(Capsule().strokeBorder(StrandPalette.hairline, lineWidth: 0.5))
-        .help(help)
-        .accessibilityLabel(pct.map { "Strap battery \($0) percent\(stale ? ", not current" : "")" } ?? "Strap battery unknown")
+        .overlay(Capsule().strokeBorder(b.isCharging ? StrandPalette.statusPositive.opacity(0.6) : StrandPalette.hairline,
+                                        lineWidth: b.isCharging ? 1 : 0.5))
+        .animation(StrandMotion.respecting(StrandMotion.gentle), value: b.charge)
     }
 }
-

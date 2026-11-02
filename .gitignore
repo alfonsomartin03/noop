@@ -48,6 +48,8 @@ Fixtures/
 *.sqlite-wal
 *.sqlite-shm
 export.xml
+# …except the hand-written synthetic fixture the Apple Health parser tests need.
+!Packages/StrandImport/Tests/StrandImportTests/Resources/export.xml
 export.zip
 *whoop_export*.zip
 *apple_health*.zip

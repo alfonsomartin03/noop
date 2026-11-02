@@ -32,10 +32,9 @@ final class AppModel: ObservableObject {
     @Published var importing = false
     @Published var importSummary: String?
 
-    /// Smoothed, display-ready live heart rate — median over a short window, spike-filtered.
-    /// Every screen should show THIS, not the raw per-beat value (which swings with HRV).
-    @Published var bpm: Int?
-    private var hrWindow: [(t: Date, v: Double)] = []
+    /// Smoothed, display-ready live heart rate. Every screen shows this, not the raw per-beat value (which swings with
+    /// HRV). Kept off AppModel so ~1 Hz beats don't redraw every view that observes the model.
+    let heart: LiveHeartRate
     private var analysisDebounce: Task<Void, Never>?
     private var lastDataVersionBump = Date.distantPast
     private var hrCancellables = Set<AnyCancellable>()
@@ -46,6 +45,7 @@ final class AppModel: ObservableObject {
         ZoneTimeline.shared.startTracking()
         let live = LiveState()
         self.live = live
+        self.heart = LiveHeartRate(following: live)
         self.ble = BLEManager(state: live, deviceId: "my-whoop")
         self.repo = Repository(deviceId: "my-whoop")
         self.intelligence = IntelligenceEngine(repo: repo, profile: profile, deviceId: "my-whoop")
@@ -91,14 +91,12 @@ final class AppModel: ObservableObject {
         }
         // A finished (or stopped) pull goes straight to processing, shown as its own stage.
         ble.onSyncDownloadFinished = { [weak self] complete in self?.runPostSyncProcessing(downloadComplete: complete) }
-        // Smooth HR centrally so it's solid everywhere it's shown.
-        // Both signals feed one smoother, so every screen shows the same steady bpm.
-        live.$heartRate.sink { [weak self] _ in self?.ingestHR() }.store(in: &hrCancellables)
         // Each (re)connect measures the strap clock; re-store the next alarm on the strap then, so a deadline set while
         // disconnected (or consumed when it rang) is put back and verified by read-back.
         live.$clock.compactMap { $0 }.removeDuplicates { abs($0.measuredAt - $1.measuredAt) < 60 }
             .sink { [weak self] _ in self?.alarms.syncDeviceAlarm() }.store(in: &hrCancellables)
-        live.$rr.sink { [weak self] _ in self?.ingestHR() }.store(in: &hrCancellables)
+
+        if let mode = LaunchMode.fixtureBattery, ["cycle", "charging"].contains(mode) { playFixtureBattery(mode) }
 
         // Turn the strap's offloaded raw data into dashboard scores on launch and every 15
         // minutes, so recovery / strain / sleep populate from the strap itself with no import.
@@ -114,31 +112,6 @@ final class AppModel: ObservableObject {
                 try? await Task.sleep(nanoseconds: 900_000_000_000)  // 15 min, matches the offload cadence
             }
         }
-    }
-
-    /// Fold a fresh reading into the smoothing window and republish a stable bpm.
-    /// Prefers the strap's reported HR; falls back to 60000/R-R. Clamps to a plausible
-    /// 30–220 range (rejects 0 / garbage spikes) and publishes the window MEDIAN.
-    // Smoothing: keep ~10 s of readings, drop implausible ones, publish the median so single beats don't make the number jump.
-    private func ingestHR() {
-        var inst: Double?
-        if let hr = live.heartRate, hr >= 30, hr <= 220 {
-            inst = Double(hr)
-        } else if let rr = live.rr.last, rr > 0 {
-            let v = 60_000.0 / Double(rr)
-            if v >= 30, v <= 220 { inst = v }
-        }
-        guard let inst else {
-            // No live reading (stream stopped): clear the smoother so a stale bpm isn't shown.
-            hrWindow.removeAll(); bpm = nil
-            return
-        }
-        let now = Date()
-        hrWindow.append((now, inst))
-        hrWindow.removeAll { now.timeIntervalSince($0.t) > 10 }   // ~10s window
-        if hrWindow.count > 40 { hrWindow.removeFirst(hrWindow.count - 40) }
-        let vals = hrWindow.map(\.v).sorted()
-        bpm = vals.isEmpty ? nil : Int(vals[vals.count / 2].rounded())
     }
 
     private static let syncLog = Logger(subsystem: "com.noopapp.noop", category: "sync")
@@ -198,6 +171,25 @@ final class AppModel: ObservableObject {
         }
     }
 
+    /// Synthetic battery states for visual checks of a fixture launch (see `LaunchMode.fixtureBattery`): 8 s each.
+    private func playFixtureBattery(_ mode: String) {
+        let steps: [(connected: Bool, pct: Int, charging: Bool?)] = mode == "charging" ? [(true, 62, true)]
+            : [(true, 62, nil), (true, 62, true), (true, 100, true), (false, 100, true)]
+        Task { @MainActor [weak self] in
+            for (i, s) in steps.enumerated() {
+                guard let self else { return }
+                self.live.connected = s.connected
+                if s.connected {
+                    self.live.battery = BatteryStatus(reading: BatteryReading(percent: s.pct, charging: s.charging,
+                                                                             at: Date().timeIntervalSince1970, source: .vendorCommand))
+                    self.live.batteryPct = Double(s.pct)
+                }
+                FileHandle.standardError.write(Data("[fixture] battery step \(i)\n".utf8))
+                try? await Task.sleep(nanoseconds: 8_000_000_000)
+            }
+        }
+    }
+
     func scan() { ble.connect() }
     func disconnect() { ble.disconnect() }
     /// Retry pairing from scratch after the strap forgot this Mac (see `LiveState.pairingStale`).
@@ -215,8 +207,8 @@ final class AppModel: ObservableObject {
     func stopRealtimeHR() { ble.stopRealtime() }
     /// Turn the strap's standard heart-rate broadcast on/off (WHOOP 4.0).
     func setHRBroadcast(_ on: Bool) { ble.setHRBroadcast(on) }
-    /// Ask the strap for a fresh battery reading.
-    func getBattery() { ble.send(.getBatteryLevel, payload: [0x00]) }
+    /// Ask the strap for a fresh battery reading and whether its charging pack is on (5.0; ignored on 4.0).
+    func getBattery() { ble.send(.getBatteryLevel, payload: [0x00]); ble.refreshChargingState() }
 
     /// Import a Whoop CSV export (.zip or folder) → on-device store, then refresh the dashboard.
     // security-scoped access is required to read files picked from the file dialog in a sandboxed app.

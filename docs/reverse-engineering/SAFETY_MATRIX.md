@@ -45,8 +45,11 @@ A local save is not a promise that the strap keeps its copy.
 
 Low (< 20 %): fires once on the first fresh reading below 20 % (a crossing, or the first reading after launch or
 connect); re-armed only after a reading ≥ 25 %; never while charging is confirmed; state persists across restarts.
-Charging complete: only when a verified source reports charging AND 100 %; once per charging session. No WHOOP 5.0
-charging source is verified yet (event 3's charging bit is SUPPORTED only), so this alert cannot fire today.
+Charging complete: only when the strap reports charging AND 100 %; once per charging session. Charging comes only from
+what the strap reports (`LiveState.updateCharging`): CHARGING_ON/OFF (7/8) and BATTERY_PACK_CONNECTED/REMOVED (21/22)
+events, the 4.0 BATTERY_LEVEL charging flag, and on 5.0 the read-only GET_BATTERY_PACK_INFO (151) reply, sent on connect
+and with each battery poll. A rising percentage is never read as charging. The 5.0 event 3 charging bit is still unused.
+None of these has yet been captured while a 5.0 charges: confirm with a pack attached.
 Readings older than 10 minutes never trigger an alert. Disabled alerts still advance state (no backlog later).
 
 ## Alarm and haptic commands (verified 2026-11-02, fw 50.43.1.0)

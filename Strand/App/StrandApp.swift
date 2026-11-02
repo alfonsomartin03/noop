@@ -5,6 +5,7 @@ import SwiftUI
 @main
 enum AppEntry {
     static func main() {
+        _ = LaunchMode.started
         if ProcessInfo.processInfo.environment["NOOP_TEST_HOST"] != nil {
             NSApplication.shared.run()
         } else {
@@ -22,6 +23,7 @@ struct StrandApp: App {
             ContentView()
                 .environmentObject(model)
                 .environmentObject(model.live)
+                .environmentObject(model.heart)
                 .environmentObject(model.repo)
                 .environmentObject(model.profile)
                 .frame(minWidth: 1000, minHeight: 700)
@@ -29,17 +31,19 @@ struct StrandApp: App {
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 1180, height: 820)
 
-        // Menu-bar extra: glanceable live HR + a compact popover.
         // Menu-bar item: live heart rate at a glance plus a compact popover.
         MenuBarExtra {
             MenuBarContent()
                 .environmentObject(model)
                 .environmentObject(model.repo)
                 .environmentObject(model.live)
+                .environmentObject(model.heart)
+                .environmentObject(model.profile)
         } label: {
             MenuBarLabel()
-                .environmentObject(model.repo)
                 .environmentObject(model.live)
+                .environmentObject(model.heart)
+                .environmentObject(model.profile)
         }
         .menuBarExtraStyle(.window)
     }

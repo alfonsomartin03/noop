@@ -572,8 +572,8 @@ private struct BondedStep: View {
     }
 
     private var batteryLine: String {
-        if let pct = live.batteryPct {
-            return "Your strap is bonded · \(Int(pct))% battery."
+        if let pct = BatteryPresentation(live: live).percent {
+            return "Your strap is bonded · \(pct)% battery."
         }
         return "Your strap is bonded and ready to stream."
     }

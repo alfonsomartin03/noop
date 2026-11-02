@@ -106,7 +106,8 @@ public final class BLEManager: NSObject, ObservableObject {
     private var backfillDraining = false
 
     // MARK: CoreBluetooth
-    private var central: CBCentralManager!
+    /// nil in a fixture launch (`LaunchMode.bluetoothEnabled` false): nothing scans, connects or writes to a strap.
+    private var central: CBCentralManager?
     private var peripheral: CBPeripheral?
     /// Peripheral captured during `willRestoreState`; cleared in `didConnect`.
     /// Non-nil signals that `centralManagerDidUpdateState` should reconnect this
@@ -204,7 +205,7 @@ public final class BLEManager: NSObject, ObservableObject {
         state.lastSyncedAt = UserDefaults.standard.object(forKey: "lastSyncedAt") as? Double
         // Restore identifier + background-capable central (foundation for M3 state restoration).
         // Strand (macOS desktop): no state-restoration identifier (iOS background feature).
-        central = CBCentralManager(delegate: self, queue: .main)
+        if LaunchMode.bluetoothEnabled { central = CBCentralManager(delegate: self, queue: .main) }
         // Strap-as-clock: an incoming EVENT packet kicks a rate-limited catch-up sync.
         router.onSyncTrigger = { [weak self] in self?.requestSync(.strap) }
         router.onLog = { [weak self] in self?.log($0) }
@@ -255,8 +256,8 @@ public final class BLEManager: NSObject, ObservableObject {
     // Scan by service first; if nothing is found, fall back to an unfiltered name-based scan (see startUnfilteredScan).
     public func connect() {
         intentionalDisconnect = false
-        guard central.state == .poweredOn else {
-            log("Bluetooth not ready: \(BLEManager.stateName(central.state)); authorization=\(BLEManager.authName(CBCentralManager.authorization))")
+        guard let central, central.state == .poweredOn else {
+            log("Bluetooth not ready: \(central.map { BLEManager.stateName($0.state) } ?? "off for this launch"); authorization=\(BLEManager.authName(CBCentralManager.authorization))")
             return
         }
         // A strap that is already connected to macOS (or another app) does NOT advertise, so a scan can't
@@ -285,7 +286,7 @@ public final class BLEManager: NSObject, ObservableObject {
     /// Fallback: some straps may not put their service UUID in the advertisement. Scan unfiltered and
     /// accept only peripherals whose name starts with "WHOOP". ASSUMPTION: the 5.0 advertises such a name.
     private func startUnfilteredScan() {
-        guard central.state == .poweredOn, !intentionalDisconnect, peripheral == nil else { return }
+        guard let central, central.state == .poweredOn, !intentionalDisconnect, peripheral == nil else { return }
         log("No WHOOP service seen in \(BLEManager.filteredScanTimeoutSeconds)s — unfiltered scan by name. "
             + "If this fails: close the official WHOOP app / disconnect the strap from your phone (a strap "
             + "already connected elsewhere stops advertising), keep the strap close, and check it is charged.")
@@ -298,11 +299,11 @@ public final class BLEManager: NSObject, ObservableObject {
     /// Take ownership of a peripheral and start the connection.
     private func adopt(_ p: CBPeripheral) {
         scanFallbackWork?.cancel()
-        central.stopScan()
+        central?.stopScan()
         peripheral = p
         p.delegate = self
         log("Connecting (peripheral state=\(p.state.rawValue))…")
-        central.connect(p, options: nil)
+        central?.connect(p, options: nil)
     }
 
     /// Start pairing over after a stale-bond failure. CoreBluetooth cannot unpair a device, so the user
@@ -312,11 +313,16 @@ public final class BLEManager: NSObject, ObservableObject {
         stalePairingFailures = 0
         state.pairingStale = false
         restoredPeripheral = nil
-        if let p = peripheral { central.cancelPeripheralConnection(p) }
+        if let p = peripheral { central?.cancelPeripheralConnection(p) }
         peripheral = nil
-        central.stopScan()
+        central?.stopScan()
         log("Restarting pairing from scratch")
         connect()
+    }
+
+    /// Ask a WHOOP 5.0 whether its charging pack is attached (read-only GET_BATTERY_PACK_INFO).
+    public func refreshChargingState() {
+        if family == .whoop5 { send(.getBatteryPackInfo, payload: []) }
     }
 
     public func disconnect() {
@@ -324,9 +330,9 @@ public final class BLEManager: NSObject, ObservableObject {
         scanFallbackWork?.cancel()
         helloWatchdog?.cancel()
         if let p = peripheral {
-            central.cancelPeripheralConnection(p)
+            central?.cancelPeripheralConnection(p)
         }
-        central.stopScan()
+        central?.stopScan()
     }
 
     /// Apply the raw-outbox retention policy (24h synced window / 50MB unsynced cap).
@@ -402,6 +408,7 @@ public final class BLEManager: NSObject, ObservableObject {
         .reportVersionInfo:  { _ in [] },   // UNSUPPORTED on fw 50.43.1.0 (E02); allowed but never sent automatically
         .getClock:           { _ in [] },
         .getBatteryLevel:    { _ in [] },   // verified E02: body[0] = percent, equals 0x2A19
+        .getBatteryPackInfo: { _ in [] },   // read-only, auto in COMMAND_REGISTRY; E02: FAILURE + 01 00… with no pack attached
         .getDataRange:       { _ in [] },
         .sendHistoricalData: { _ in [] },   // history pull (see pullWhoop5History)
         .historicalDataResult: { $0 },      // HISTORY_END ack: [0x01] + end_data (see ackWhoop5HistoryChunk)
@@ -450,6 +457,7 @@ public final class BLEManager: NSObject, ObservableObject {
         log("WHOOP 5.0: reading clock and battery")
         send(.getClock, payload: [])
         send(.getBatteryLevel, payload: [])
+        send(.getBatteryPackInfo, payload: [])   // is the charging pack on?
         if wantsRealtime { send(.toggleRealtimeHR, payload: [0x01]) }   // resume a stream the user had on before a drop
         // Show the last broadcast choice the user made (the strap can't be asked). When that choice is off, send it
         // again: a reset strap or the WHOOP app can leave the broadcast on, and it's the only way to be sure of the
@@ -679,7 +687,7 @@ public final class BLEManager: NSObject, ObservableObject {
         // Bounce the connection — the auto-rescan on disconnect re-bonds and resumes streaming.
         if Date().timeIntervalSince(lastDataAt) > 120 {
             log("No data for >120s — bouncing link to resume streaming")
-            if let p = peripheral { central.cancelPeripheralConnection(p) }
+            if let p = peripheral { central?.cancelPeripheralConnection(p) }
             return
         }
         guard !backfilling, !whoop5HistoryActive, !whoop5AwaitingRange else { return }   // never poke the strap mid-offload
@@ -696,6 +704,7 @@ public final class BLEManager: NSObject, ObservableObject {
         keepAliveTick += 1
         if keepAliveTick % 2 == 0 {                                          // ~every 60s
             send(.getBatteryLevel, payload: [])
+            if family == .whoop5 { send(.getBatteryPackInfo, payload: []) }
             if let c = batteryCharacteristic { peripheral?.readValue(for: c) }   // standard 0x2A19 (also covers 5.0)
         }
     }
@@ -1248,6 +1257,12 @@ extension BLEManager {
             if let pct = whoop5BatteryPercent(r) {
                 state.updateBattery(BatteryReading(percent: pct, charging: nil, at: Date().timeIntervalSince1970, source: .vendorCommand))
             }
+        case Whoop5Charging.packInfoCommand:
+            guard r.isFinal else { return }
+            if let attached = Whoop5Charging.packAttached(r) {
+                if state.chargingReport?.charging != attached { log("Battery pack: \(attached ? "attached, charging" : "not attached")") }
+                state.updateCharging(attached, source: .batteryPack)
+            }
         case 3:
             if r.result != .success { state.realtimeStreaming = false }
         case 14:
@@ -1298,6 +1313,9 @@ extension BLEManager {
         let strapNow = clock.deviceTime(fromHost: Date().timeIntervalSince1970)
         guard abs(strapNow - Double(e.unix)) < 120 else { return }
         log("RX 5.0 live event \(e.kind.name)")
+        if let charging = Whoop5Charging.signal(e.kind) {
+            state.updateCharging(charging, source: e.kind == .chargingOn || e.kind == .chargingOff ? .chargingEvent : .batteryPack)
+        }
         switch e.kind {
         case .hrProfileEnabled: state.hrBroadcast = true
         case .hrProfileDisabled: state.hrBroadcast = false

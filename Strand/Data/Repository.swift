@@ -68,6 +68,8 @@ final class Repository: ObservableObject {
     func refresh(days nDays: Int = 4000) async {
         guard let store = await ensureStore() else { return }
         let now = Date()
+        let wasLoaded = loaded
+        defer { Self.reportFixtureTiming(refreshStarted: now, firstLoad: !wasLoaded) }
         let fromDay = Self.dayString(now.addingTimeInterval(-Double(nDays) * 86_400))
         let toDay = Self.dayString(now.addingTimeInterval(86_400))
         let nowTs = Int(now.timeIntervalSince1970)
@@ -83,15 +85,31 @@ final class Repository: ObservableObject {
         let impSleep = (try? await store.sleepSessions(deviceId: deviceId, from: lo, to: hi, limit: 4000)) ?? []
         let compSleep = (try? await store.sleepSessions(deviceId: computedDeviceId, from: lo, to: hi, limit: 4000)) ?? []
 
-        self.days = Self.mergeDaily(imported: imported, computed: computed)
+        // Assign only what changed: every assignment invalidates every view observing the repository, and most
+        // refreshes (periodic scoring, post-sync) find the same rows.
+        assign(\.days, Self.mergeDaily(imported: imported, computed: computed))
         // Main sleep only for the nightly views; an interrupted night's episodes are recombined into one row (its awake
         // gaps kept as wake) so the night isn't shown as its longest fragment.
-        self.sleeps = Self.mergeSleep(imported: impSleep, computed: Self.combineSessions(compSleep.filter(\.isMainSleep)))
-        self.recentSleepEpisodes = compSleep.filter { $0.endTs >= nowTs - 3 * 86_400 }
-        self.officialDays = Set(imported.map(\.day))
-        self.official = Dictionary(imported.map { ($0.day, $0) }, uniquingKeysWith: { _, b in b })
-        self.estimates = Dictionary(computed.map { ($0.day, $0) }, uniquingKeysWith: { _, b in b })
-        self.loaded = true
+        assign(\.sleeps, Self.mergeSleep(imported: impSleep, computed: Self.combineSessions(compSleep.filter(\.isMainSleep))))
+        assign(\.recentSleepEpisodes, compSleep.filter { $0.endTs >= nowTs - 3 * 86_400 })
+        assign(\.officialDays, Set(imported.map(\.day)))
+        assign(\.official, Dictionary(imported.map { ($0.day, $0) }, uniquingKeysWith: { _, b in b }))
+        assign(\.estimates, Dictionary(computed.map { ($0.day, $0) }, uniquingKeysWith: { _, b in b }))
+        assign(\.loaded, true)
+    }
+
+    /// Key-path setter rather than `inout`: an inout access writes the property back (and publishes) even when unchanged.
+    private func assign<T: Equatable>(_ key: ReferenceWritableKeyPath<Repository, T>, _ value: T) {
+        if self[keyPath: key] != value { self[keyPath: key] = value }
+    }
+
+    /// Fixture launches print launch-to-content and refresh timings (see `LaunchMode`); normal launches print nothing.
+    private static func reportFixtureTiming(refreshStarted: Date, firstLoad: Bool) {
+        guard LaunchMode.fixtureStore != nil else { return }
+        let ms = { (d: Date) in Int((Date().timeIntervalSince(d) * 1000).rounded()) }
+        var line = "[perf] repository refresh \(ms(refreshStarted)) ms\n"
+        if firstLoad { line = "[perf] launch-to-content \(ms(LaunchMode.started)) ms\n" + line }
+        FileHandle.standardError.write(Data(line.utf8))   // unbuffered, so a killed process keeps its lines
     }
 
     /// Today's stored heart-rate samples (local midnight → now), oldest→newest.

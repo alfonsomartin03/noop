@@ -35,7 +35,7 @@ Documentation-only changes need path/link checks and a source comparison, not a 
 
 ## UI and behavior
 
-Reuse `StrandPalette`, `StrandFont`, `StrandMotion`, `NoopMetrics`, and existing components before introducing new ones. Consolidate repeated styling in `StrandDesign`; keep domain logic out of view bodies. Follow native macOS control, keyboard, focus, sheet, and accessibility conventions. Respect reduced motion and distinguish status through text as well as color.
+Reuse `StrandPalette`, `StrandFont`, `StrandMotion`, `NoopMetrics`, and existing components before introducing new ones. Show live heart rate through `LiveHeartRate` and strap battery through `BatteryPresentation`; do not derive either again in a view. Observe the narrowest object a view needs: `LiveState` changes many times per second during a sync, so a view that only shows a stored score must not subscribe to it. Consolidate repeated styling in `StrandDesign`; keep domain logic out of view bodies. Follow native macOS control, keyboard, focus, sheet, and accessibility conventions. Respect reduced motion and distinguish status through text as well as color.
 
 Keep Overview → detail, Trends → history, and Settings → configuration/tools coherent. The same metric should use the same units, date window, provenance, missing-data state, and wording wherever it appears. Do not add destinations just to expose internal implementation details.
 

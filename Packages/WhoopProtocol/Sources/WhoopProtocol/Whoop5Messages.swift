@@ -156,6 +156,10 @@ public enum Whoop5HistoryMeta: Equatable, Sendable {
 /// observed on 5.0 are listed. Anything else is kept as `.unknown` with its raw body.
 public enum Whoop5EventKind: Equatable, Sendable {
     case batteryLevel                // 3
+    case chargingOn                  // 7 CHARGING_ON (EventNumber table; not yet captured on a 5.0)
+    case chargingOff                 // 8 CHARGING_OFF
+    case batteryPackConnected        // 21 BATTERY_PACK_CONNECTED
+    case batteryPackRemoved          // 22 BATTERY_PACK_REMOVED
     case connectionUp                // 11 BLE_CONNECTION_UP
     case connectionDown              // 12 BLE_CONNECTION_DOWN
     case hrProfileEnabled            // 24 BLE_HR_PROFILE_ENABLED
@@ -176,6 +180,10 @@ public enum Whoop5EventKind: Equatable, Sendable {
     public init(_ n: Int) {
         switch n {
         case 3: self = .batteryLevel
+        case 7: self = .chargingOn
+        case 8: self = .chargingOff
+        case 21: self = .batteryPackConnected
+        case 22: self = .batteryPackRemoved
         case 11: self = .connectionUp
         case 12: self = .connectionDown
         case 24: self = .hrProfileEnabled
@@ -198,6 +206,10 @@ public enum Whoop5EventKind: Equatable, Sendable {
     public var name: String {
         switch self {
         case .batteryLevel: return "BATTERY_LEVEL"
+        case .chargingOn: return "CHARGING_ON"
+        case .chargingOff: return "CHARGING_OFF"
+        case .batteryPackConnected: return "BATTERY_PACK_CONNECTED"
+        case .batteryPackRemoved: return "BATTERY_PACK_REMOVED"
         case .connectionUp: return "BLE_CONNECTION_UP"
         case .connectionDown: return "BLE_CONNECTION_DOWN"
         case .hrProfileEnabled: return "BLE_HR_PROFILE_ENABLED"
@@ -244,6 +256,37 @@ public struct Whoop5Event: Equatable, Sendable {
         let soc = Double(le16(body, 1)) / 10, mv = le16(body, 5)
         guard (0...100).contains(soc), (2500...5000).contains(mv) else { return nil }
         return (soc, mv, body[10] & 1 == 1)
+    }
+}
+
+// MARK: - Charging (WHOOP 5.0)
+
+/// What the strap itself reports about charging. NOOP shows "charging" only from these, never from a rising percentage.
+public enum Whoop5Charging {
+    /// Charging events: CHARGING_ON/OFF and BATTERY_PACK_CONNECTED/REMOVED (the pack is the charger). nil for others.
+    public static func signal(_ kind: Whoop5EventKind) -> Bool? {
+        switch kind {
+        case .chargingOn, .batteryPackConnected: return true
+        case .chargingOff, .batteryPackRemoved: return false
+        default: return nil
+        }
+    }
+
+    public static let packInfoCommand: UInt8 = 151
+
+    /// GET_BATTERY_PACK_INFO (151) reply: is a battery pack attached? CONFIRMED detached form (E02): result FAILURE with
+    /// body `01` + zero bytes. Any SUCCESS is read as attached (the attached body layout is not decoded). nil = no answer.
+    public static func packAttached(command: UInt8, result: Whoop5Result, body: [UInt8]) -> Bool? {
+        guard command == packInfoCommand else { return nil }
+        switch result {
+        case .success: return true
+        case .failure where body.first == 1 && body.dropFirst().allSatisfy({ $0 == 0 }): return false
+        default: return nil
+        }
+    }
+
+    public static func packAttached(_ r: Whoop5CommandResponse) -> Bool? {
+        packAttached(command: r.command, result: r.result, body: r.body)
     }
 }
 

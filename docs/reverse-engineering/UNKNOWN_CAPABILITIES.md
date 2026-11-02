@@ -20,6 +20,6 @@
 | Cmd 84 / 151 failures: argument needed or feature absent? | UNKNOWN | Code analysis of Goose first; do not guess payloads. |
 | Corrupt-frame and unknown-command error responses | UNKNOWN | Not tested by policy. |
 | MG vs 5.0 differences, "puffin" service 11500001 | UNKNOWN; absent on this unit | — |
-| Charging state on 5.0 | UNKNOWN: no CHARGING_ON/OFF event seen, 2BED absent, event 3 charging bit SUPPORTED only | Passive: capture event 3 bodies while the strap charges (probe attached during a NOOP pull) and compare with the charger LED. |
+| Charging state on 5.0 | PARTLY KNOWN: GET_BATTERY_PACK_INFO (151) answers "no pack attached" (E02) and the app now treats its SUCCESS reply and events 7/8/21/22 as charging; none captured while charging yet; event 3 charging bit SUPPORTED only | Passive: capture event 3 bodies while the strap charges (probe attached during a NOOP pull) and compare with the charger LED. |
 | Strap clock drift rate | ~15 s slow on two dates | Repeat GET_CLOCK daily (read-only). NOOP never sets the 5.0 clock. |
 | Capability status per Phase 11 list | stream control: probable; sampling modes: speculative; haptics: probable; LED: unsupported (no LED commands in Goose 5.0 beyond optical drive, prohibited); clock: confirmed read, probable set; power-saving/ship mode: unsafe | — |

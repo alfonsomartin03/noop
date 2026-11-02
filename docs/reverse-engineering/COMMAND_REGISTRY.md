@@ -83,6 +83,6 @@ Wire differences from 4.0 documented by Goose and not yet tested here: alarm com
 | 143 | LOAD_FIRMWARE_DATA_NEW | C |  |  |  | UNSAFE | prohibited |  |
 | 144 | PROCESS_FIRMWARE_IMAGE_NEW | C |  |  |  | UNSAFE | prohibited |  |
 | 145 | GET_HELLO | R | [01] | PENDING→SUCCESS | 124 | CONFIRMED | auto (read-only) | static CLIENT_HELLO; two 124-byte responses (result 2 then 1). Body holds identity/session data: redacted, never logged. |
-| 151 | GET_BATTERY_PACK_INFO | R | [] | FAILURE | 48 | CONFIRMED | auto (read-only) | result 0, body 01 + 30 zero bytes; no battery pack attached (E02). |
+| 151 | GET_BATTERY_PACK_INFO | R | [] | FAILURE | 48 | CONFIRMED | auto (read-only) | result 0, body 01 + 30 zero bytes; no battery pack attached (E02). Sent by the app on connect and with each battery poll: SUCCESS is read as pack attached (charging), the E02 form as not attached (`Whoop5Charging.packAttached`). The attached reply has not been captured yet. |
 | 153 | TOGGLE_PERSISTENT_R20 | C |  |  |  | UNSAFE | prohibited |  |
 | 154 | TOGGLE_PERSISTENT_R21 | C |  |  |  | UNSAFE | prohibited |  |

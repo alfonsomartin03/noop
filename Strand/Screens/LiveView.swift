@@ -6,46 +6,33 @@ import WhoopProtocol
 struct LiveView: View {
     @EnvironmentObject private var model: AppModel
     @EnvironmentObject private var live: LiveState
+    @EnvironmentObject private var heart: LiveHeartRate
 
-    /// Smoothed, spike-filtered live HR from AppModel (median over a short window).
-    private var displayHR: Int? { model.bpm }
+    /// The shared smoothed, spike-filtered live HR (see `LiveHeartRate`).
+    private var displayHR: Int? { heart.bpm }
+    @EnvironmentObject private var profile: ProfileStore
     @State private var logOpen = false
+    @AppStorage("noop.live.detailsOpen") private var detailsOpen = false
 
+    // At a glance first: live heart rate and battery, the two things this sheet is opened for. Everything technical
+    // (connection controls, link status, sync, packets, log) sits in one collapsed section below.
     var body: some View {
         ScreenScaffold(title: "Live", subtitle: connectionLine) {
             VStack(alignment: .leading, spacing: NoopMetrics.sectionGap) {
-                controls
-                LiveStatusCard()
-                StrapHistoryCard()
-                WidgetGrid(minColumn: 190) {
-                    heartRateWidget
-                    StrandWidget("Battery", symbol: "battery.75percent", tint: StrandPalette.statusPositive) {
-                        VStack(alignment: .leading, spacing: 4) {
-                            WidgetValue(live.batteryPct.map { "\(Int($0))" }, unit: "%")
+                if !live.connected { connectNotice }
+                HStack(alignment: .top, spacing: NoopMetrics.gap) {
+                    heartRateWidget.frame(maxWidth: .infinity, maxHeight: .infinity)
+                    StrandWidget("Battery", symbol: BatteryPresentation(live: live).symbol, tint: BatteryPresentation(live: live).tint, size: .large) {
+                        VStack(alignment: .leading, spacing: 0) {
                             Spacer(minLength: 0)
-                            WidgetCaption(live.connected ? "Strap battery" : "Not connected")
+                            StrapBatteryPanel()
+                            Spacer(minLength: 0)
                         }
                     }
-                    StrandWidget("Last frame", symbol: "dot.radiowaves.left.and.right", tint: StrandPalette.metricCyan) {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(live.lastFrameType ?? "—").font(.system(size: 17, weight: .semibold))
-                                .foregroundStyle(live.lastFrameType == nil ? StrandPalette.textTertiary : StrandPalette.textPrimary)
-                                .lineLimit(2).minimumScaleFactor(0.7)
-                            Spacer(minLength: 0)
-                            WidgetCaption("Most recent packet")
-                        }
-                    }
-                    StrandWidget("Last event", symbol: "bolt.fill", tint: StrandPalette.metricAmber) {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(live.lastEvent ?? "—").font(.system(size: 17, weight: .semibold))
-                                .foregroundStyle(live.lastEvent == nil ? StrandPalette.textTertiary : StrandPalette.textPrimary)
-                                .lineLimit(2).minimumScaleFactor(0.7)
-                            Spacer(minLength: 0)
-                            WidgetCaption("From the strap")
-                        }
-                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
-                logSection
+                .fixedSize(horizontal: false, vertical: true)   // both cards take the taller one's height
+                detailsSection
             }
         }
         // The heavy realtime stream runs only while this screen is visible, to save strap battery.
@@ -56,13 +43,71 @@ struct LiveView: View {
         }
     }
 
+    private var connectNotice: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "antenna.radiowaves.left.and.right.slash")
+                .font(StrandFont.headline).foregroundStyle(StrandPalette.textSecondary)
+            Text("Keep your WHOOP nearby to see live heart rate and battery.")
+                .font(StrandFont.subhead).foregroundStyle(StrandPalette.textSecondary)
+            Spacer()
+            Button("Connect") { model.scan() }.buttonStyle(.strandPrimary)
+        }
+        .padding(NoopMetrics.cardPadding)
+        .strandSurface()
+    }
+
+    // MARK: - Details (collapsed)
+
+    private var detailsSection: some View {
+        DisclosureGroup(isExpanded: $detailsOpen) {
+            VStack(alignment: .leading, spacing: NoopMetrics.gap) {
+                controls
+                LiveStatusCard()
+                StrapHistoryCard()
+                WidgetGrid(minColumn: 190) {
+                    StrandWidget("Last frame", symbol: "dot.radiowaves.left.and.right", tint: StrandPalette.metricCyan) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(live.lastFrameType ?? "—").font(StrandFont.headline)
+                                .foregroundStyle(live.lastFrameType == nil ? StrandPalette.textTertiary : StrandPalette.textPrimary)
+                                .lineLimit(2).minimumScaleFactor(0.7)
+                            Spacer(minLength: 0)
+                            WidgetCaption("Most recent packet")
+                        }
+                    }
+                    StrandWidget("Last event", symbol: "bolt.fill", tint: StrandPalette.metricAmber) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(live.lastEvent ?? "—").font(StrandFont.headline)
+                                .foregroundStyle(live.lastEvent == nil ? StrandPalette.textTertiary : StrandPalette.textPrimary)
+                                .lineLimit(2).minimumScaleFactor(0.7)
+                            Spacer(minLength: 0)
+                            WidgetCaption("From the strap")
+                        }
+                    }
+                    StrandWidget("R-R intervals", symbol: "waveform.path.ecg", tint: StrandPalette.metricPurple) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(live.rr.isEmpty ? "—" : live.rr.suffix(4).map(String.init).joined(separator: " · "))
+                                .font(StrandFont.number(15, weight: .semibold))
+                                .foregroundStyle(live.rr.isEmpty ? StrandPalette.textTertiary : StrandPalette.textPrimary)
+                            Spacer(minLength: 0)
+                            WidgetCaption("Latest beats, ms")
+                        }
+                    }
+                }
+                logSection
+            }
+            .padding(.top, NoopMetrics.gap)
+        } label: {
+            Text("Connection details").font(StrandFont.headline).foregroundStyle(StrandPalette.textPrimary)
+        }
+    }
+
     private var connectionLine: String {
         live.bonded ? "Connected to your WHOOP" : live.connected ? "Connecting to your WHOOP…" : "Your WHOOP is not connected"
     }
 
     // MARK: - Heart rate
 
-    // Shows the smoothed bpm from AppModel (median), not the raw per-beat value, which swings with HRV.
+    // The shared smoothed bpm (LiveHeartRate), not the raw per-beat value, which swings with HRV.
     private var heartRateWidget: some View {
         StrandWidget("Heart rate", symbol: "heart.fill", tint: StrandPalette.metricRose, size: .large) {
             VStack(alignment: .leading, spacing: 6) {
@@ -77,15 +122,17 @@ struct LiveView: View {
                         Text("bpm").font(.system(size: 18, weight: .medium)).foregroundStyle(StrandPalette.textSecondary)
                     }
                 }
-                if !live.rr.isEmpty {
-                    Text("R-R " + live.rr.suffix(4).map(String.init).joined(separator: " · ") + " ms")
-                        .font(.system(size: 12).monospacedDigit()).foregroundStyle(StrandPalette.textSecondary)
-                } else {
-                    WidgetCaption(live.phase.title)
-                }
+                Text(heartCaption).font(StrandFont.subhead).foregroundStyle(StrandPalette.textSecondary)
                 Spacer(minLength: 0)
             }
         }
+    }
+
+    /// "Zone 2 · 64% of max" while streaming, else the connection phase.
+    private var heartCaption: String {
+        guard let hr = displayHR else { return live.phase.title }
+        let pct = Int((Double(hr) / Double(max(profile.hrMax, 1)) * 100).rounded())
+        return "\(LiveHeartRate.zoneLabel(LiveHeartRate.zone(bpm: hr, maxHR: profile.hrMax))) · \(pct)% of max"
     }
 
     // MARK: - Controls

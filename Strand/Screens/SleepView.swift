@@ -24,7 +24,6 @@ import WhoopStore
 // Sleep screen: stage-breakdown hero, metric tiles with sparklines, stages vs your typical, and a 30-day trend.
 struct SleepView: View {
     @EnvironmentObject var repo: Repository
-    @EnvironmentObject var live: LiveState
 
     // The standard tile grid: ONE adaptive column set, used for every tile group.
     private let tileColumns = [GridItem(.adaptive(minimum: 168), spacing: NoopMetrics.gap)]

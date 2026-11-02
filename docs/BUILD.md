@@ -43,7 +43,25 @@ xcodebuild -project Strand.xcodeproj -scheme Strand \
   -destination 'platform=macOS' -derivedDataPath /tmp/noop-derived test
 ```
 
-The generated test action sets `NOOP_TEST_HOST=1`; `AppEntry` uses a bare process so tests do not start normal BLE collection or open the live store. Do not remove that isolation.
+The generated test action sets `NOOP_TEST_HOST=1`; `AppEntry` uses a bare process so tests do not start normal BLE collection or open the live store. Do not remove that isolation. Without a development team, `CODE_SIGN_IDENTITY=- CODE_SIGNING_REQUIRED=NO` runs the hosted tests ad-hoc signed.
+
+`StrandDesign` snapshot tests render PNGs for visual review when `STRAND_SNAPSHOT_DIR` is set (otherwise they skip):
+
+```sh
+STRAND_SNAPSHOT_DIR=/tmp/noop-snapshots swift test --package-path Packages/StrandDesign
+```
+
+## Fixture launch
+
+To inspect or time the real app against a **copy** of a database, without Bluetooth:
+
+```sh
+sqlite3 "file:<path to whoop.sqlite>?mode=ro" ".backup /tmp/noop-copy.sqlite"
+NOOP_FIXTURE_STORE=/tmp/noop-copy.sqlite /tmp/noop-derived/Build/Products/Release/NOOP.app/Contents/MacOS/NOOP \
+  -noop.onboarded YES -scoringVersionApplied 5
+```
+
+With `NOOP_FIXTURE_STORE` set, `StorePaths` returns that file, no CoreBluetooth manager is created (nothing scans, connects or sends a command), and the app prints `[perf] launch-to-content` and `[perf] repository refresh` timings to stderr. Fixture-only arguments: `-noop.fixture.tab trends|settings` opens on a destination; `-noop.fixture.live YES` opens the live-strap sheet; `-noop.fixture.battery cycle` plays synthetic idle → charging → full → disconnected battery states (8 s each) through the real battery surfaces, and `-noop.fixture.battery charging` holds a charging reading. The copy is opened read-write and can be migrated or re-scored; discard it afterwards. An unsigned build is not sandboxed, so it keeps its preferences in `~/Library/Preferences/com.noopapp.noop.plist`, apart from the sandboxed app's container.
 
 ## Diagnostic tools
 

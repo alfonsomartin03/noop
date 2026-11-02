@@ -135,12 +135,9 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 16) {
                 HStack(spacing: 12) {
                     StatePill(strapStatusTitle, tone: strapTone, pulsing: live.connected)
-                    if let pct = live.batteryPct {
-                        StatePill("Battery \(Int(pct.rounded()))%",
-                                  tone: batteryTone(pct), showsDot: false)
-                    }
                     Spacer(minLength: 0)
                 }
+                StrapBatteryPanel()
                 Text(strapStatusDetail)
                     .font(StrandFont.subhead)
                     .foregroundStyle(StrandPalette.textSecondary)
@@ -190,7 +187,7 @@ struct SettingsView: View {
                 Toggle("Notify when charging reaches 100%", isOn: $notifyFull)
                     .toggleStyle(.switch)
                     .onChange(of: notifyFull) { on in if on { BatteryMonitor.requestAuthorization() } }
-                Text("The full-charge alert needs the strap to report that it is charging. WHOOP 5.0 has not been seen to report this yet, so for now only the low-battery alert can fire.")
+                Text("Charging is what the strap reports: its charging events, or whether the charging pack is attached (NOOP asks a WHOOP 5.0 each time it reads the battery). The full-charge alert fires when the strap reports charging at 100%.")
                     .font(StrandFont.footnote).foregroundStyle(StrandPalette.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -242,13 +239,6 @@ struct SettingsView: View {
         if live.connected { return "Connected. Finishing the secure pairing handshake…" }
         if live.bonded { return "Previously paired but not currently connected. Re-scan to reconnect." }
         return "No strap connected. Put your WHOOP nearby and tap Re-scan to pair."
-    }
-
-    // Battery colour thresholds for the strap status pill.
-    private func batteryTone(_ pct: Double) -> StrandTone {
-        if pct <= 15 { return .critical }
-        if pct <= 30 { return .warning }
-        return .positive
     }
 
     // MARK: - About

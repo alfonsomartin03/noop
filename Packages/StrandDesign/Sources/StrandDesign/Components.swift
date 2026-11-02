@@ -282,22 +282,3 @@ public extension ButtonStyle where Self == StrandPrimaryButtonStyle {
 public extension ButtonStyle where Self == StrandSecondaryButtonStyle {
     static var strandSecondary: StrandSecondaryButtonStyle { .init() }
 }
-
-// MARK: - Loading skeleton
-
-/// Soft shimmering placeholder block, used instead of spinners while data loads.
-// Shimmer placeholder shown while data loads (instead of a spinner).
-public struct StrandSkeleton: View {
-    var cornerRadius: CGFloat
-    @State private var phase = false
-    public init(cornerRadius: CGFloat = 12) { self.cornerRadius = cornerRadius }
-    public var body: some View {
-        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-            .fill(StrandPalette.surfaceInset)
-            .opacity(phase ? 0.55 : 1)
-            .onAppear {
-                guard !StrandMotion.reduceMotion else { return }
-                withAnimation(.easeInOut(duration: 1.0).repeatForever(autoreverses: true)) { phase = true }
-            }
-    }
-}
