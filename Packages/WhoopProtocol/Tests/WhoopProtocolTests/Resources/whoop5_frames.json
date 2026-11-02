@@ -1,0 +1,157 @@
+[
+ {
+  "name": "tx_get_clock",
+  "source": "E02 live 2026-11-02",
+  "hex": "aa0108000001e67123c90b00c8ab49ee"
+ },
+ {
+  "name": "rx_get_clock_success",
+  "source": "E02 live 2026-11-02",
+  "hex": "aa011400010021b1244c0bc90100b7e86a4761000000000028ffbf00"
+ },
+ {
+  "name": "tx_get_data_range",
+  "source": "E02 live 2026-11-02",
+  "hex": "aa0108000001e67123ca22007a8a49a8"
+ },
+ {
+  "name": "rx_get_data_range_pending",
+  "source": "E02 live 2026-11-02",
+  "hex": "aa010c0001002711244d22ca02000000b03b0a7e"
+ },
+ {
+  "name": "rx_get_data_range_success",
+  "source": "E02 live 2026-11-02",
+  "hex": "aa014c00010032d1244e22ca0101c096010066960100af960100669601000f000000000002001f040000b9fb1d00b7edcb6a0a770000d7b2e86a8f420000d7b2e86a8f420000f5b6e86a474100000000e2978979"
+ },
+ {
+  "name": "tx_report_version_info",
+  "source": "E02 live 2026-11-02",
+  "hex": "aa0108000001e67123cb0700aa307841"
+ },
+ {
+  "name": "rx_report_version_info_unsupported",
+  "source": "E02 live 2026-11-02",
+  "hex": "aa010c0001002711244f07cb03000000c9f0283b"
+ },
+ {
+  "name": "tx_get_battery_level",
+  "source": "E02 live 2026-11-02",
+  "hex": "aa0108000001e67123cc1a00334a5bbb"
+ },
+ {
+  "name": "rx_get_battery_level_success",
+  "source": "E02 live 2026-11-02",
+  "hex": "aa0110000100208124501acc0114000000000000f2a21829"
+ },
+ {
+  "name": "tx_get_extended_battery_info",
+  "source": "E02 live 2026-11-02",
+  "hex": "aa0108000001e67123cd6200fad37f5d"
+ },
+ {
+  "name": "rx_get_extended_battery_info_unsupported",
+  "source": "E02 live 2026-11-02",
+  "hex": "aa010c0001002711245162cd03000000137cb0db"
+ },
+ {
+  "name": "tx_get_max_protocol_version",
+  "source": "E02 live 2026-11-02",
+  "hex": "aa0108000001e67123ce02000406c43a"
+ },
+ {
+  "name": "rx_get_max_protocol_version_unsupported",
+  "source": "E02 live 2026-11-02",
+  "hex": "aa010c0001002711245202ce0300000004130ca5"
+ },
+ {
+  "name": "tx_link_valid",
+  "source": "E02 live 2026-11-02",
+  "hex": "aa0108000001e67123cf0100f03f2b10"
+ },
+ {
+  "name": "rx_link_valid_success",
+  "source": "E02 live 2026-11-02",
+  "hex": "aa011800010022e1245301cf0154686572652069742069732e000000a619bb0e"
+ },
+ {
+  "name": "tx_get_body_location_and_status",
+  "source": "E02 live 2026-11-02",
+  "hex": "aa0108000001e67123d05400ac729dc0"
+ },
+ {
+  "name": "rx_get_body_location_and_status_failure",
+  "source": "E02 live 2026-11-02",
+  "hex": "aa01100001002081245454d00001000000000000f1e40aaa"
+ },
+ {
+  "name": "tx_get_all_haptics_pattern",
+  "source": "E02 live 2026-11-02",
+  "hex": "aa0108000001e67123d150009fdd33a5"
+ },
+ {
+  "name": "rx_get_all_haptics_pattern_unsupported",
+  "source": "E02 live 2026-11-02",
+  "hex": "aa010c0001002711245550d10300000025845dc3"
+ },
+ {
+  "name": "tx_get_battery_pack_info",
+  "source": "E02 live 2026-11-02",
+  "hex": "aa0108000001e67123d297004f22ce23"
+ },
+ {
+  "name": "rx_get_battery_pack_info_failure",
+  "source": "E02 live 2026-11-02",
+  "hex": "aa01280001002de1245697d200010000000000000000000000000000000000000000000000000000000000008caeb213"
+ },
+ {
+  "name": "rx_history_end_app_log",
+  "source": "NOOP app log 2026-11-02 00:03:44",
+  "hex": "aa011c00010023d131a7029f19e86ab83e56000000c58601000f000000000000b764ca10"
+ },
+ {
+  "name": "tx_client_hello",
+  "source": "DeviceFamily.whoop5ClientHello",
+  "hex": "aa0108000001e67123019101363e5c8d"
+ },
+ {
+  "name": "rx_history_start",
+  "source": "NOOP history capture 2026-10-22",
+  "hex": "aa012c0001002cd1310201a977da6a142e0d0000005200000000000000320000002b00000001000000000000000c00045e94834d"
+ },
+ {
+  "name": "rx_history_end",
+  "source": "NOOP history capture 2026-10-22",
+  "hex": "aa011c00010023d1313802a977da6a5c4f35000000889a00000f000000000000825eaa9e"
+ },
+ {
+  "name": "rx_strap_condition_report",
+  "source": "NOOP history capture 2026-10-22",
+  "hex": "aa011c00010023d1307d1d00e56fda6a146e0c00050000000000ea020b000100e8b4e7e6"
+ },
+ {
+  "name": "rx_event110",
+  "source": "NOOP history capture 2026-10-22",
+  "hex": "aa011800010022e1307e6e00e86fda6a146e080001010000000000006716f6d1"
+ },
+ {
+  "name": "rx_event123",
+  "source": "NOOP history capture 2026-10-22",
+  "hex": "aa011800010022e1309e7b00fa70da6a0a5708000104000000000000074a697f"
+ },
+ {
+  "name": "rx_event120",
+  "source": "NOOP history capture 2026-10-22",
+  "hex": "aa01300001002b4130a678002571da6ae15a200001020530ffff3c0f00033c27c6313d03021a000003004688162f0100c80053007974d441"
+ },
+ {
+  "name": "rx_ble_connection_down",
+  "source": "NOOP history capture 2026-10-13",
+  "hex": "aa0110000100208130720c0036b3ce6a0a770000897ad247"
+ },
+ {
+  "name": "rx_ble_connection_up",
+  "source": "NOOP history capture 2026-10-13",
+  "hex": "aa0110000100208130740b003cb3ce6a7a740000bea902b5"
+ }
+]

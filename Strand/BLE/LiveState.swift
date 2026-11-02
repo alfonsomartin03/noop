@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import WhoopProtocol
 
 /// Observable snapshot of the live connection + biometric state, driven by FrameRouter
 /// (from decoded frames) and BLEManager (from CoreBluetooth callbacks).
@@ -40,6 +41,22 @@ public final class LiveState: ObservableObject {
     @Published public var syncRangeLo: Int? = nil
     @Published public var syncRangeHi: Int? = nil
     @Published public var historySummary: String? = nil        // what the decoded records contained / were saved
+    /// The current WHOOP 5.0 pull, measured in strap time (nil = no pull, or the strap's range is not known yet).
+    @Published public var syncSession: SyncSession? = nil
+    /// Set while the app recomputes sleep / recovery / strain after a pull; nil otherwise.
+    @Published public var processingStatus: String? = nil
+    /// Result of the last pull + processing, for a brief confirmation or an error ("partial", "failed").
+    @Published public var lastSyncOutcome: String? = nil
+    /// Standard Device Information (180A): read once per connection, cached across launches. Serial is never stored here.
+    @Published public var deviceInfo: DeviceInfo? = DeviceInfo.cached
+    /// host ≈ strap + offset, from GET_CLOCK (WHOOP 5.0). nil until measured this connection.
+    @Published public var clock: ClockEstimate? = nil
+    /// Battery with its source and age. `batteryPct` stays as the plain value existing views read.
+    @Published public var battery: BatteryStatus? = nil
+    /// Realtime HR stream (type 40) state: on while frames keep arriving.
+    @Published public var realtimeStreaming = false
+    /// Recent strap events (newest first, capped) for the diagnostics panel; unknown numbers are kept.
+    @Published public var recentEvents: [String] = []
     /// True when macOS holds a pairing the strap has forgotten (CBError 14, "Peer removed pairing
     /// information"). Auto-retry stops; the user must forget the strap in System Settings and re-pair.
     @Published public var pairingStale = false
@@ -66,6 +83,20 @@ public final class LiveState: ObservableObject {
 
     public init() {}
 
+    /// Funnel for typed battery readings (2A19, GET_BATTERY_LEVEL). Keeps `batteryPct` and the hook in step.
+    public func updateBattery(_ r: BatteryReading) {
+        battery = BatteryStatus(reading: r)
+        setBattery(Double(r.percent))
+        onBatteryReading?(r)
+    }
+    /// Typed battery hook (wired by AppModel to the notification monitor).
+    public var onBatteryReading: ((BatteryReading) -> Void)?
+
+    public func record(event line: String) {
+        recentEvents.insert(line, at: 0)
+        if recentEvents.count > 50 { recentEvents.removeLast(recentEvents.count - 50) }
+    }
+
     /// Single funnel for battery readings — updates the published value AND notifies the hook,
     /// so both write sites (FrameRouter, BLEManager) drive the alert monitor identically.
     // One funnel for battery updates so every source also notifies the alert hook.
@@ -76,12 +107,42 @@ public final class LiveState: ObservableObject {
 
     /// Clear per-connection telemetry (called on disconnect).
     public func resetTelemetry() {
-        family = nil; historyBusy = false; hrSubscribed = false; hrBroadcast = nil; hrPackets = 0; strapFrames = 0; lastDataAt = nil
+        family = nil; historyBusy = false; realtimeStreaming = false; clock = nil; hrSubscribed = false; hrBroadcast = nil; hrPackets = 0; strapFrames = 0; lastDataAt = nil
     }
 
     // Capped at 200 lines so the debug log can't grow without bound.
     public func append(log line: String) {
         log.append(line)
         if log.count > 200 { log.removeFirst(log.count - 200) }
+    }
+}
+
+/// Battery level with provenance, so the UI can say how fresh it is and never invent a charging state.
+public struct BatteryStatus: Equatable {
+    public let percent: Int
+    public let at: Date
+    public let source: BatteryReading.Source
+    /// nil = not known. Only a verified source sets it; a rising percentage never does.
+    public let charging: Bool?
+    public init(reading r: BatteryReading) {
+        percent = r.percent; at = Date(timeIntervalSince1970: r.at); source = r.source; charging = r.charging
+    }
+    public func isStale(now: Date = Date(), after: TimeInterval = 600) -> Bool { now.timeIntervalSince(at) > after }
+}
+
+/// Standard Device Information service values. Cached in UserDefaults so Settings can show them offline.
+public struct DeviceInfo: Equatable, Codable {
+    public var manufacturer: String?
+    public var model: String?
+    public var firmware: String?
+    public var hardware: String?
+    public var readAt: Date?
+    static let key = "noop.deviceInfo"
+    public static var cached: DeviceInfo? {
+        guard let d = UserDefaults.standard.data(forKey: key) else { return nil }
+        return try? JSONDecoder().decode(DeviceInfo.self, from: d)
+    }
+    public func save() {
+        if let d = try? JSONEncoder().encode(self) { UserDefaults.standard.set(d, forKey: DeviceInfo.key) }
     }
 }

@@ -16,6 +16,7 @@ enum BackfillPolicy {
     // Floors prevent hammering the strap: timers sync at most every 15 min, event-driven triggers at most every 90 s, manual always runs.
     static let periodicFloorSeconds: TimeInterval = 900   // 15 min
     static let eventFloorSeconds: TimeInterval = 90       // absorbs reconnect-flaps / event bursts
+    static let periodicJitterSeconds: TimeInterval = 30
 
     static func shouldRun(trigger: BackfillTrigger, now: TimeInterval,
                           lastBackfillAt: TimeInterval?) -> Bool {
@@ -24,7 +25,9 @@ enum BackfillPolicy {
         switch trigger {
         case .manual:                        return true
         case .connect, .foreground, .strap:  return elapsed >= eventFloorSeconds
-        case .periodic:                      return elapsed >= periodicFloorSeconds
+        // The 900 s timer and the recorded attempt time are a few ms apart, so an exact 900 s floor skipped every
+        // other tick (observed: "skipped … last 899s ago" → a 30-min cadence). Allow the timer's own jitter.
+        case .periodic:                      return elapsed >= periodicFloorSeconds - periodicJitterSeconds
         }
     }
 }

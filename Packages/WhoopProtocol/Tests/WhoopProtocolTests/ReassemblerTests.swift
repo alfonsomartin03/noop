@@ -108,11 +108,11 @@ final class Whoop5CommandFramingTests: XCTestCase {
 final class Whoop5RealtimeTests: XCTestCase {
     func testDecodesHypothesisLayout() {
         // [type 40][seq][ts u32][sub u16][hr][rrn][rr u16 x2] = 14 bytes, padded to 16 by the builder
-        let payload: [UInt8] = [40, 9, 0x10, 0x27, 0, 0, 0x00, 0x80, 72, 2, 0x20, 0x03, 0x2A, 0x03]
+        let payload: [UInt8] = [40, 9, 0x41, 0xBA, 0xE8, 0x6A, 0x00, 0x80, 72, 2, 0x20, 0x03, 0x2A, 0x03]  // ts 2026-11-02
         let f = buildWhoop5Frame(payload: payload)
         let r = decodeWhoop5Realtime(f)
         XCTAssertEqual(r?.heartRate, 72)
-        XCTAssertEqual(r?.timestamp, 10000)
+        XCTAssertEqual(r?.timestamp, 1_793_636_929)
         XCTAssertEqual(r?.subseconds, 0x8000)
         XCTAssertEqual(r?.rr, [800, 810])
     }

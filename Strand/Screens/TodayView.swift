@@ -460,40 +460,83 @@ private struct ConnectionStrip: View {
     }
 }
 
-/// Shown only while the strap is offloading stored data: rows saved so far plus a progress bar
-/// across the span the strap reports holding (indeterminate until that span is known).
+/// Sync status while the strap offloads stored data, then while NOOP processes it.
+/// Progress is measured in strap time (how much of the strap's unsent history is saved), never in bytes or rows,
+/// and reaches 100 % only after the strap confirmed the transfer complete.
 private struct SyncProgressStrip: View {
     @EnvironmentObject var live: LiveState
 
-    private var fraction: Double? {
-        guard let lo = live.syncRangeLo, let hi = live.syncRangeHi, hi > lo, let n = live.syncNewestTs else { return nil }
-        return min(1, max(0, Double(n - lo) / Double(hi - lo)))
-    }
-
     var body: some View {
         if live.historyBusy {
-            HStack(spacing: 12) {
-                Image(systemName: "arrow.triangle.2.circlepath")
-                    .font(.system(size: 16, weight: .semibold)).foregroundStyle(StrandPalette.textSecondary)
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack {
-                        Text("Syncing from your WHOOP").font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(StrandPalette.textPrimary)
-                        Spacer()
-                        if let f = fraction {
-                            Text("\(Int(f * 100))%").font(.system(size: 12, weight: .semibold).monospacedDigit())
-                                .foregroundStyle(StrandPalette.textSecondary)
-                        }
-                    }
-                    if let f = fraction { ProgressView(value: f) } else { ProgressView().progressViewStyle(.linear) }
-                    Text("\(live.syncSavedRows.formatted()) new readings saved"
-                         + (live.syncNewestTs.map { " · up to \(Date(timeIntervalSince1970: TimeInterval($0)).formatted(date: .omitted, time: .shortened))" } ?? ""))
-                        .font(.system(size: 12)).foregroundStyle(StrandPalette.textSecondary)
+            strip(icon: "arrow.triangle.2.circlepath", title: "Syncing WHOOP data") { downloading }
+        } else if let status = live.processingStatus {
+            strip(icon: "gearshape.2", title: "Processing your data") {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text(status).font(.system(size: 12)).foregroundStyle(StrandPalette.textSecondary)
                 }
             }
-            .padding(NoopMetrics.cardPadding)
-            .strandSurface()
+        } else if let outcome = live.lastSyncOutcome {
+            strip(icon: "exclamationmark.triangle", title: "Sync incomplete") {
+                HStack {
+                    Text(outcome).font(.system(size: 12)).foregroundStyle(StrandPalette.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer()
+                    Button("Dismiss") { live.lastSyncOutcome = nil }.buttonStyle(.plain)
+                        .font(.system(size: 12, weight: .semibold)).foregroundStyle(StrandPalette.textSecondary)
+                }
+            }
         }
+    }
+
+    @ViewBuilder private var downloading: some View {
+        if let s = live.syncSession, s.target > s.strapFrom {
+            let total = s.target - s.strapFrom
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text("\(SyncFormat.duration(s.accountedSeconds)) of \(SyncFormat.duration(total)) synchronized")
+                        .font(.system(size: 12)).foregroundStyle(StrandPalette.textSecondary)
+                    Spacer()
+                    Text("\(Int((s.fraction * 100).rounded(.down)))%")
+                        .font(.system(size: 12, weight: .semibold).monospacedDigit()).foregroundStyle(StrandPalette.textSecondary)
+                }
+                ProgressView(value: s.fraction).animation(.easeOut(duration: 0.4), value: s.fraction)
+                Text("\(SyncFormat.duration(s.remainingSeconds)) of recorded history left to download · \(live.syncSavedRows.formatted()) new readings saved")
+                    .font(.system(size: 12)).foregroundStyle(StrandPalette.textTertiary)
+            }
+        } else {
+            // Before the strap reports its range (or if it never does) there is no honest percentage.
+            VStack(alignment: .leading, spacing: 6) {
+                ProgressView().progressViewStyle(.linear)
+                Text(live.historyStatus + (live.syncSavedRows > 0 ? " · \(live.syncSavedRows.formatted()) new readings saved" : ""))
+                    .font(.system(size: 12)).foregroundStyle(StrandPalette.textSecondary)
+            }
+        }
+    }
+
+    private func strip<Content: View>(icon: String, title: String, @ViewBuilder content: () -> Content) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: icon)
+                .font(.system(size: 16, weight: .semibold)).foregroundStyle(StrandPalette.textSecondary)
+            VStack(alignment: .leading, spacing: 6) {
+                Text(title).font(.system(size: 14, weight: .semibold)).foregroundStyle(StrandPalette.textPrimary)
+                content()
+            }
+        }
+        .padding(NoopMetrics.cardPadding)
+        .strandSurface()
+    }
+}
+
+/// "2h 11m", "49 min", "35 s" — durations of recorded history, not download time.
+enum SyncFormat {
+    static func duration(_ seconds: Int) -> String {
+        let s = max(0, seconds)
+        if s < 60 { return "\(s) s" }
+        if s < 3600 { return "\(s / 60) min" }
+        let h = s / 3600, m = (s % 3600) / 60
+        if h >= 48 { return "\(h / 24) d \(h % 24) h" }
+        return m == 0 ? "\(h)h" : "\(h)h \(m)m"
     }
 }
 

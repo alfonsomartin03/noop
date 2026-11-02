@@ -1,0 +1,1170 @@
+{
+ "device": {
+  "model": "5.0",
+  "firmware": "50.43.1.0",
+  "hardware": "WG50_r52"
+ },
+ "result_codes": {
+  "0": "FAILURE",
+  "1": "SUCCESS",
+  "2": "PENDING",
+  "3": "UNSUPPORTED"
+ },
+ "commands": [
+  {
+   "id": 1,
+   "name": "LINK_VALID",
+   "goose_gate": "R",
+   "device": "WHOOP 5.0 (Goose table); numbers shared with 4.0 enum unless noted",
+   "payload_sent": "[]",
+   "observed_result": "SUCCESS",
+   "response_len": 32,
+   "confidence": "CONFIRMED",
+   "notes": "body = ASCII 'There it is.' + zero padding (E02).",
+   "safety": "auto (read-only)",
+   "sources": [
+    "b-nnett/goose commands.rs",
+    "live: this strap"
+   ]
+  },
+  {
+   "id": 2,
+   "name": "GET_MAX_PROTOCOL_VERSION",
+   "goose_gate": "R",
+   "device": "WHOOP 5.0 (Goose table); numbers shared with 4.0 enum unless noted",
+   "payload_sent": "[]",
+   "observed_result": "UNSUPPORTED",
+   "response_len": 20,
+   "confidence": "CONFIRMED",
+   "notes": "result 3 on fw 50.43.1.0 (E02).",
+   "safety": "auto (read-only)",
+   "sources": [
+    "b-nnett/goose commands.rs",
+    "live: this strap"
+   ]
+  },
+  {
+   "id": 3,
+   "name": "TOGGLE_REALTIME_HR",
+   "goose_gate": "U",
+   "device": "WHOOP 5.0 (Goose table); numbers shared with 4.0 enum unless noted",
+   "payload_sent": "[1] then [0]",
+   "observed_result": "SUCCESS",
+   "response_len": 20,
+   "confidence": "CONFIRMED",
+   "notes": "E04: [1] starts 1 Hz type-40 on fd4b0005 within 1 s; [0] stops it (0 frames in the next 23 s). 34 ms responses.",
+   "safety": "reversible, approval per experiment",
+   "sources": [
+    "b-nnett/goose commands.rs",
+    "live: this strap"
+   ]
+  },
+  {
+   "id": 7,
+   "name": "REPORT_VERSION_INFO",
+   "goose_gate": "R",
+   "device": "WHOOP 5.0 (Goose table); numbers shared with 4.0 enum unless noted",
+   "payload_sent": "[]",
+   "observed_result": "UNSUPPORTED",
+   "response_len": 20,
+   "confidence": "CONFIRMED",
+   "notes": "result 3 (E02 and every NOOP connect). Firmware version is in DIS 2A26 instead.",
+   "safety": "auto (read-only)",
+   "sources": [
+    "b-nnett/goose commands.rs",
+    "live: this strap"
+   ]
+  },
+  {
+   "id": 10,
+   "name": "SET_CLOCK",
+   "goose_gate": "U",
+   "device": "WHOOP 5.0 (Goose table); numbers shared with 4.0 enum unless noted",
+   "payload_sent": null,
+   "observed_result": null,
+   "response_len": null,
+   "confidence": "SUPPORTED",
+   "notes": "8-byte [sec u32][subsec u32, 1/32768 s] (Goose + 4.0 docs). NOOP never sends it on 5.0; strap clock runs ~15 s slow.",
+   "safety": "restricted: needs reviewed procedure + approval",
+   "sources": [
+    "b-nnett/goose commands.rs"
+   ]
+  },
+  {
+   "id": 11,
+   "name": "GET_CLOCK",
+   "goose_gate": "R",
+   "device": "WHOOP 5.0 (Goose table); numbers shared with 4.0 enum unless noted",
+   "payload_sent": "[]",
+   "observed_result": "SUCCESS",
+   "response_len": 28,
+   "confidence": "CONFIRMED",
+   "notes": "body: unix sec u32 @0, subsec u32 @4 (1/32768 s per Goose), 3 zero bytes. 5.7 s latency as first command after attach (E02).",
+   "safety": "auto (read-only)",
+   "sources": [
+    "b-nnett/goose commands.rs",
+    "live: this strap"
+   ]
+  },
+  {
+   "id": 14,
+   "name": "TOGGLE_GENERIC_HR_PROFILE",
+   "goose_gate": "U",
+   "device": "WHOOP 5.0 (Goose table); numbers shared with 4.0 enum unless noted",
+   "payload_sent": "[0]/[1]",
+   "observed_result": "SUCCESS",
+   "response_len": 20,
+   "confidence": "CONFIRMED",
+   "notes": "HR broadcast off/on; on starts 2A37 within seconds (NOOP, 2026-10-21); off logs event 25 on next history pull.",
+   "safety": "reversible, approval per experiment",
+   "sources": [
+    "b-nnett/goose commands.rs",
+    "live: this strap"
+   ]
+  },
+  {
+   "id": 16,
+   "name": "TOGGLE_R7_DATA_COLLECTION",
+   "goose_gate": "U",
+   "device": "WHOOP 5.0 (Goose table); numbers shared with 4.0 enum unless noted",
+   "payload_sent": null,
+   "observed_result": null,
+   "response_len": null,
+   "confidence": "SUPPORTED",
+   "notes": "",
+   "safety": "restricted: needs reviewed procedure + approval",
+   "sources": [
+    "b-nnett/goose commands.rs"
+   ]
+  },
+  {
+   "id": 19,
+   "name": "RUN_HAPTIC_PATTERN_MAVERICK",
+   "goose_gate": "U",
+   "device": "WHOOP 5.0 (Goose table); numbers shared with 4.0 enum unless noted",
+   "payload_sent": null,
+   "observed_result": null,
+   "response_len": null,
+   "confidence": "SUPPORTED",
+   "notes": "",
+   "safety": "restricted: needs reviewed procedure + approval",
+   "sources": [
+    "b-nnett/goose commands.rs"
+   ]
+  },
+  {
+   "id": 20,
+   "name": "ABORT_HISTORICAL_TRANSMITS",
+   "goose_gate": "U",
+   "device": "WHOOP 5.0 (Goose table); numbers shared with 4.0 enum unless noted",
+   "payload_sent": null,
+   "observed_result": null,
+   "response_len": null,
+   "confidence": "SUPPORTED",
+   "notes": "",
+   "safety": "restricted: needs reviewed procedure + approval",
+   "sources": [
+    "b-nnett/goose commands.rs"
+   ]
+  },
+  {
+   "id": 22,
+   "name": "SEND_HISTORICAL_DATA",
+   "goose_gate": "U",
+   "device": "WHOOP 5.0 (Goose table); numbers shared with 4.0 enum unless noted",
+   "payload_sent": "[]",
+   "observed_result": "SUCCESS",
+   "response_len": 20,
+   "confidence": "CONFIRMED",
+   "notes": "starts history: START/records/END\u2026 then COMPLETE on fd4b0005 (app logs).",
+   "safety": "reversible, approval per experiment",
+   "sources": [
+    "b-nnett/goose commands.rs",
+    "live: this strap"
+   ]
+  },
+  {
+   "id": 23,
+   "name": "HISTORICAL_DATA_RESULT",
+   "goose_gate": "U",
+   "device": "WHOOP 5.0 (Goose table); numbers shared with 4.0 enum unless noted",
+   "payload_sent": "[01]+end_data(8)",
+   "observed_result": "SUCCESS",
+   "response_len": 20,
+   "confidence": "CONFIRMED",
+   "notes": "ack of HISTORY_END. Firmware then logs 'History burst success. Trim: block:page', i.e. it advances the strap's trim pointer. Without it the strap re-sends the same chunk.",
+   "safety": "restricted: deletes from strap (trim); only after data is durably stored",
+   "sources": [
+    "b-nnett/goose commands.rs",
+    "live: this strap"
+   ]
+  },
+  {
+   "id": 25,
+   "name": "FORCE_TRIM",
+   "goose_gate": "C",
+   "device": "WHOOP 5.0 (Goose table); numbers shared with 4.0 enum unless noted",
+   "payload_sent": null,
+   "observed_result": null,
+   "response_len": null,
+   "confidence": "UNSAFE",
+   "notes": "",
+   "safety": "prohibited",
+   "sources": [
+    "b-nnett/goose commands.rs"
+   ]
+  },
+  {
+   "id": 26,
+   "name": "GET_BATTERY_LEVEL",
+   "goose_gate": "R",
+   "device": "WHOOP 5.0 (Goose table); numbers shared with 4.0 enum unless noted",
+   "payload_sent": "[]",
+   "observed_result": "SUCCESS",
+   "response_len": 24,
+   "confidence": "CONFIRMED",
+   "notes": "body[0] = battery % (20, equal to 2A19), 6 zero bytes (E02).",
+   "safety": "auto (read-only)",
+   "sources": [
+    "b-nnett/goose commands.rs",
+    "live: this strap"
+   ]
+  },
+  {
+   "id": 29,
+   "name": "REBOOT_STRAP",
+   "goose_gate": "C",
+   "device": "WHOOP 5.0 (Goose table); numbers shared with 4.0 enum unless noted",
+   "payload_sent": null,
+   "observed_result": null,
+   "response_len": null,
+   "confidence": "UNSAFE",
+   "notes": "",
+   "safety": "prohibited",
+   "sources": [
+    "b-nnett/goose commands.rs"
+   ]
+  },
+  {
+   "id": 32,
+   "name": "POWER_CYCLE_STRAP",
+   "goose_gate": "C",
+   "device": "WHOOP 5.0 (Goose table); numbers shared with 4.0 enum unless noted",
+   "payload_sent": null,
+   "observed_result": null,
+   "response_len": null,
+   "confidence": "UNSAFE",
+   "notes": "",
+   "safety": "prohibited",
+   "sources": [
+    "b-nnett/goose commands.rs"
+   ]
+  },
+  {
+   "id": 33,
+   "name": "SET_READ_POINTER",
+   "goose_gate": "U",
+   "device": "WHOOP 5.0 (Goose table); numbers shared with 4.0 enum unless noted",
+   "payload_sent": null,
+   "observed_result": null,
+   "response_len": null,
+   "confidence": "SUPPORTED",
+   "notes": "",
+   "safety": "restricted: needs reviewed procedure + approval",
+   "sources": [
+    "b-nnett/goose commands.rs"
+   ]
+  },
+  {
+   "id": 34,
+   "name": "GET_DATA_RANGE",
+   "goose_gate": "R",
+   "device": "WHOOP 5.0 (Goose table); numbers shared with 4.0 enum unless noted",
+   "payload_sent": "[]",
+   "observed_result": "PENDING\u2192SUCCESS",
+   "response_len": 84,
+   "confidence": "CONFIRMED",
+   "notes": "PENDING (20 B) then 84 B body; layout in PACKET_TYPES.md (E02, app logs).",
+   "safety": "auto (read-only)",
+   "sources": [
+    "b-nnett/goose commands.rs",
+    "live: this strap"
+   ]
+  },
+  {
+   "id": 35,
+   "name": "GET_HELLO_HARVARD",
+   "goose_gate": "R",
+   "device": "WHOOP 5.0 (Goose table); numbers shared with 4.0 enum unless noted",
+   "payload_sent": null,
+   "observed_result": null,
+   "response_len": null,
+   "confidence": "SUPPORTED",
+   "notes": "",
+   "safety": "auto (read-only)",
+   "sources": [
+    "b-nnett/goose commands.rs"
+   ]
+  },
+  {
+   "id": 36,
+   "name": "START_FIRMWARE_LOAD",
+   "goose_gate": "C",
+   "device": "WHOOP 5.0 (Goose table); numbers shared with 4.0 enum unless noted",
+   "payload_sent": null,
+   "observed_result": null,
+   "response_len": null,
+   "confidence": "UNSAFE",
+   "notes": "",
+   "safety": "prohibited",
+   "sources": [
+    "b-nnett/goose commands.rs"
+   ]
+  },
+  {
+   "id": 37,
+   "name": "LOAD_FIRMWARE_DATA",
+   "goose_gate": "C",
+   "device": "WHOOP 5.0 (Goose table); numbers shared with 4.0 enum unless noted",
+   "payload_sent": null,
+   "observed_result": null,
+   "response_len": null,
+   "confidence": "UNSAFE",
+   "notes": "",
+   "safety": "prohibited",
+   "sources": [
+    "b-nnett/goose commands.rs"
+   ]
+  },
+  {
+   "id": 38,
+   "name": "PROCESS_FIRMWARE_IMAGE",
+   "goose_gate": "C",
+   "device": "WHOOP 5.0 (Goose table); numbers shared with 4.0 enum unless noted",
+   "payload_sent": null,
+   "observed_result": null,
+   "response_len": null,
+   "confidence": "UNSAFE",
+   "notes": "",
+   "safety": "prohibited",
+   "sources": [
+    "b-nnett/goose commands.rs"
+   ]
+  },
+  {
+   "id": 39,
+   "name": "SET_LED_DRIVE",
+   "goose_gate": "C",
+   "device": "WHOOP 5.0 (Goose table); numbers shared with 4.0 enum unless noted",
+   "payload_sent": null,
+   "observed_result": null,
+   "response_len": null,
+   "confidence": "UNSAFE",
+   "notes": "",
+   "safety": "prohibited",
+   "sources": [
+    "b-nnett/goose commands.rs"
+   ]
+  },
+  {
+   "id": 40,
+   "name": "GET_LED_DRIVE",
+   "goose_gate": "R",
+   "device": "WHOOP 5.0 (Goose table); numbers shared with 4.0 enum unless noted",
+   "payload_sent": null,
+   "observed_result": null,
+   "response_len": null,
+   "confidence": "SUPPORTED",
+   "notes": "",
+   "safety": "auto (read-only)",
+   "sources": [
+    "b-nnett/goose commands.rs"
+   ]
+  },
+  {
+   "id": 41,
+   "name": "SET_TIA_GAIN",
+   "goose_gate": "C",
+   "device": "WHOOP 5.0 (Goose table); numbers shared with 4.0 enum unless noted",
+   "payload_sent": null,
+   "observed_result": null,
+   "response_len": null,
+   "confidence": "UNSAFE",
+   "notes": "",
+   "safety": "prohibited",
+   "sources": [
+    "b-nnett/goose commands.rs"
+   ]
+  },
+  {
+   "id": 42,
+   "name": "GET_TIA_GAIN",
+   "goose_gate": "R",
+   "device": "WHOOP 5.0 (Goose table); numbers shared with 4.0 enum unless noted",
+   "payload_sent": null,
+   "observed_result": null,
+   "response_len": null,
+   "confidence": "SUPPORTED",
+   "notes": "",
+   "safety": "auto (read-only)",
+   "sources": [
+    "b-nnett/goose commands.rs"
+   ]
+  },
+  {
+   "id": 43,
+   "name": "SET_BIAS_OFFSET",
+   "goose_gate": "C",
+   "device": "WHOOP 5.0 (Goose table); numbers shared with 4.0 enum unless noted",
+   "payload_sent": null,
+   "observed_result": null,
+   "response_len": null,
+   "confidence": "UNSAFE",
+   "notes": "",
+   "safety": "prohibited",
+   "sources": [
+    "b-nnett/goose commands.rs"
+   ]
+  },
+  {
+   "id": 44,
+   "name": "GET_BIAS_OFFSET",
+   "goose_gate": "R",
+   "device": "WHOOP 5.0 (Goose table); numbers shared with 4.0 enum unless noted",
+   "payload_sent": null,
+   "observed_result": null,
+   "response_len": null,
+   "confidence": "SUPPORTED",
+   "notes": "",
+   "safety": "auto (read-only)",
+   "sources": [
+    "b-nnett/goose commands.rs"
+   ]
+  },
+  {
+   "id": 45,
+   "name": "ENTER_BLE_DFU",
+   "goose_gate": "C",
+   "device": "WHOOP 5.0 (Goose table); numbers shared with 4.0 enum unless noted",
+   "payload_sent": null,
+   "observed_result": null,
+   "response_len": null,
+   "confidence": "UNSAFE",
+   "notes": "",
+   "safety": "prohibited",
+   "sources": [
+    "b-nnett/goose commands.rs"
+   ]
+  },
+  {
+   "id": 52,
+   "name": "SET_DP_TYPE",
+   "goose_gate": "C",
+   "device": "WHOOP 5.0 (Goose table); numbers shared with 4.0 enum unless noted",
+   "payload_sent": null,
+   "observed_result": null,
+   "response_len": null,
+   "confidence": "UNSAFE",
+   "notes": "",
+   "safety": "prohibited",
+   "sources": [
+    "b-nnett/goose commands.rs"
+   ]
+  },
+  {
+   "id": 53,
+   "name": "FORCE_DP_TYPE",
+   "goose_gate": "C",
+   "device": "WHOOP 5.0 (Goose table); numbers shared with 4.0 enum unless noted",
+   "payload_sent": null,
+   "observed_result": null,
+   "response_len": null,
+   "confidence": "UNSAFE",
+   "notes": "",
+   "safety": "prohibited",
+   "sources": [
+    "b-nnett/goose commands.rs"
+   ]
+  },
+  {
+   "id": 63,
+   "name": "SEND_R10_R11_REALTIME",
+   "goose_gate": "U",
+   "device": "WHOOP 5.0 (Goose table); numbers shared with 4.0 enum unless noted",
+   "payload_sent": null,
+   "observed_result": null,
+   "response_len": null,
+   "confidence": "SUPPORTED",
+   "notes": "Goose sends [1]/[0]. Not exercised on 5.0 here.",
+   "safety": "reversible, approval per experiment",
+   "sources": [
+    "b-nnett/goose commands.rs"
+   ]
+  },
+  {
+   "id": 66,
+   "name": "SET_ALARM_TIME",
+   "goose_gate": "U",
+   "device": "WHOOP 5.0 (Goose table); numbers shared with 4.0 enum unless noted",
+   "payload_sent": null,
+   "observed_result": null,
+   "response_len": null,
+   "confidence": "SUPPORTED",
+   "notes": "",
+   "safety": "restricted: needs reviewed procedure + approval",
+   "sources": [
+    "b-nnett/goose commands.rs"
+   ]
+  },
+  {
+   "id": 67,
+   "name": "GET_ALARM_TIME",
+   "goose_gate": "R",
+   "device": "WHOOP 5.0 (Goose table); numbers shared with 4.0 enum unless noted",
+   "payload_sent": null,
+   "observed_result": null,
+   "response_len": null,
+   "confidence": "SUPPORTED",
+   "notes": "",
+   "safety": "auto (read-only)",
+   "sources": [
+    "b-nnett/goose commands.rs"
+   ]
+  },
+  {
+   "id": 68,
+   "name": "RUN_ALARM",
+   "goose_gate": "U",
+   "device": "WHOOP 5.0 (Goose table); numbers shared with 4.0 enum unless noted",
+   "payload_sent": null,
+   "observed_result": null,
+   "response_len": null,
+   "confidence": "SUPPORTED",
+   "notes": "",
+   "safety": "restricted: needs reviewed procedure + approval",
+   "sources": [
+    "b-nnett/goose commands.rs"
+   ]
+  },
+  {
+   "id": 69,
+   "name": "DISABLE_ALARM",
+   "goose_gate": "U",
+   "device": "WHOOP 5.0 (Goose table); numbers shared with 4.0 enum unless noted",
+   "payload_sent": null,
+   "observed_result": null,
+   "response_len": null,
+   "confidence": "SUPPORTED",
+   "notes": "",
+   "safety": "restricted: needs reviewed procedure + approval",
+   "sources": [
+    "b-nnett/goose commands.rs"
+   ]
+  },
+  {
+   "id": 76,
+   "name": "GET_ADVERTISING_NAME_HARVARD",
+   "goose_gate": "R",
+   "device": "WHOOP 5.0 (Goose table); numbers shared with 4.0 enum unless noted",
+   "payload_sent": null,
+   "observed_result": null,
+   "response_len": null,
+   "confidence": "SUPPORTED",
+   "notes": "",
+   "safety": "auto (read-only)",
+   "sources": [
+    "b-nnett/goose commands.rs"
+   ]
+  },
+  {
+   "id": 77,
+   "name": "SET_ADVERTISING_NAME_HARVARD",
+   "goose_gate": "U",
+   "device": "WHOOP 5.0 (Goose table); numbers shared with 4.0 enum unless noted",
+   "payload_sent": null,
+   "observed_result": null,
+   "response_len": null,
+   "confidence": "SUPPORTED",
+   "notes": "",
+   "safety": "restricted: needs reviewed procedure + approval",
+   "sources": [
+    "b-nnett/goose commands.rs"
+   ]
+  },
+  {
+   "id": 79,
+   "name": "RUN_HAPTICS_PATTERN",
+   "goose_gate": "U",
+   "device": "WHOOP 5.0 (Goose table); numbers shared with 4.0 enum unless noted",
+   "payload_sent": null,
+   "observed_result": null,
+   "response_len": null,
+   "confidence": "SUPPORTED",
+   "notes": "",
+   "safety": "restricted: needs reviewed procedure + approval",
+   "sources": [
+    "b-nnett/goose commands.rs"
+   ]
+  },
+  {
+   "id": 80,
+   "name": "GET_ALL_HAPTICS_PATTERN",
+   "goose_gate": "R",
+   "device": "WHOOP 5.0 (Goose table); numbers shared with 4.0 enum unless noted",
+   "payload_sent": "[]",
+   "observed_result": "UNSUPPORTED",
+   "response_len": 20,
+   "confidence": "CONFIRMED",
+   "notes": "result 3 (E02).",
+   "safety": "auto (read-only)",
+   "sources": [
+    "b-nnett/goose commands.rs",
+    "live: this strap"
+   ]
+  },
+  {
+   "id": 81,
+   "name": "START_RAW_DATA",
+   "goose_gate": "U",
+   "device": "WHOOP 5.0 (Goose table); numbers shared with 4.0 enum unless noted",
+   "payload_sent": null,
+   "observed_result": null,
+   "response_len": null,
+   "confidence": "SUPPORTED",
+   "notes": "",
+   "safety": "restricted: needs reviewed procedure + approval",
+   "sources": [
+    "b-nnett/goose commands.rs"
+   ]
+  },
+  {
+   "id": 82,
+   "name": "STOP_RAW_DATA",
+   "goose_gate": "U",
+   "device": "WHOOP 5.0 (Goose table); numbers shared with 4.0 enum unless noted",
+   "payload_sent": null,
+   "observed_result": null,
+   "response_len": null,
+   "confidence": "SUPPORTED",
+   "notes": "",
+   "safety": "restricted: needs reviewed procedure + approval",
+   "sources": [
+    "b-nnett/goose commands.rs"
+   ]
+  },
+  {
+   "id": 83,
+   "name": "VERIFY_FIRMWARE_IMAGE",
+   "goose_gate": "C",
+   "device": "WHOOP 5.0 (Goose table); numbers shared with 4.0 enum unless noted",
+   "payload_sent": null,
+   "observed_result": null,
+   "response_len": null,
+   "confidence": "UNSAFE",
+   "notes": "",
+   "safety": "prohibited",
+   "sources": [
+    "b-nnett/goose commands.rs"
+   ]
+  },
+  {
+   "id": 84,
+   "name": "GET_BODY_LOCATION_AND_STATUS",
+   "goose_gate": "R",
+   "device": "WHOOP 5.0 (Goose table); numbers shared with 4.0 enum unless noted",
+   "payload_sent": "[]",
+   "observed_result": "FAILURE",
+   "response_len": 24,
+   "confidence": "CONFIRMED",
+   "notes": "result 0, body 01 00\u2026; payload probably needs arguments (E02).",
+   "safety": "auto (read-only)",
+   "sources": [
+    "b-nnett/goose commands.rs",
+    "live: this strap"
+   ]
+  },
+  {
+   "id": 96,
+   "name": "ENTER_HIGH_FREQ_SYNC",
+   "goose_gate": "U",
+   "device": "WHOOP 5.0 (Goose table); numbers shared with 4.0 enum unless noted",
+   "payload_sent": null,
+   "observed_result": null,
+   "response_len": null,
+   "confidence": "SUPPORTED",
+   "notes": "",
+   "safety": "restricted: needs reviewed procedure + approval",
+   "sources": [
+    "b-nnett/goose commands.rs"
+   ]
+  },
+  {
+   "id": 97,
+   "name": "EXIT_HIGH_FREQ_SYNC",
+   "goose_gate": "U",
+   "device": "WHOOP 5.0 (Goose table); numbers shared with 4.0 enum unless noted",
+   "payload_sent": null,
+   "observed_result": null,
+   "response_len": null,
+   "confidence": "SUPPORTED",
+   "notes": "NOOP's 4.0 path sends [0]; blocked on 5.0 by NOOP's allowlist.",
+   "safety": "restricted: needs reviewed procedure + approval",
+   "sources": [
+    "b-nnett/goose commands.rs"
+   ]
+  },
+  {
+   "id": 98,
+   "name": "GET_EXTENDED_BATTERY_INFO",
+   "goose_gate": "R",
+   "device": "WHOOP 5.0 (Goose table); numbers shared with 4.0 enum unless noted",
+   "payload_sent": "[]",
+   "observed_result": "UNSUPPORTED",
+   "response_len": 20,
+   "confidence": "CONFIRMED",
+   "notes": "result 3 (E02).",
+   "safety": "auto (read-only)",
+   "sources": [
+    "b-nnett/goose commands.rs",
+    "live: this strap"
+   ]
+  },
+  {
+   "id": 99,
+   "name": "RESET_FUEL_GAUGE",
+   "goose_gate": null,
+   "device": "WHOOP 5.0 (Goose table); numbers shared with 4.0 enum unless noted",
+   "payload_sent": null,
+   "observed_result": null,
+   "response_len": null,
+   "confidence": "UNSAFE",
+   "notes": "",
+   "safety": "prohibited",
+   "sources": [
+    "b-nnett/goose commands.rs"
+   ]
+  },
+  {
+   "id": 105,
+   "name": "TOGGLE_IMU_MODE_HISTORICAL",
+   "goose_gate": "U",
+   "device": "WHOOP 5.0 (Goose table); numbers shared with 4.0 enum unless noted",
+   "payload_sent": null,
+   "observed_result": null,
+   "response_len": null,
+   "confidence": "SUPPORTED",
+   "notes": "",
+   "safety": "restricted: needs reviewed procedure + approval",
+   "sources": [
+    "b-nnett/goose commands.rs"
+   ]
+  },
+  {
+   "id": 106,
+   "name": "TOGGLE_IMU_MODE",
+   "goose_gate": "U",
+   "device": "WHOOP 5.0 (Goose table); numbers shared with 4.0 enum unless noted",
+   "payload_sent": null,
+   "observed_result": null,
+   "response_len": null,
+   "confidence": "SUPPORTED",
+   "notes": "",
+   "safety": "restricted: needs reviewed procedure + approval",
+   "sources": [
+    "b-nnett/goose commands.rs"
+   ]
+  },
+  {
+   "id": 107,
+   "name": "ENABLE_OPTICAL_DATA",
+   "goose_gate": "U",
+   "device": "WHOOP 5.0 (Goose table); numbers shared with 4.0 enum unless noted",
+   "payload_sent": null,
+   "observed_result": null,
+   "response_len": null,
+   "confidence": "SUPPORTED",
+   "notes": "",
+   "safety": "restricted: needs reviewed procedure + approval",
+   "sources": [
+    "b-nnett/goose commands.rs"
+   ]
+  },
+  {
+   "id": 108,
+   "name": "TOGGLE_OPTICAL_MODE",
+   "goose_gate": "U",
+   "device": "WHOOP 5.0 (Goose table); numbers shared with 4.0 enum unless noted",
+   "payload_sent": null,
+   "observed_result": null,
+   "response_len": null,
+   "confidence": "SUPPORTED",
+   "notes": "",
+   "safety": "restricted: needs reviewed procedure + approval",
+   "sources": [
+    "b-nnett/goose commands.rs"
+   ]
+  },
+  {
+   "id": 115,
+   "name": "START_DEVICE_CONFIG_KEY_EXCHANGE",
+   "goose_gate": "C",
+   "device": "WHOOP 5.0 (Goose table); numbers shared with 4.0 enum unless noted",
+   "payload_sent": null,
+   "observed_result": null,
+   "response_len": null,
+   "confidence": "UNSAFE",
+   "notes": "",
+   "safety": "prohibited",
+   "sources": [
+    "b-nnett/goose commands.rs"
+   ]
+  },
+  {
+   "id": 116,
+   "name": "SEND_NEXT_DEVICE_CONFIG",
+   "goose_gate": "C",
+   "device": "WHOOP 5.0 (Goose table); numbers shared with 4.0 enum unless noted",
+   "payload_sent": null,
+   "observed_result": null,
+   "response_len": null,
+   "confidence": "UNSAFE",
+   "notes": "",
+   "safety": "prohibited",
+   "sources": [
+    "b-nnett/goose commands.rs"
+   ]
+  },
+  {
+   "id": 117,
+   "name": "START_FEATURE_FLAG_KEY_EXCHANGE",
+   "goose_gate": "C",
+   "device": "WHOOP 5.0 (Goose table); numbers shared with 4.0 enum unless noted",
+   "payload_sent": null,
+   "observed_result": null,
+   "response_len": null,
+   "confidence": "UNSAFE",
+   "notes": "",
+   "safety": "prohibited",
+   "sources": [
+    "b-nnett/goose commands.rs"
+   ]
+  },
+  {
+   "id": 118,
+   "name": "SEND_NEXT_FEATURE_FLAG",
+   "goose_gate": "C",
+   "device": "WHOOP 5.0 (Goose table); numbers shared with 4.0 enum unless noted",
+   "payload_sent": null,
+   "observed_result": null,
+   "response_len": null,
+   "confidence": "UNSAFE",
+   "notes": "",
+   "safety": "prohibited",
+   "sources": [
+    "b-nnett/goose commands.rs"
+   ]
+  },
+  {
+   "id": 119,
+   "name": "SET_DEVICE_CONFIG_VALUE",
+   "goose_gate": "C",
+   "device": "WHOOP 5.0 (Goose table); numbers shared with 4.0 enum unless noted",
+   "payload_sent": null,
+   "observed_result": null,
+   "response_len": null,
+   "confidence": "UNSAFE",
+   "notes": "",
+   "safety": "prohibited",
+   "sources": [
+    "b-nnett/goose commands.rs"
+   ]
+  },
+  {
+   "id": 120,
+   "name": "SET_FEATURE_FLAG_VALUE",
+   "goose_gate": "C",
+   "device": "WHOOP 5.0 (Goose table); numbers shared with 4.0 enum unless noted",
+   "payload_sent": null,
+   "observed_result": null,
+   "response_len": null,
+   "confidence": "UNSAFE",
+   "notes": "",
+   "safety": "prohibited",
+   "sources": [
+    "b-nnett/goose commands.rs"
+   ]
+  },
+  {
+   "id": 121,
+   "name": "GET_DEVICE_CONFIG_VALUE",
+   "goose_gate": "R",
+   "device": "WHOOP 5.0 (Goose table); numbers shared with 4.0 enum unless noted",
+   "payload_sent": null,
+   "observed_result": null,
+   "response_len": null,
+   "confidence": "SUPPORTED",
+   "notes": "",
+   "safety": "auto (read-only)",
+   "sources": [
+    "b-nnett/goose commands.rs"
+   ]
+  },
+  {
+   "id": 122,
+   "name": "STOP_HAPTICS",
+   "goose_gate": "U",
+   "device": "WHOOP 5.0 (Goose table); numbers shared with 4.0 enum unless noted",
+   "payload_sent": null,
+   "observed_result": null,
+   "response_len": null,
+   "confidence": "SUPPORTED",
+   "notes": "",
+   "safety": "restricted: needs reviewed procedure + approval",
+   "sources": [
+    "b-nnett/goose commands.rs"
+   ]
+  },
+  {
+   "id": 123,
+   "name": "SELECT_WRIST",
+   "goose_gate": "U",
+   "device": "WHOOP 5.0 (Goose table); numbers shared with 4.0 enum unless noted",
+   "payload_sent": null,
+   "observed_result": null,
+   "response_len": null,
+   "confidence": "SUPPORTED",
+   "notes": "",
+   "safety": "restricted: needs reviewed procedure + approval",
+   "sources": [
+    "b-nnett/goose commands.rs"
+   ]
+  },
+  {
+   "id": 124,
+   "name": "TOGGLE_LABRADOR_DATA_GENERATION",
+   "goose_gate": "U",
+   "device": "WHOOP 5.0 (Goose table); numbers shared with 4.0 enum unless noted",
+   "payload_sent": null,
+   "observed_result": null,
+   "response_len": null,
+   "confidence": "SUPPORTED",
+   "notes": "",
+   "safety": "restricted: needs reviewed procedure + approval",
+   "sources": [
+    "b-nnett/goose commands.rs"
+   ]
+  },
+  {
+   "id": 125,
+   "name": "TOGGLE_LABRADOR_RAW_SAVE",
+   "goose_gate": "U",
+   "device": "WHOOP 5.0 (Goose table); numbers shared with 4.0 enum unless noted",
+   "payload_sent": null,
+   "observed_result": null,
+   "response_len": null,
+   "confidence": "SUPPORTED",
+   "notes": "",
+   "safety": "restricted: needs reviewed procedure + approval",
+   "sources": [
+    "b-nnett/goose commands.rs"
+   ]
+  },
+  {
+   "id": 128,
+   "name": "GET_FEATURE_FLAG_VALUE",
+   "goose_gate": "R",
+   "device": "WHOOP 5.0 (Goose table); numbers shared with 4.0 enum unless noted",
+   "payload_sent": null,
+   "observed_result": null,
+   "response_len": null,
+   "confidence": "SUPPORTED",
+   "notes": "",
+   "safety": "auto (read-only)",
+   "sources": [
+    "b-nnett/goose commands.rs"
+   ]
+  },
+  {
+   "id": 131,
+   "name": "SET_RESEARCH_PACKET",
+   "goose_gate": "C",
+   "device": "WHOOP 5.0 (Goose table); numbers shared with 4.0 enum unless noted",
+   "payload_sent": null,
+   "observed_result": null,
+   "response_len": null,
+   "confidence": "UNSAFE",
+   "notes": "",
+   "safety": "prohibited",
+   "sources": [
+    "b-nnett/goose commands.rs"
+   ]
+  },
+  {
+   "id": 132,
+   "name": "GET_RESEARCH_PACKET",
+   "goose_gate": "R",
+   "device": "WHOOP 5.0 (Goose table); numbers shared with 4.0 enum unless noted",
+   "payload_sent": null,
+   "observed_result": null,
+   "response_len": null,
+   "confidence": "SUPPORTED",
+   "notes": "",
+   "safety": "auto (read-only)",
+   "sources": [
+    "b-nnett/goose commands.rs"
+   ]
+  },
+  {
+   "id": 139,
+   "name": "TOGGLE_LABRADOR_FILTERED",
+   "goose_gate": "U",
+   "device": "WHOOP 5.0 (Goose table); numbers shared with 4.0 enum unless noted",
+   "payload_sent": null,
+   "observed_result": null,
+   "response_len": null,
+   "confidence": "SUPPORTED",
+   "notes": "",
+   "safety": "restricted: needs reviewed procedure + approval",
+   "sources": [
+    "b-nnett/goose commands.rs"
+   ]
+  },
+  {
+   "id": 140,
+   "name": "SET_ADVERTISING_NAME",
+   "goose_gate": "U",
+   "device": "WHOOP 5.0 (Goose table); numbers shared with 4.0 enum unless noted",
+   "payload_sent": null,
+   "observed_result": null,
+   "response_len": null,
+   "confidence": "SUPPORTED",
+   "notes": "",
+   "safety": "restricted: needs reviewed procedure + approval",
+   "sources": [
+    "b-nnett/goose commands.rs"
+   ]
+  },
+  {
+   "id": 141,
+   "name": "GET_ADVERTISING_NAME",
+   "goose_gate": "R",
+   "device": "WHOOP 5.0 (Goose table); numbers shared with 4.0 enum unless noted",
+   "payload_sent": null,
+   "observed_result": null,
+   "response_len": null,
+   "confidence": "SUPPORTED",
+   "notes": "",
+   "safety": "auto (read-only)",
+   "sources": [
+    "b-nnett/goose commands.rs"
+   ]
+  },
+  {
+   "id": 142,
+   "name": "START_FIRMWARE_LOAD_NEW",
+   "goose_gate": "C",
+   "device": "WHOOP 5.0 (Goose table); numbers shared with 4.0 enum unless noted",
+   "payload_sent": null,
+   "observed_result": null,
+   "response_len": null,
+   "confidence": "UNSAFE",
+   "notes": "",
+   "safety": "prohibited",
+   "sources": [
+    "b-nnett/goose commands.rs"
+   ]
+  },
+  {
+   "id": 143,
+   "name": "LOAD_FIRMWARE_DATA_NEW",
+   "goose_gate": "C",
+   "device": "WHOOP 5.0 (Goose table); numbers shared with 4.0 enum unless noted",
+   "payload_sent": null,
+   "observed_result": null,
+   "response_len": null,
+   "confidence": "UNSAFE",
+   "notes": "",
+   "safety": "prohibited",
+   "sources": [
+    "b-nnett/goose commands.rs"
+   ]
+  },
+  {
+   "id": 144,
+   "name": "PROCESS_FIRMWARE_IMAGE_NEW",
+   "goose_gate": "C",
+   "device": "WHOOP 5.0 (Goose table); numbers shared with 4.0 enum unless noted",
+   "payload_sent": null,
+   "observed_result": null,
+   "response_len": null,
+   "confidence": "UNSAFE",
+   "notes": "",
+   "safety": "prohibited",
+   "sources": [
+    "b-nnett/goose commands.rs"
+   ]
+  },
+  {
+   "id": 145,
+   "name": "GET_HELLO",
+   "goose_gate": "R",
+   "device": "WHOOP 5.0 (Goose table); numbers shared with 4.0 enum unless noted",
+   "payload_sent": "[01]",
+   "observed_result": "PENDING\u2192SUCCESS",
+   "response_len": 124,
+   "confidence": "CONFIRMED",
+   "notes": "static CLIENT_HELLO; two 124-byte responses (result 2 then 1). Body holds identity/session data: redacted, never logged.",
+   "safety": "auto (read-only)",
+   "sources": [
+    "b-nnett/goose commands.rs",
+    "live: this strap"
+   ]
+  },
+  {
+   "id": 151,
+   "name": "GET_BATTERY_PACK_INFO",
+   "goose_gate": "R",
+   "device": "WHOOP 5.0 (Goose table); numbers shared with 4.0 enum unless noted",
+   "payload_sent": "[]",
+   "observed_result": "FAILURE",
+   "response_len": 48,
+   "confidence": "CONFIRMED",
+   "notes": "result 0, body 01 + 30 zero bytes; no battery pack attached (E02).",
+   "safety": "auto (read-only)",
+   "sources": [
+    "b-nnett/goose commands.rs",
+    "live: this strap"
+   ]
+  },
+  {
+   "id": 153,
+   "name": "TOGGLE_PERSISTENT_R20",
+   "goose_gate": "C",
+   "device": "WHOOP 5.0 (Goose table); numbers shared with 4.0 enum unless noted",
+   "payload_sent": null,
+   "observed_result": null,
+   "response_len": null,
+   "confidence": "UNSAFE",
+   "notes": "",
+   "safety": "prohibited",
+   "sources": [
+    "b-nnett/goose commands.rs"
+   ]
+  },
+  {
+   "id": 154,
+   "name": "TOGGLE_PERSISTENT_R21",
+   "goose_gate": "C",
+   "device": "WHOOP 5.0 (Goose table); numbers shared with 4.0 enum unless noted",
+   "payload_sent": null,
+   "observed_result": null,
+   "response_len": null,
+   "confidence": "UNSAFE",
+   "notes": "",
+   "safety": "prohibited",
+   "sources": [
+    "b-nnett/goose commands.rs"
+   ]
+  }
+ ]
+}

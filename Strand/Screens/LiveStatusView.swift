@@ -162,6 +162,17 @@ struct StrapHistoryCard: View {
                 row("Frames captured", "\(live.historyFrames)")
                 if let file = live.historyCaptureFile { row("Saved to", file) }
                 if let sum = live.historySummary { row("Decoded", sum) }
+                if !live.recentEvents.isEmpty {
+                    // Every decoded strap event, unknown numbers included, for diagnostics. UI state only follows live ones.
+                    DisclosureGroup("Strap events (\(live.recentEvents.count))") {
+                        VStack(alignment: .leading, spacing: 2) {
+                            ForEach(Array(live.recentEvents.prefix(15).enumerated()), id: \.offset) { _, e in
+                                Text(e).font(.system(size: 11).monospaced()).foregroundStyle(StrandPalette.textSecondary)
+                            }
+                        }
+                    }
+                    .font(.system(size: 13))
+                }
                                 Text(live.historyStatus).font(.system(size: 12)).foregroundStyle(StrandPalette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
 
@@ -181,7 +192,7 @@ struct StrapHistoryCard: View {
 
                 Text(keepDataOnStrap
                      ? "\"Never delete data from the strap\" is on, so NOOP never confirms a batch and the strap keeps its copy, but each pull may stop after the first batch. Raw frames are saved on this Mac so the 5.0 record format can be decoded."
-                     : "NOOP confirms each batch after saving it on this Mac, and the strap may then clear it. To keep a copy on the strap, turn on \"Never delete data from the strap\" in Settings. Raw frames are saved on this Mac so the 5.0 record format can be decoded.")
+                     : "NOOP confirms each batch only after it is saved on this Mac; confirming moves the strap's trim pointer past it, and whether another app can still read that batch is not known. A batch NOOP cannot decode is never confirmed. To stop confirming, turn on \"Never delete data from the strap\" in Settings.")
                     .font(.system(size: 11)).foregroundStyle(StrandPalette.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
             }

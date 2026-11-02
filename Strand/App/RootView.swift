@@ -131,17 +131,22 @@ private struct FloatingNav: View {
 }
 
 /// Strap charge at the top of every screen: a battery glyph that fills and changes colour with the level, plus the %.
-/// Its own view so the strap's frequent updates only re-render this badge, never the whole window.
+/// A reading older than 10 minutes (or from before a disconnect) is dimmed and says when it was taken; the charging
+/// bolt appears only when a verified source reports charging. Its own view so battery updates only re-render this badge.
 private struct BatteryBadge: View {
     @EnvironmentObject var live: LiveState
     let open: () -> Void
 
-    private var pct: Int? { live.connected ? live.batteryPct.map { Int($0.rounded()) } : nil }
+    private var status: BatteryStatus? { live.battery }
+    private var pct: Int? { status?.percent ?? (live.connected ? live.batteryPct.map { Int($0.rounded()) } : nil) }
+    private var stale: Bool { !live.connected || (status?.isStale() ?? false) }
+    private var charging: Bool { status?.charging == true && !stale }
     private var tint: Color {
-        guard let p = pct else { return StrandPalette.textTertiary }
+        guard let p = pct, !stale else { return StrandPalette.textTertiary }
         return p < 20 ? StrandPalette.statusCritical : p < 50 ? StrandPalette.statusWarning : StrandPalette.statusPositive
     }
     private var symbol: String {
+        if charging { return "battery.100percent.bolt" }
         guard let p = pct else { return "battery.0percent" }
         switch p {
         case ..<13: return "battery.0percent"
@@ -151,6 +156,14 @@ private struct BatteryBadge: View {
         default:    return "battery.100percent"
         }
     }
+    private var help: String {
+        guard let p = pct else { return live.connected ? "Reading strap battery…" : "Strap not connected" }
+        var s = "WHOOP strap battery: \(p)%"
+        if charging { s += ", charging" }
+        if let at = status?.at, stale { s += " — last updated \(at.formatted(date: .omitted, time: .shortened))" }
+        if p < 20 && !stale { s += ". Low: charge soon to avoid gaps in recording." }
+        return s
+    }
 
     var body: some View {
         Button(action: open) { chip }.buttonStyle(.plain)
@@ -159,14 +172,14 @@ private struct BatteryBadge: View {
     private var chip: some View {
         HStack(spacing: 6) {
             Image(systemName: symbol).font(.system(size: 16, weight: .semibold)).foregroundStyle(tint)
-                            Text(pct.map { "\($0)%" } ?? "—").font(.system(size: 13, weight: .bold).monospacedDigit())
-                .foregroundStyle(pct == nil ? StrandPalette.textTertiary : StrandPalette.textPrimary)
+            Text(pct.map { "\($0)%" } ?? "—").font(.system(size: 13, weight: .bold).monospacedDigit())
+                .foregroundStyle(pct == nil || stale ? StrandPalette.textTertiary : StrandPalette.textPrimary)
         }
         .padding(.horizontal, 12).padding(.vertical, 6)
         .background(StrandPalette.surfaceRaised, in: Capsule())
         .overlay(Capsule().strokeBorder(StrandPalette.hairline, lineWidth: 0.5))
-        .help(pct.map { "WHOOP strap battery: \($0)%" } ?? (live.connected ? "Reading strap battery…" : "Strap not connected"))
-        .accessibilityLabel(pct.map { "Strap battery \($0) percent" } ?? "Strap battery unknown")
+        .help(help)
+        .accessibilityLabel(pct.map { "Strap battery \($0) percent\(stale ? ", not current" : "")" } ?? "Strap battery unknown")
     }
 }
 

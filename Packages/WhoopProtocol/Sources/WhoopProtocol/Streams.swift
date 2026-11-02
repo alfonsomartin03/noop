@@ -184,14 +184,11 @@ func appendBattery(_ out: inout Streams, ts: Int, p: [String: ParsedValue]) {
 
 // MARK: - WHOOP 5.0 realtime heart-rate record
 
-/// Decoded WHOOP 5.0 `REALTIME_DATA` (type 40) record.
+/// Decoded WHOOP 5.0 `REALTIME_DATA` (type 40) record, sent at 1 Hz on fd4b0005 while TOGGLE_REALTIME_HR is on.
 ///
-/// LAYOUT IS A HYPOTHESIS, not a published spec: it is the verified WHOOP 4.0 realtime layout
-/// (`timestamp u32 @6, subseconds u16 @10, heart_rate u8 @12, rr_count u8 @13, rr u16… @14`) shifted by the
-/// 4-byte-longer 5.0 header, i.e. `@10 / @14 / @16 / @17 / @18`. It matches the observed 32-byte frames
-/// (8 header + 20 payload + 4 CRC32) and must be confirmed against a real strap (timestamps should step ~1 s,
-/// heart rate should be steady and plausible).
-// 5.0 realtime layout is inferred from 4.0 shifted by the longer header, so verify against a real strap.
+/// Layout CONFIRMED on the owner's strap (E04, 42 frames): payload `[40][kind 0x02][unix u32][subsec u16][hr u8]
+/// [rr_count u8][rr u16…]`, i.e. frame offsets 10 / 14 / 16 / 17 / 18. Timestamps are strap-clock seconds and stepped
+/// exactly 1 s. No frame ever carried R-R (count 0), so R-R must come from history or the 0x2A37 profile.
 public struct Whoop5Realtime: Equatable, Sendable {
     public let timestamp: UInt32
     public let subseconds: UInt16
@@ -202,6 +199,7 @@ public struct Whoop5Realtime: Equatable, Sendable {
 public func decodeWhoop5Realtime(_ frame: [UInt8]) -> Whoop5Realtime? {
     guard verifyFrame(frame, family: .whoop5).ok, frame.count >= 18, frame[8] == 40 else { return nil }
     let ts = UInt32(frame[10]) | UInt32(frame[11]) << 8 | UInt32(frame[12]) << 16 | UInt32(frame[13]) << 24
+    guard isPlausibleUnix(Int(ts)) else { return nil }
     let sub = UInt16(frame[14]) | UInt16(frame[15]) << 8
     let hr = Int(frame[16])
     let declaredEnd = (Int(frame[2]) | Int(frame[3]) << 8) + 8 - 4   // start of the CRC32 trailer

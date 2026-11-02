@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import os
 import Combine
 import WhoopProtocol
 import WhoopStore
@@ -22,6 +23,8 @@ final class AppModel: ObservableObject {
     let profile = ProfileStore()
     /// On-device WHOOP-style recovery/strain/sleep computation from raw strap streams.
     let intelligence: IntelligenceEngine
+    /// Low-battery / charging-complete notifications.
+    let batteryMonitor = BatteryMonitor()
 
     /// Import status surfaced to Settings → Data.
     @Published var importing = false
@@ -64,6 +67,13 @@ final class AppModel: ObservableObject {
                 self.repo.dataVersion += 1
             }
         }
+        // Battery readings (0x2A19, GET_BATTERY_LEVEL) feed the notification policy.
+        live.onBatteryReading = { [weak self] r in self?.batteryMonitor.ingest(r) }
+        if BatteryMonitor.isEnabled(BatteryMonitor.lowEnabledKey) || BatteryMonitor.isEnabled(BatteryMonitor.fullEnabledKey) {
+            BatteryMonitor.requestAuthorization()
+        }
+        // A finished (or stopped) pull goes straight to processing, shown as its own stage.
+        ble.onSyncDownloadFinished = { [weak self] complete in self?.runPostSyncProcessing(downloadComplete: complete) }
         // Smooth HR centrally so it's solid everywhere it's shown.
         // Both signals feed one smoother, so every screen shows the same steady bpm.
         live.$heartRate.sink { [weak self] _ in self?.ingestHR() }.store(in: &hrCancellables)
@@ -108,6 +118,40 @@ final class AppModel: ObservableObject {
         if hrWindow.count > 40 { hrWindow.removeFirst(hrWindow.count - 40) }
         let vals = hrWindow.map(\.v).sorted()
         bpm = vals.isEmpty ? nil : Int(vals[vals.count / 2].rounded())
+    }
+
+    private static let syncLog = Logger(subsystem: "com.noopapp.noop", category: "sync")
+
+    /// Post-download stage: recompute sleep, recovery and strain from what was saved, then refresh the dashboard.
+    /// The UI shows "Processing" until this returns; success is reported only if scoring actually finished.
+    private func runPostSyncProcessing(downloadComplete: Bool) {
+        analysisDebounce?.cancel()
+        live.processingStatus = "Updating sleep, recovery, and activity metrics…"
+        let started = Date()
+        AppModel.syncLog.notice("Processing: started (download \(downloadComplete ? "complete" : "ended early", privacy: .public))")
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            var ok = await self.intelligence.analyzeRecent()
+            // A periodic run may already be scoring; wait for it (bounded) and score again so this pull is included.
+            var waited = 0
+            while !ok, self.intelligence.computing, waited < 120 {
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                waited += 1
+                if !self.intelligence.computing { ok = await self.intelligence.analyzeRecent() }
+            }
+            await self.repo.refresh()
+            self.repo.dataVersion += 1
+            self.live.processingStatus = nil
+            AppModel.syncLog.notice("Processing: \(ok ? "finished" : "FAILED", privacy: .public) in \(Int(Date().timeIntervalSince(started)), privacy: .public) s")
+            if ok {
+                if downloadComplete {
+                    self.live.syncSession?.processingFinished()
+                    self.live.lastSyncOutcome = nil
+                }
+            } else {
+                self.live.lastSyncOutcome = "Data saved, but updating scores failed: \(self.intelligence.note ?? "unknown error")"
+            }
+        }
     }
 
     func scan() { ble.connect() }

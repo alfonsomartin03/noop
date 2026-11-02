@@ -13,6 +13,11 @@ protocol StoreWriting: AnyObject {
         -> (hr: Int, rr: Int, events: Int, battery: Int,
             spo2: Int, skinTemp: Int, resp: Int, gravity: Int)
     func enqueueRawBatch(_ meta: RawBatchMeta, frames: [[UInt8]]) async throws
+    func setCursor(_ name: String, _ value: Int) async throws
+}
+extension StoreWriting {
+    /// Test doubles that don't track cursors get a no-op.
+    func setCursor(_ name: String, _ value: Int) async throws {}
 }
 extension WhoopStore: StoreWriting {}
 
@@ -195,6 +200,12 @@ final class Collector {
     /// Persist already-decoded stored records. Idempotent: the store ignores rows whose (device, ts) already exist,
     /// so re-saving the same chunk is harmless. Returns the number of NEW heart-rate rows written, or nil on failure.
     // Safe to call repeatedly: the store ignores rows it already has.
+    /// Best-effort cursor write (sync progress start, clock estimate). A failure only costs progress accuracy.
+    func setCursor(_ name: String, _ value: Int) async {
+        try? await store.setCursor(name, value)
+    }
+
+    /// One transaction: every row in `streams` is committed together or not at all. nil = the write failed.
     func persistDecodedHistory(_ streams: Streams) async -> Int? {
         do { return try await store.insert(streams, deviceId: deviceId).hr } catch { return nil }
     }

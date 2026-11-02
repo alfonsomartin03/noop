@@ -1,0 +1,48 @@
+{"exp":"E01-passive-gatt","kind":"note","session":"EEC29B93","t":1793636040.07902,"text":"central state=5 auth=3"}
+{"exp":"E01-passive-gatt","kind":"note","session":"EEC29B93","t":1793636040.0908961,"text":"strap already connected to this Mac (shared link) — attaching"}
+{"exp":"E01-passive-gatt","kind":"note","session":"EEC29B93","t":1793636040.093931,"text":"connected; discovering all services"}
+{"exp":"E01-passive-gatt","kind":"service","primary":true,"session":"EEC29B93","t":1793636040.0967898,"uuid":"180D"}
+{"exp":"E01-passive-gatt","kind":"service","primary":true,"session":"EEC29B93","t":1793636040.096971,"uuid":"180A"}
+{"exp":"E01-passive-gatt","kind":"service","primary":true,"session":"EEC29B93","t":1793636040.09705,"uuid":"180F"}
+{"exp":"E01-passive-gatt","kind":"service","primary":true,"session":"EEC29B93","t":1793636040.0971131,"uuid":"FD4B0001-CCE1-4033-93CE-002D5875F58A"}
+{"exp":"E01-passive-gatt","kind":"characteristic","notifying":false,"props":["notify"],"service":"180D","session":"EEC29B93","t":1793636040.097398,"uuid":"2A37"}
+{"exp":"E01-passive-gatt","kind":"characteristic","notifying":false,"props":["read"],"service":"180A","session":"EEC29B93","t":1793636040.5100031,"uuid":"2A29"}
+{"exp":"E01-passive-gatt","kind":"characteristic","notifying":false,"props":["read"],"service":"180A","session":"EEC29B93","t":1793636040.5103068,"uuid":"2A24"}
+{"exp":"E01-passive-gatt","kind":"characteristic","notifying":false,"props":["read"],"service":"180A","session":"EEC29B93","t":1793636040.5104442,"uuid":"2A25"}
+{"exp":"E01-passive-gatt","kind":"characteristic","notifying":false,"props":["read"],"service":"180A","session":"EEC29B93","t":1793636040.5105491,"uuid":"2A26"}
+{"exp":"E01-passive-gatt","kind":"characteristic","notifying":false,"props":["read"],"service":"180A","session":"EEC29B93","t":1793636040.510649,"uuid":"2A27"}
+{"exp":"E01-passive-gatt","kind":"characteristic","notifying":false,"props":["read","notify"],"service":"180F","session":"EEC29B93","t":1793636040.5108051,"uuid":"2A19"}
+{"exp":"E01-passive-gatt","kind":"characteristic","notifying":false,"props":["writeNoResp","write"],"service":"FD4B0001-CCE1-4033-93CE-002D5875F58A","session":"EEC29B93","t":1793636040.510956,"uuid":"FD4B0002-CCE1-4033-93CE-002D5875F58A"}
+{"exp":"E01-passive-gatt","kind":"characteristic","notifying":false,"props":["notify"],"service":"FD4B0001-CCE1-4033-93CE-002D5875F58A","session":"EEC29B93","t":1793636040.5110531,"uuid":"FD4B0003-CCE1-4033-93CE-002D5875F58A"}
+{"exp":"E01-passive-gatt","kind":"characteristic","notifying":false,"props":["notify"],"service":"FD4B0001-CCE1-4033-93CE-002D5875F58A","session":"EEC29B93","t":1793636040.5111609,"uuid":"FD4B0004-CCE1-4033-93CE-002D5875F58A"}
+{"exp":"E01-passive-gatt","kind":"characteristic","notifying":false,"props":["notify"],"service":"FD4B0001-CCE1-4033-93CE-002D5875F58A","session":"EEC29B93","t":1793636040.51127,"uuid":"FD4B0005-CCE1-4033-93CE-002D5875F58A"}
+{"exp":"E01-passive-gatt","kind":"characteristic","notifying":false,"props":["notify"],"service":"FD4B0001-CCE1-4033-93CE-002D5875F58A","session":"EEC29B93","t":1793636040.511374,"uuid":"FD4B0007-CCE1-4033-93CE-002D5875F58A"}
+{"characteristic":"2A37","exp":"E01-passive-gatt","kind":"descriptor","session":"EEC29B93","t":1793636041.018106,"uuid":"2902"}
+{"exp":"E01-passive-gatt","hex":"57484f4f5020496e632e","kind":"read","len":10,"service":"180A","session":"EEC29B93","t":1793636041.528532,"uuid":"2A29","value":"WHOOP Inc."}
+{"exp":"E01-passive-gatt","kind":"note","session":"EEC29B93","t":1793636041.52882,"text":"READ 2A29 = WHOOP Inc."}
+{"exp":"E01-passive-gatt","hex":"352e3000","kind":"read","len":4,"service":"180A","session":"EEC29B93","t":1793636042.0380778,"uuid":"2A24","value":"5.0\u0000"}
+{"exp":"E01-passive-gatt","kind":"note","session":"EEC29B93","t":1793636042.038511,"text":"READ 2A24 = 5.0\u0000"}
+{"exp":"E01-passive-gatt","kind":"read","len":11,"service":"180A","session":"EEC29B93","t":1793636042.548655,"uuid":"2A25","value":"<redacted>"}
+{"exp":"E01-passive-gatt","kind":"note","session":"EEC29B93","t":1793636042.5491409,"text":"READ 2A25 = <redacted>"}
+{"exp":"E01-passive-gatt","hex":"35302e34332e312e30","kind":"read","len":9,"service":"180A","session":"EEC29B93","t":1793636043.0578032,"uuid":"2A26","value":"50.43.1.0"}
+{"exp":"E01-passive-gatt","kind":"note","session":"EEC29B93","t":1793636043.0580878,"text":"READ 2A26 = 50.43.1.0"}
+{"exp":"E01-passive-gatt","hex":"574735305f723532","kind":"read","len":8,"service":"180A","session":"EEC29B93","t":1793636043.5672541,"uuid":"2A27","value":"WG50_r52"}
+{"exp":"E01-passive-gatt","kind":"note","session":"EEC29B93","t":1793636043.5674911,"text":"READ 2A27 = WG50_r52"}
+{"characteristic":"2A19","exp":"E01-passive-gatt","kind":"descriptor","session":"EEC29B93","t":1793636043.5676241,"uuid":"2902"}
+{"exp":"E01-passive-gatt","kind":"read","len":1,"service":"180F","session":"EEC29B93","t":1793636044.0775571,"uuid":"2A19","value":20}
+{"exp":"E01-passive-gatt","kind":"note","session":"EEC29B93","t":1793636044.078002,"text":"READ 2A19 = 20"}
+{"characteristic":"FD4B0003-CCE1-4033-93CE-002D5875F58A","exp":"E01-passive-gatt","kind":"descriptor","session":"EEC29B93","t":1793636044.07851,"uuid":"2902"}
+{"error":"","exp":"E01-passive-gatt","kind":"subscribe","notifying":true,"session":"EEC29B93","t":1793636044.58744,"uuid":"FD4B0003-CCE1-4033-93CE-002D5875F58A"}
+{"characteristic":"FD4B0004-CCE1-4033-93CE-002D5875F58A","exp":"E01-passive-gatt","kind":"descriptor","session":"EEC29B93","t":1793636044.587745,"uuid":"2902"}
+{"error":"","exp":"E01-passive-gatt","kind":"subscribe","notifying":true,"session":"EEC29B93","t":1793636045.098983,"uuid":"FD4B0004-CCE1-4033-93CE-002D5875F58A"}
+{"characteristic":"FD4B0005-CCE1-4033-93CE-002D5875F58A","exp":"E01-passive-gatt","kind":"descriptor","session":"EEC29B93","t":1793636045.0995111,"uuid":"2902"}
+{"error":"","exp":"E01-passive-gatt","kind":"subscribe","notifying":true,"session":"EEC29B93","t":1793636045.6099281,"uuid":"FD4B0005-CCE1-4033-93CE-002D5875F58A"}
+{"characteristic":"FD4B0007-CCE1-4033-93CE-002D5875F58A","exp":"E01-passive-gatt","kind":"descriptor","session":"EEC29B93","t":1793636045.6105828,"uuid":"2902"}
+{"error":"","exp":"E01-passive-gatt","kind":"subscribe","notifying":true,"session":"EEC29B93","t":1793636046.118485,"uuid":"FD4B0007-CCE1-4033-93CE-002D5875F58A"}
+{"characteristic":"2A37","exp":"E01-passive-gatt","kind":"descriptor_value","session":"EEC29B93","t":1793636046.629282,"uuid":"2902","value":"1"}
+{"characteristic":"2A19","exp":"E01-passive-gatt","kind":"descriptor_value","session":"EEC29B93","t":1793636047.3929229,"uuid":"2902","value":"1"}
+{"characteristic":"FD4B0003-CCE1-4033-93CE-002D5875F58A","exp":"E01-passive-gatt","kind":"descriptor_value","session":"EEC29B93","t":1793636047.9034061,"uuid":"2902","value":"1"}
+{"characteristic":"FD4B0004-CCE1-4033-93CE-002D5875F58A","exp":"E01-passive-gatt","kind":"descriptor_value","session":"EEC29B93","t":1793636048.6674399,"uuid":"2902","value":"1"}
+{"characteristic":"FD4B0005-CCE1-4033-93CE-002D5875F58A","exp":"E01-passive-gatt","kind":"descriptor_value","session":"EEC29B93","t":1793636049.177501,"uuid":"2902","value":"1"}
+{"characteristic":"FD4B0007-CCE1-4033-93CE-002D5875F58A","exp":"E01-passive-gatt","kind":"descriptor_value","session":"EEC29B93","t":1793636049.943464,"uuid":"2902","value":"1"}
+{"exp":"E01-passive-gatt","kind":"note","session":"EEC29B93","t":1793636061.092927,"text":"finished: capture window 20 s elapsed"}

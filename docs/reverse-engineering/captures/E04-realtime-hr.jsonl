@@ -1,0 +1,260 @@
+{"exp": "E04-realtime-hr", "kind": "note", "session": "D5D5E013", "t": 1793636936.6565099, "text": "central state=5 auth=3"}
+{"exp": "E04-realtime-hr", "kind": "note", "session": "D5D5E013", "t": 1793636936.664212, "text": "strap already connected to this Mac (shared link) \u2014 attaching"}
+{"exp": "E04-realtime-hr", "kind": "note", "session": "D5D5E013", "t": 1793636936.666136, "text": "connected; discovering all services"}
+{"exp": "E04-realtime-hr", "kind": "service", "primary": true, "session": "D5D5E013", "t": 1793636936.667445, "uuid": "180D"}
+{"exp": "E04-realtime-hr", "kind": "service", "primary": true, "session": "D5D5E013", "t": 1793636936.667602, "uuid": "180A"}
+{"exp": "E04-realtime-hr", "kind": "service", "primary": true, "session": "D5D5E013", "t": 1793636936.667681, "uuid": "180F"}
+{"exp": "E04-realtime-hr", "kind": "service", "primary": true, "session": "D5D5E013", "t": 1793636936.667749, "uuid": "FD4B0001-CCE1-4033-93CE-002D5875F58A"}
+{"exp": "E04-realtime-hr", "kind": "characteristic", "notifying": false, "props": ["notify"], "service": "180D", "session": "D5D5E013", "t": 1793636936.66817, "uuid": "2A37"}
+{"exp": "E04-realtime-hr", "kind": "characteristic", "notifying": false, "props": ["read"], "service": "180A", "session": "D5D5E013", "t": 1793636936.668459, "uuid": "2A29"}
+{"exp": "E04-realtime-hr", "kind": "characteristic", "notifying": false, "props": ["read"], "service": "180A", "session": "D5D5E013", "t": 1793636936.668566, "uuid": "2A24"}
+{"exp": "E04-realtime-hr", "kind": "characteristic", "notifying": false, "props": ["read"], "service": "180A", "session": "D5D5E013", "t": 1793636936.668664, "uuid": "2A25"}
+{"exp": "E04-realtime-hr", "kind": "characteristic", "notifying": false, "props": ["read"], "service": "180A", "session": "D5D5E013", "t": 1793636936.668756, "uuid": "2A26"}
+{"exp": "E04-realtime-hr", "kind": "characteristic", "notifying": false, "props": ["read"], "service": "180A", "session": "D5D5E013", "t": 1793636936.668848, "uuid": "2A27"}
+{"exp": "E04-realtime-hr", "kind": "characteristic", "notifying": false, "props": ["read", "notify"], "service": "180F", "session": "D5D5E013", "t": 1793636936.668972, "uuid": "2A19"}
+{"exp": "E04-realtime-hr", "kind": "characteristic", "notifying": false, "props": ["writeNoResp", "write"], "service": "FD4B0001-CCE1-4033-93CE-002D5875F58A", "session": "D5D5E013", "t": 1793636936.669085, "uuid": "FD4B0002-CCE1-4033-93CE-002D5875F58A"}
+{"exp": "E04-realtime-hr", "kind": "characteristic", "notifying": false, "props": ["notify"], "service": "FD4B0001-CCE1-4033-93CE-002D5875F58A", "session": "D5D5E013", "t": 1793636936.669166, "uuid": "FD4B0003-CCE1-4033-93CE-002D5875F58A"}
+{"exp": "E04-realtime-hr", "kind": "characteristic", "notifying": false, "props": ["notify"], "service": "FD4B0001-CCE1-4033-93CE-002D5875F58A", "session": "D5D5E013", "t": 1793636936.669245, "uuid": "FD4B0004-CCE1-4033-93CE-002D5875F58A"}
+{"exp": "E04-realtime-hr", "kind": "characteristic", "notifying": false, "props": ["notify"], "service": "FD4B0001-CCE1-4033-93CE-002D5875F58A", "session": "D5D5E013", "t": 1793636936.669327, "uuid": "FD4B0005-CCE1-4033-93CE-002D5875F58A"}
+{"exp": "E04-realtime-hr", "kind": "characteristic", "notifying": false, "props": ["notify"], "service": "FD4B0001-CCE1-4033-93CE-002D5875F58A", "session": "D5D5E013", "t": 1793636936.669414, "uuid": "FD4B0007-CCE1-4033-93CE-002D5875F58A"}
+{"characteristic": "2A37", "exp": "E04-realtime-hr", "kind": "descriptor", "session": "D5D5E013", "t": 1793636936.6695871, "uuid": "2902"}
+{"exp": "E04-realtime-hr", "hex": "57484f4f5020496e632e", "kind": "read", "len": 10, "service": "180A", "session": "D5D5E013", "t": 1793636937.113758, "uuid": "2A29", "value": "WHOOP Inc."}
+{"exp": "E04-realtime-hr", "kind": "note", "session": "D5D5E013", "t": 1793636937.114214, "text": "READ 2A29 = WHOOP Inc."}
+{"exp": "E04-realtime-hr", "hex": "352e3000", "kind": "read", "len": 4, "service": "180A", "session": "D5D5E013", "t": 1793636937.62325, "uuid": "2A24", "value": "5.0\u0000"}
+{"exp": "E04-realtime-hr", "kind": "note", "session": "D5D5E013", "t": 1793636937.623682, "text": "READ 2A24 = 5.0\u0000"}
+{"exp": "E04-realtime-hr", "kind": "read", "len": 11, "service": "180A", "session": "D5D5E013", "t": 1793636938.134163, "uuid": "2A25", "value": "<redacted>"}
+{"exp": "E04-realtime-hr", "kind": "note", "session": "D5D5E013", "t": 1793636938.1344829, "text": "READ 2A25 = <redacted>"}
+{"ch": "FD4B0002-CCE1-4033-93CE-002D5875F58A", "cmd": 11, "dir": "tx", "exp": "E04-realtime-hr", "hex": "aa0108000001e67123c90b00c8ab49ee", "kind": "frame", "len": 16, "name": "GET_CLOCK", "seq": 201, "session": "D5D5E013", "t": 1793636938.242889}
+{"exp": "E04-realtime-hr", "kind": "note", "session": "D5D5E013", "t": 1793636938.24326, "text": "TX cmd=11 GET_CLOCK seq=201 aa0108000001e67123c90b00c8ab49ee"}
+{"exp": "E04-realtime-hr", "hex": "35302e34332e312e30", "kind": "read", "len": 9, "service": "180A", "session": "D5D5E013", "t": 1793636938.643513, "uuid": "2A26", "value": "50.43.1.0"}
+{"exp": "E04-realtime-hr", "kind": "note", "session": "D5D5E013", "t": 1793636938.643779, "text": "READ 2A26 = 50.43.1.0"}
+{"exp": "E04-realtime-hr", "hex": "574735305f723532", "kind": "read", "len": 8, "service": "180A", "session": "D5D5E013", "t": 1793636939.155727, "uuid": "2A27", "value": "WG50_r52"}
+{"exp": "E04-realtime-hr", "kind": "note", "session": "D5D5E013", "t": 1793636939.155984, "text": "READ 2A27 = WG50_r52"}
+{"characteristic": "2A19", "exp": "E04-realtime-hr", "kind": "descriptor", "session": "D5D5E013", "t": 1793636939.1561232, "uuid": "2902"}
+{"exp": "E04-realtime-hr", "kind": "read", "len": 1, "service": "180F", "session": "D5D5E013", "t": 1793636939.66428, "uuid": "2A19", "value": 20}
+{"exp": "E04-realtime-hr", "kind": "note", "session": "D5D5E013", "t": 1793636939.6646261, "text": "READ 2A19 = 20"}
+{"characteristic": "FD4B0003-CCE1-4033-93CE-002D5875F58A", "exp": "E04-realtime-hr", "kind": "descriptor", "session": "D5D5E013", "t": 1793636939.664762, "uuid": "2902"}
+{"error": "", "exp": "E04-realtime-hr", "kind": "subscribe", "notifying": true, "session": "D5D5E013", "t": 1793636940.173987, "uuid": "FD4B0003-CCE1-4033-93CE-002D5875F58A"}
+{"characteristic": "FD4B0004-CCE1-4033-93CE-002D5875F58A", "exp": "E04-realtime-hr", "kind": "descriptor", "session": "D5D5E013", "t": 1793636940.1741939, "uuid": "2902"}
+{"error": "", "exp": "E04-realtime-hr", "kind": "subscribe", "notifying": true, "session": "D5D5E013", "t": 1793636940.6835241, "uuid": "FD4B0004-CCE1-4033-93CE-002D5875F58A"}
+{"characteristic": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "exp": "E04-realtime-hr", "kind": "descriptor", "session": "D5D5E013", "t": 1793636940.6839871, "uuid": "2902"}
+{"error": "", "exp": "E04-realtime-hr", "kind": "subscribe", "notifying": true, "session": "D5D5E013", "t": 1793636941.19327, "uuid": "FD4B0005-CCE1-4033-93CE-002D5875F58A"}
+{"characteristic": "FD4B0007-CCE1-4033-93CE-002D5875F58A", "exp": "E04-realtime-hr", "kind": "descriptor", "session": "D5D5E013", "t": 1793636941.193665, "uuid": "2902"}
+{"error": "", "exp": "E04-realtime-hr", "kind": "subscribe", "notifying": true, "session": "D5D5E013", "t": 1793636941.703491, "uuid": "FD4B0007-CCE1-4033-93CE-002D5875F58A"}
+{"characteristic": "2A37", "exp": "E04-realtime-hr", "kind": "descriptor_value", "session": "D5D5E013", "t": 1793636942.213074, "uuid": "2902", "value": "1"}
+{"error": "", "exp": "E04-realtime-hr", "kind": "write_ack", "session": "D5D5E013", "t": 1793636942.9777908, "uuid": "FD4B0002-CCE1-4033-93CE-002D5875F58A"}
+{"ch": "FD4B0003-CCE1-4033-93CE-002D5875F58A", "exp": "E04-realtime-hr", "kind": "fragment", "len": 28, "session": "D5D5E013", "t": 1793636942.979572}
+{"exp": "E04-realtime-hr", "kind": "note", "session": "D5D5E013", "t": 1793636942.979916, "text": "RX response cmd=11 seq=201 result=1 len=28 latency=4737ms"}
+{"cmd": 11, "exp": "E04-realtime-hr", "kind": "result", "latency_ms": 4737, "outcome": "result 1", "seq": 201, "session": "D5D5E013", "t": 1793636942.979972}
+{"ch": "FD4B0003-CCE1-4033-93CE-002D5875F58A", "cmd": 11, "crc32": true, "dir": "rx", "exp": "E04-realtime-hr", "hdr_crc": true, "hex": "aa011400010021b124790bc9013dbae86a8f020000000000c1c10d98", "kind": "frame", "latency_ms": 4737, "len": 28, "result": 1, "seq": 201, "session": "D5D5E013", "t": 1793636942.980166, "type": 36}
+{"ch": "FD4B0002-CCE1-4033-93CE-002D5875F58A", "cmd": 34, "dir": "tx", "exp": "E04-realtime-hr", "hex": "aa0108000001e67123ca22007a8a49a8", "kind": "frame", "len": 16, "name": "GET_DATA_RANGE", "seq": 202, "session": "D5D5E013", "t": 1793636943.294838}
+{"exp": "E04-realtime-hr", "kind": "note", "session": "D5D5E013", "t": 1793636943.2951388, "text": "TX cmd=34 GET_DATA_RANGE seq=202 aa0108000001e67123ca22007a8a49a8"}
+{"characteristic": "2A19", "exp": "E04-realtime-hr", "kind": "descriptor_value", "session": "D5D5E013", "t": 1793636943.490028, "uuid": "2902", "value": "1"}
+{"characteristic": "FD4B0003-CCE1-4033-93CE-002D5875F58A", "exp": "E04-realtime-hr", "kind": "descriptor_value", "session": "D5D5E013", "t": 1793636943.9977422, "uuid": "2902", "value": "1"}
+{"characteristic": "FD4B0004-CCE1-4033-93CE-002D5875F58A", "exp": "E04-realtime-hr", "kind": "descriptor_value", "session": "D5D5E013", "t": 1793636944.507735, "uuid": "2902", "value": "1"}
+{"characteristic": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "exp": "E04-realtime-hr", "kind": "descriptor_value", "session": "D5D5E013", "t": 1793636945.017634, "uuid": "2902", "value": "1"}
+{"characteristic": "FD4B0007-CCE1-4033-93CE-002D5875F58A", "exp": "E04-realtime-hr", "kind": "descriptor_value", "session": "D5D5E013", "t": 1793636945.532837, "uuid": "2902", "value": "1"}
+{"error": "", "exp": "E04-realtime-hr", "kind": "write_ack", "session": "D5D5E013", "t": 1793636945.57741, "uuid": "FD4B0002-CCE1-4033-93CE-002D5875F58A"}
+{"ch": "FD4B0003-CCE1-4033-93CE-002D5875F58A", "exp": "E04-realtime-hr", "kind": "fragment", "len": 20, "session": "D5D5E013", "t": 1793636945.577598}
+{"exp": "E04-realtime-hr", "kind": "note", "session": "D5D5E013", "t": 1793636945.5777578, "text": "RX response cmd=34 seq=202 result=2 len=20 latency=2282ms"}
+{"ch": "FD4B0003-CCE1-4033-93CE-002D5875F58A", "cmd": 34, "crc32": true, "dir": "rx", "exp": "E04-realtime-hr", "hdr_crc": true, "hex": "aa010c0001002711247a22ca020000006ca0ce13", "kind": "frame", "latency_ms": 2282, "len": 20, "result": 2, "seq": 202, "session": "D5D5E013", "t": 1793636945.577877, "type": 36}
+{"ch": "FD4B0003-CCE1-4033-93CE-002D5875F58A", "exp": "E04-realtime-hr", "kind": "fragment", "len": 84, "session": "D5D5E013", "t": 1793636945.5786161}
+{"exp": "E04-realtime-hr", "kind": "note", "session": "D5D5E013", "t": 1793636945.57883, "text": "RX response cmd=34 seq=202 result=1 len=84 latency=2284ms"}
+{"cmd": 34, "exp": "E04-realtime-hr", "kind": "result", "latency_ms": 2284, "outcome": "result 1", "seq": 202, "session": "D5D5E013", "t": 1793636945.578897}
+{"ch": "FD4B0003-CCE1-4033-93CE-002D5875F58A", "cmd": 34, "crc32": true, "dir": "rx", "exp": "E04-realtime-hr", "hdr_crc": true, "hex": "aa014c00010032d1247b22ca010100970100e2960100ea960100e29601000f000000000002007800000088ff1d0041f1cb6ac2750000bfb9e86a47410000bfb9e86a4741000036bae86a474100000000523641ed", "kind": "frame", "latency_ms": 2284, "len": 84, "result": 1, "seq": 202, "session": "D5D5E013", "t": 1793636945.579246, "type": 36}
+{"ch": "FD4B0002-CCE1-4033-93CE-002D5875F58A", "cmd": 26, "dir": "tx", "exp": "E04-realtime-hr", "hex": "aa0108000001e67123cb1a00b65c14be", "kind": "frame", "len": 16, "name": "GET_BATTERY_LEVEL", "seq": 203, "session": "D5D5E013", "t": 1793636945.8943238}
+{"exp": "E04-realtime-hr", "kind": "note", "session": "D5D5E013", "t": 1793636945.894606, "text": "TX cmd=26 GET_BATTERY_LEVEL seq=203 aa0108000001e67123cb1a00b65c14be"}
+{"error": "", "exp": "E04-realtime-hr", "kind": "write_ack", "session": "D5D5E013", "t": 1793636945.922099, "uuid": "FD4B0002-CCE1-4033-93CE-002D5875F58A"}
+{"ch": "FD4B0003-CCE1-4033-93CE-002D5875F58A", "exp": "E04-realtime-hr", "kind": "fragment", "len": 24, "session": "D5D5E013", "t": 1793636945.92225}
+{"exp": "E04-realtime-hr", "kind": "note", "session": "D5D5E013", "t": 1793636945.922389, "text": "RX response cmd=26 seq=203 result=1 len=24 latency=28ms"}
+{"cmd": 26, "exp": "E04-realtime-hr", "kind": "result", "latency_ms": 28, "outcome": "result 1", "seq": 203, "session": "D5D5E013", "t": 1793636945.922429}
+{"ch": "FD4B0003-CCE1-4033-93CE-002D5875F58A", "cmd": 26, "crc32": true, "dir": "rx", "exp": "E04-realtime-hr", "hdr_crc": true, "hex": "aa01100001002081247c1acb01140000000000002bd2ffc1", "kind": "frame", "latency_ms": 28, "len": 24, "result": 1, "seq": 203, "session": "D5D5E013", "t": 1793636945.922576, "type": 36}
+{"ch": "FD4B0002-CCE1-4033-93CE-002D5875F58A", "cmd": 3, "dir": "tx", "exp": "E04-realtime-hr", "hex": "aa0108000001e67123cc0301bdd35c57", "kind": "frame", "len": 16, "name": "TOGGLE_REALTIME_HR", "seq": 204, "session": "D5D5E013", "t": 1793636946.233465}
+{"exp": "E04-realtime-hr", "kind": "note", "session": "D5D5E013", "t": 1793636946.233728, "text": "TX cmd=3 TOGGLE_REALTIME_HR seq=204 aa0108000001e67123cc0301bdd35c57"}
+{"error": "", "exp": "E04-realtime-hr", "kind": "write_ack", "session": "D5D5E013", "t": 1793636946.2662868, "uuid": "FD4B0002-CCE1-4033-93CE-002D5875F58A"}
+{"ch": "FD4B0003-CCE1-4033-93CE-002D5875F58A", "exp": "E04-realtime-hr", "kind": "fragment", "len": 20, "session": "D5D5E013", "t": 1793636946.268029}
+{"exp": "E04-realtime-hr", "kind": "note", "session": "D5D5E013", "t": 1793636946.2682328, "text": "RX response cmd=3 seq=204 result=1 len=20 latency=34ms"}
+{"cmd": 3, "exp": "E04-realtime-hr", "kind": "result", "latency_ms": 34, "outcome": "result 1", "seq": 204, "session": "D5D5E013", "t": 1793636946.268279}
+{"ch": "FD4B0003-CCE1-4033-93CE-002D5875F58A", "cmd": 3, "crc32": true, "dir": "rx", "exp": "E04-realtime-hr", "hdr_crc": true, "hex": "aa010c0001002711247d03cc010000003f126c87", "kind": "frame", "latency_ms": 34, "len": 20, "result": 1, "seq": 204, "session": "D5D5E013", "t": 1793636946.268419, "type": 36}
+{"ch": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "exp": "E04-realtime-hr", "kind": "fragment", "len": 32, "session": "D5D5E013", "t": 1793636947.256589}
+{"ch": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "crc32": true, "dir": "rx", "exp": "E04-realtime-hr", "hdr_crc": true, "hex": "<redacted biometric 32 bytes>", "kind": "frame", "len": 32, "session": "D5D5E013", "t": 1793636947.2569141, "type": 40}
+{"exp": "E04-realtime-hr", "kind": "note", "session": "D5D5E013", "t": 1793636947.257025, "text": "RX FD4B0005 type=40 len=32 crc=true"}
+{"ch": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "exp": "E04-realtime-hr", "kind": "fragment", "len": 32, "session": "D5D5E013", "t": 1793636948.276588}
+{"ch": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "crc32": true, "dir": "rx", "exp": "E04-realtime-hr", "hdr_crc": true, "hex": "<redacted biometric 32 bytes>", "kind": "frame", "len": 32, "session": "D5D5E013", "t": 1793636948.277131, "type": 40}
+{"exp": "E04-realtime-hr", "kind": "note", "session": "D5D5E013", "t": 1793636948.2772632, "text": "RX FD4B0005 type=40 len=32 crc=true"}
+{"ch": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "exp": "E04-realtime-hr", "kind": "fragment", "len": 32, "session": "D5D5E013", "t": 1793636949.2515988}
+{"ch": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "crc32": true, "dir": "rx", "exp": "E04-realtime-hr", "hdr_crc": true, "hex": "<redacted biometric 32 bytes>", "kind": "frame", "len": 32, "session": "D5D5E013", "t": 1793636949.251997, "type": 40}
+{"exp": "E04-realtime-hr", "kind": "note", "session": "D5D5E013", "t": 1793636949.25212, "text": "RX FD4B0005 type=40 len=32 crc=true"}
+{"ch": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "exp": "E04-realtime-hr", "kind": "fragment", "len": 32, "session": "D5D5E013", "t": 1793636950.256526}
+{"ch": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "crc32": true, "dir": "rx", "exp": "E04-realtime-hr", "hdr_crc": true, "hex": "<redacted biometric 32 bytes>", "kind": "frame", "len": 32, "session": "D5D5E013", "t": 1793636950.257288, "type": 40}
+{"exp": "E04-realtime-hr", "kind": "note", "session": "D5D5E013", "t": 1793636950.2574139, "text": "RX FD4B0005 type=40 len=32 crc=true"}
+{"ch": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "exp": "E04-realtime-hr", "kind": "fragment", "len": 32, "session": "D5D5E013", "t": 1793636951.26154}
+{"ch": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "crc32": true, "dir": "rx", "exp": "E04-realtime-hr", "hdr_crc": true, "hex": "<redacted biometric 32 bytes>", "kind": "frame", "len": 32, "session": "D5D5E013", "t": 1793636951.2618442, "type": 40}
+{"exp": "E04-realtime-hr", "kind": "note", "session": "D5D5E013", "t": 1793636951.26194, "text": "RX FD4B0005 type=40 len=32 crc=true"}
+{"ch": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "exp": "E04-realtime-hr", "kind": "fragment", "len": 32, "session": "D5D5E013", "t": 1793636952.252221}
+{"ch": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "crc32": true, "dir": "rx", "exp": "E04-realtime-hr", "hdr_crc": true, "hex": "<redacted biometric 32 bytes>", "kind": "frame", "len": 32, "session": "D5D5E013", "t": 1793636952.2525182, "type": 40}
+{"exp": "E04-realtime-hr", "kind": "note", "session": "D5D5E013", "t": 1793636952.252616, "text": "RX FD4B0005 type=40 len=32 crc=true"}
+{"ch": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "exp": "E04-realtime-hr", "kind": "fragment", "len": 32, "session": "D5D5E013", "t": 1793636953.256504}
+{"ch": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "crc32": true, "dir": "rx", "exp": "E04-realtime-hr", "hdr_crc": true, "hex": "<redacted biometric 32 bytes>", "kind": "frame", "len": 32, "session": "D5D5E013", "t": 1793636953.257117, "type": 40}
+{"exp": "E04-realtime-hr", "kind": "note", "session": "D5D5E013", "t": 1793636953.257309, "text": "RX FD4B0005 type=40 len=32 crc=true"}
+{"ch": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "exp": "E04-realtime-hr", "kind": "fragment", "len": 32, "session": "D5D5E013", "t": 1793636954.2464352}
+{"ch": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "crc32": true, "dir": "rx", "exp": "E04-realtime-hr", "hdr_crc": true, "hex": "<redacted biometric 32 bytes>", "kind": "frame", "len": 32, "session": "D5D5E013", "t": 1793636954.246739, "type": 40}
+{"exp": "E04-realtime-hr", "kind": "note", "session": "D5D5E013", "t": 1793636954.246832, "text": "RX FD4B0005 type=40 len=32 crc=true"}
+{"ch": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "exp": "E04-realtime-hr", "kind": "fragment", "len": 32, "session": "D5D5E013", "t": 1793636955.251425}
+{"ch": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "crc32": true, "dir": "rx", "exp": "E04-realtime-hr", "hdr_crc": true, "hex": "<redacted biometric 32 bytes>", "kind": "frame", "len": 32, "session": "D5D5E013", "t": 1793636955.251771, "type": 40}
+{"exp": "E04-realtime-hr", "kind": "note", "session": "D5D5E013", "t": 1793636955.251882, "text": "RX FD4B0005 type=40 len=32 crc=true"}
+{"ch": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "exp": "E04-realtime-hr", "kind": "fragment", "len": 32, "session": "D5D5E013", "t": 1793636956.256402}
+{"ch": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "crc32": true, "dir": "rx", "exp": "E04-realtime-hr", "hdr_crc": true, "hex": "<redacted biometric 32 bytes>", "kind": "frame", "len": 32, "session": "D5D5E013", "t": 1793636956.256722, "type": 40}
+{"exp": "E04-realtime-hr", "kind": "note", "session": "D5D5E013", "t": 1793636956.256813, "text": "RX FD4B0005 type=40 len=32 crc=true"}
+{"ch": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "exp": "E04-realtime-hr", "kind": "fragment", "len": 32, "session": "D5D5E013", "t": 1793636957.261534}
+{"ch": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "crc32": true, "dir": "rx", "exp": "E04-realtime-hr", "hdr_crc": true, "hex": "<redacted biometric 32 bytes>", "kind": "frame", "len": 32, "session": "D5D5E013", "t": 1793636957.261878, "type": 40}
+{"exp": "E04-realtime-hr", "kind": "note", "session": "D5D5E013", "t": 1793636957.261983, "text": "RX FD4B0005 type=40 len=32 crc=true"}
+{"ch": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "exp": "E04-realtime-hr", "kind": "fragment", "len": 32, "session": "D5D5E013", "t": 1793636958.25141}
+{"ch": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "crc32": true, "dir": "rx", "exp": "E04-realtime-hr", "hdr_crc": true, "hex": "<redacted biometric 32 bytes>", "kind": "frame", "len": 32, "session": "D5D5E013", "t": 1793636958.251847, "type": 40}
+{"exp": "E04-realtime-hr", "kind": "note", "session": "D5D5E013", "t": 1793636958.2519531, "text": "RX FD4B0005 type=40 len=32 crc=true"}
+{"ch": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "exp": "E04-realtime-hr", "kind": "fragment", "len": 32, "session": "D5D5E013", "t": 1793636959.2562509}
+{"ch": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "crc32": true, "dir": "rx", "exp": "E04-realtime-hr", "hdr_crc": true, "hex": "<redacted biometric 32 bytes>", "kind": "frame", "len": 32, "session": "D5D5E013", "t": 1793636959.256577, "type": 40}
+{"exp": "E04-realtime-hr", "kind": "note", "session": "D5D5E013", "t": 1793636959.256672, "text": "RX FD4B0005 type=40 len=32 crc=true"}
+{"ch": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "exp": "E04-realtime-hr", "kind": "fragment", "len": 32, "session": "D5D5E013", "t": 1793636960.246416}
+{"ch": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "crc32": true, "dir": "rx", "exp": "E04-realtime-hr", "hdr_crc": true, "hex": "<redacted biometric 32 bytes>", "kind": "frame", "len": 32, "session": "D5D5E013", "t": 1793636960.2467551, "type": 40}
+{"exp": "E04-realtime-hr", "kind": "note", "session": "D5D5E013", "t": 1793636960.246856, "text": "RX FD4B0005 type=40 len=32 crc=true"}
+{"ch": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "exp": "E04-realtime-hr", "kind": "fragment", "len": 32, "session": "D5D5E013", "t": 1793636961.251334}
+{"ch": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "crc32": true, "dir": "rx", "exp": "E04-realtime-hr", "hdr_crc": true, "hex": "<redacted biometric 32 bytes>", "kind": "frame", "len": 32, "session": "D5D5E013", "t": 1793636961.251662, "type": 40}
+{"exp": "E04-realtime-hr", "kind": "note", "session": "D5D5E013", "t": 1793636961.25177, "text": "RX FD4B0005 type=40 len=32 crc=true"}
+{"ch": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "exp": "E04-realtime-hr", "kind": "fragment", "len": 32, "session": "D5D5E013", "t": 1793636962.256393}
+{"ch": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "crc32": true, "dir": "rx", "exp": "E04-realtime-hr", "hdr_crc": true, "hex": "<redacted biometric 32 bytes>", "kind": "frame", "len": 32, "session": "D5D5E013", "t": 1793636962.256775, "type": 40}
+{"exp": "E04-realtime-hr", "kind": "note", "session": "D5D5E013", "t": 1793636962.256896, "text": "RX FD4B0005 type=40 len=32 crc=true"}
+{"ch": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "exp": "E04-realtime-hr", "kind": "fragment", "len": 32, "session": "D5D5E013", "t": 1793636963.261246}
+{"ch": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "crc32": true, "dir": "rx", "exp": "E04-realtime-hr", "hdr_crc": true, "hex": "<redacted biometric 32 bytes>", "kind": "frame", "len": 32, "session": "D5D5E013", "t": 1793636963.261654, "type": 40}
+{"exp": "E04-realtime-hr", "kind": "note", "session": "D5D5E013", "t": 1793636963.2617579, "text": "RX FD4B0005 type=40 len=32 crc=true"}
+{"ch": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "exp": "E04-realtime-hr", "kind": "fragment", "len": 32, "session": "D5D5E013", "t": 1793636964.2529988}
+{"ch": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "crc32": true, "dir": "rx", "exp": "E04-realtime-hr", "hdr_crc": true, "hex": "<redacted biometric 32 bytes>", "kind": "frame", "len": 32, "session": "D5D5E013", "t": 1793636964.25337, "type": 40}
+{"exp": "E04-realtime-hr", "kind": "note", "session": "D5D5E013", "t": 1793636964.253487, "text": "RX FD4B0005 type=40 len=32 crc=true"}
+{"ch": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "exp": "E04-realtime-hr", "kind": "fragment", "len": 32, "session": "D5D5E013", "t": 1793636965.256691}
+{"ch": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "crc32": true, "dir": "rx", "exp": "E04-realtime-hr", "hdr_crc": true, "hex": "<redacted biometric 32 bytes>", "kind": "frame", "len": 32, "session": "D5D5E013", "t": 1793636965.2572222, "type": 40}
+{"exp": "E04-realtime-hr", "kind": "note", "session": "D5D5E013", "t": 1793636965.257438, "text": "RX FD4B0005 type=40 len=32 crc=true"}
+{"ch": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "exp": "E04-realtime-hr", "kind": "fragment", "len": 32, "session": "D5D5E013", "t": 1793636966.2463632}
+{"ch": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "crc32": true, "dir": "rx", "exp": "E04-realtime-hr", "hdr_crc": true, "hex": "<redacted biometric 32 bytes>", "kind": "frame", "len": 32, "session": "D5D5E013", "t": 1793636966.246805, "type": 40}
+{"exp": "E04-realtime-hr", "kind": "note", "session": "D5D5E013", "t": 1793636966.246934, "text": "RX FD4B0005 type=40 len=32 crc=true"}
+{"ch": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "exp": "E04-realtime-hr", "kind": "fragment", "len": 32, "session": "D5D5E013", "t": 1793636967.251251}
+{"ch": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "crc32": true, "dir": "rx", "exp": "E04-realtime-hr", "hdr_crc": true, "hex": "<redacted biometric 32 bytes>", "kind": "frame", "len": 32, "session": "D5D5E013", "t": 1793636967.251577, "type": 40}
+{"exp": "E04-realtime-hr", "kind": "note", "session": "D5D5E013", "t": 1793636967.251677, "text": "RX FD4B0005 type=40 len=32 crc=true"}
+{"ch": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "exp": "E04-realtime-hr", "kind": "fragment", "len": 32, "session": "D5D5E013", "t": 1793636968.256271}
+{"ch": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "crc32": true, "dir": "rx", "exp": "E04-realtime-hr", "hdr_crc": true, "hex": "<redacted biometric 32 bytes>", "kind": "frame", "len": 32, "session": "D5D5E013", "t": 1793636968.256596, "type": 40}
+{"exp": "E04-realtime-hr", "kind": "note", "session": "D5D5E013", "t": 1793636968.2566938, "text": "RX FD4B0005 type=40 len=32 crc=true"}
+{"ch": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "exp": "E04-realtime-hr", "kind": "fragment", "len": 32, "session": "D5D5E013", "t": 1793636969.261934}
+{"ch": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "crc32": true, "dir": "rx", "exp": "E04-realtime-hr", "hdr_crc": true, "hex": "<redacted biometric 32 bytes>", "kind": "frame", "len": 32, "session": "D5D5E013", "t": 1793636969.262289, "type": 40}
+{"exp": "E04-realtime-hr", "kind": "note", "session": "D5D5E013", "t": 1793636969.262395, "text": "RX FD4B0005 type=40 len=32 crc=true"}
+{"ch": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "exp": "E04-realtime-hr", "kind": "fragment", "len": 32, "session": "D5D5E013", "t": 1793636970.25146}
+{"ch": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "crc32": true, "dir": "rx", "exp": "E04-realtime-hr", "hdr_crc": true, "hex": "<redacted biometric 32 bytes>", "kind": "frame", "len": 32, "session": "D5D5E013", "t": 1793636970.252106, "type": 40}
+{"exp": "E04-realtime-hr", "kind": "note", "session": "D5D5E013", "t": 1793636970.252264, "text": "RX FD4B0005 type=40 len=32 crc=true"}
+{"ch": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "exp": "E04-realtime-hr", "kind": "fragment", "len": 32, "session": "D5D5E013", "t": 1793636971.256503}
+{"ch": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "crc32": true, "dir": "rx", "exp": "E04-realtime-hr", "hdr_crc": true, "hex": "<redacted biometric 32 bytes>", "kind": "frame", "len": 32, "session": "D5D5E013", "t": 1793636971.256841, "type": 40}
+{"exp": "E04-realtime-hr", "kind": "note", "session": "D5D5E013", "t": 1793636971.256954, "text": "RX FD4B0005 type=40 len=32 crc=true"}
+{"ch": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "exp": "E04-realtime-hr", "kind": "fragment", "len": 32, "session": "D5D5E013", "t": 1793636972.246156}
+{"ch": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "crc32": true, "dir": "rx", "exp": "E04-realtime-hr", "hdr_crc": true, "hex": "<redacted biometric 32 bytes>", "kind": "frame", "len": 32, "session": "D5D5E013", "t": 1793636972.273961, "type": 40}
+{"exp": "E04-realtime-hr", "kind": "note", "session": "D5D5E013", "t": 1793636972.274503, "text": "RX FD4B0005 type=40 len=32 crc=true"}
+{"ch": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "exp": "E04-realtime-hr", "kind": "fragment", "len": 32, "session": "D5D5E013", "t": 1793636973.253724}
+{"ch": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "crc32": true, "dir": "rx", "exp": "E04-realtime-hr", "hdr_crc": true, "hex": "<redacted biometric 32 bytes>", "kind": "frame", "len": 32, "session": "D5D5E013", "t": 1793636973.254428, "type": 40}
+{"exp": "E04-realtime-hr", "kind": "note", "session": "D5D5E013", "t": 1793636973.255011, "text": "RX FD4B0005 type=40 len=32 crc=true"}
+{"ch": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "exp": "E04-realtime-hr", "kind": "fragment", "len": 32, "session": "D5D5E013", "t": 1793636974.2560701}
+{"ch": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "crc32": true, "dir": "rx", "exp": "E04-realtime-hr", "hdr_crc": true, "hex": "<redacted biometric 32 bytes>", "kind": "frame", "len": 32, "session": "D5D5E013", "t": 1793636974.256374, "type": 40}
+{"exp": "E04-realtime-hr", "kind": "note", "session": "D5D5E013", "t": 1793636974.256474, "text": "RX FD4B0005 type=40 len=32 crc=true"}
+{"ch": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "exp": "E04-realtime-hr", "kind": "fragment", "len": 32, "session": "D5D5E013", "t": 1793636975.261074}
+{"ch": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "crc32": true, "dir": "rx", "exp": "E04-realtime-hr", "hdr_crc": true, "hex": "<redacted biometric 32 bytes>", "kind": "frame", "len": 32, "session": "D5D5E013", "t": 1793636975.26161, "type": 40}
+{"exp": "E04-realtime-hr", "kind": "note", "session": "D5D5E013", "t": 1793636975.261718, "text": "RX FD4B0005 type=40 len=32 crc=true"}
+{"ch": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "exp": "E04-realtime-hr", "kind": "fragment", "len": 32, "session": "D5D5E013", "t": 1793636976.2511349}
+{"ch": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "crc32": true, "dir": "rx", "exp": "E04-realtime-hr", "hdr_crc": true, "hex": "<redacted biometric 32 bytes>", "kind": "frame", "len": 32, "session": "D5D5E013", "t": 1793636976.2514539, "type": 40}
+{"exp": "E04-realtime-hr", "kind": "note", "session": "D5D5E013", "t": 1793636976.251577, "text": "RX FD4B0005 type=40 len=32 crc=true"}
+{"ch": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "exp": "E04-realtime-hr", "kind": "fragment", "len": 32, "session": "D5D5E013", "t": 1793636977.257687}
+{"ch": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "crc32": true, "dir": "rx", "exp": "E04-realtime-hr", "hdr_crc": true, "hex": "<redacted biometric 32 bytes>", "kind": "frame", "len": 32, "session": "D5D5E013", "t": 1793636977.2582521, "type": 40}
+{"exp": "E04-realtime-hr", "kind": "note", "session": "D5D5E013", "t": 1793636977.258426, "text": "RX FD4B0005 type=40 len=32 crc=true"}
+{"ch": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "exp": "E04-realtime-hr", "kind": "fragment", "len": 32, "session": "D5D5E013", "t": 1793636978.246074}
+{"ch": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "crc32": true, "dir": "rx", "exp": "E04-realtime-hr", "hdr_crc": true, "hex": "<redacted biometric 32 bytes>", "kind": "frame", "len": 32, "session": "D5D5E013", "t": 1793636978.246475, "type": 40}
+{"exp": "E04-realtime-hr", "kind": "note", "session": "D5D5E013", "t": 1793636978.246591, "text": "RX FD4B0005 type=40 len=32 crc=true"}
+{"ch": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "exp": "E04-realtime-hr", "kind": "fragment", "len": 32, "session": "D5D5E013", "t": 1793636979.252037}
+{"ch": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "crc32": true, "dir": "rx", "exp": "E04-realtime-hr", "hdr_crc": true, "hex": "<redacted biometric 32 bytes>", "kind": "frame", "len": 32, "session": "D5D5E013", "t": 1793636979.252514, "type": 40}
+{"exp": "E04-realtime-hr", "kind": "note", "session": "D5D5E013", "t": 1793636979.25263, "text": "RX FD4B0005 type=40 len=32 crc=true"}
+{"ch": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "exp": "E04-realtime-hr", "kind": "fragment", "len": 32, "session": "D5D5E013", "t": 1793636980.271389}
+{"ch": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "crc32": true, "dir": "rx", "exp": "E04-realtime-hr", "hdr_crc": true, "hex": "<redacted biometric 32 bytes>", "kind": "frame", "len": 32, "session": "D5D5E013", "t": 1793636980.271881, "type": 40}
+{"exp": "E04-realtime-hr", "kind": "note", "session": "D5D5E013", "t": 1793636980.272002, "text": "RX FD4B0005 type=40 len=32 crc=true"}
+{"ch": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "exp": "E04-realtime-hr", "kind": "fragment", "len": 32, "session": "D5D5E013", "t": 1793636981.261286}
+{"ch": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "crc32": true, "dir": "rx", "exp": "E04-realtime-hr", "hdr_crc": true, "hex": "<redacted biometric 32 bytes>", "kind": "frame", "len": 32, "session": "D5D5E013", "t": 1793636981.26194, "type": 40}
+{"exp": "E04-realtime-hr", "kind": "note", "session": "D5D5E013", "t": 1793636981.2620568, "text": "RX FD4B0005 type=40 len=32 crc=true"}
+{"ch": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "exp": "E04-realtime-hr", "kind": "fragment", "len": 32, "session": "D5D5E013", "t": 1793636982.251713}
+{"ch": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "crc32": true, "dir": "rx", "exp": "E04-realtime-hr", "hdr_crc": true, "hex": "<redacted biometric 32 bytes>", "kind": "frame", "len": 32, "session": "D5D5E013", "t": 1793636982.252048, "type": 40}
+{"exp": "E04-realtime-hr", "kind": "note", "session": "D5D5E013", "t": 1793636982.252146, "text": "RX FD4B0005 type=40 len=32 crc=true"}
+{"ch": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "exp": "E04-realtime-hr", "kind": "fragment", "len": 32, "session": "D5D5E013", "t": 1793636983.25663}
+{"ch": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "crc32": true, "dir": "rx", "exp": "E04-realtime-hr", "hdr_crc": true, "hex": "<redacted biometric 32 bytes>", "kind": "frame", "len": 32, "session": "D5D5E013", "t": 1793636983.257084, "type": 40}
+{"exp": "E04-realtime-hr", "kind": "note", "session": "D5D5E013", "t": 1793636983.257193, "text": "RX FD4B0005 type=40 len=32 crc=true"}
+{"ch": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "exp": "E04-realtime-hr", "kind": "fragment", "len": 32, "session": "D5D5E013", "t": 1793636984.247}
+{"ch": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "crc32": true, "dir": "rx", "exp": "E04-realtime-hr", "hdr_crc": true, "hex": "<redacted biometric 32 bytes>", "kind": "frame", "len": 32, "session": "D5D5E013", "t": 1793636984.2475538, "type": 40}
+{"exp": "E04-realtime-hr", "kind": "note", "session": "D5D5E013", "t": 1793636984.24776, "text": "RX FD4B0005 type=40 len=32 crc=true"}
+{"ch": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "exp": "E04-realtime-hr", "kind": "fragment", "len": 32, "session": "D5D5E013", "t": 1793636985.251141}
+{"ch": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "crc32": true, "dir": "rx", "exp": "E04-realtime-hr", "hdr_crc": true, "hex": "<redacted biometric 32 bytes>", "kind": "frame", "len": 32, "session": "D5D5E013", "t": 1793636985.2515988, "type": 40}
+{"exp": "E04-realtime-hr", "kind": "note", "session": "D5D5E013", "t": 1793636985.2517428, "text": "RX FD4B0005 type=40 len=32 crc=true"}
+{"ch": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "exp": "E04-realtime-hr", "kind": "fragment", "len": 32, "session": "D5D5E013", "t": 1793636986.25633}
+{"ch": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "crc32": true, "dir": "rx", "exp": "E04-realtime-hr", "hdr_crc": true, "hex": "<redacted biometric 32 bytes>", "kind": "frame", "len": 32, "session": "D5D5E013", "t": 1793636986.2567592, "type": 40}
+{"exp": "E04-realtime-hr", "kind": "note", "session": "D5D5E013", "t": 1793636986.2568588, "text": "RX FD4B0005 type=40 len=32 crc=true"}
+{"ch": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "exp": "E04-realtime-hr", "kind": "fragment", "len": 32, "session": "D5D5E013", "t": 1793636987.261022}
+{"ch": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "crc32": true, "dir": "rx", "exp": "E04-realtime-hr", "hdr_crc": true, "hex": "<redacted biometric 32 bytes>", "kind": "frame", "len": 32, "session": "D5D5E013", "t": 1793636987.261403, "type": 40}
+{"exp": "E04-realtime-hr", "kind": "note", "session": "D5D5E013", "t": 1793636987.2615008, "text": "RX FD4B0005 type=40 len=32 crc=true"}
+{"ch": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "exp": "E04-realtime-hr", "kind": "fragment", "len": 32, "session": "D5D5E013", "t": 1793636988.251023}
+{"ch": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "crc32": true, "dir": "rx", "exp": "E04-realtime-hr", "hdr_crc": true, "hex": "<redacted biometric 32 bytes>", "kind": "frame", "len": 32, "session": "D5D5E013", "t": 1793636988.2515202, "type": 40}
+{"exp": "E04-realtime-hr", "kind": "note", "session": "D5D5E013", "t": 1793636988.251676, "text": "RX FD4B0005 type=40 len=32 crc=true"}
+{"ch": "FD4B0002-CCE1-4033-93CE-002D5875F58A", "cmd": 3, "dir": "tx", "exp": "E04-realtime-hr", "hex": "aa0108000001e67123cd03001c899921", "kind": "frame", "len": 16, "name": "TOGGLE_REALTIME_HR", "seq": 205, "session": "D5D5E013", "t": 1793636989.16403}
+{"exp": "E04-realtime-hr", "kind": "note", "session": "D5D5E013", "t": 1793636989.164403, "text": "TX cmd=3 TOGGLE_REALTIME_HR seq=205 aa0108000001e67123cd03001c899921"}
+{"error": "", "exp": "E04-realtime-hr", "kind": "write_ack", "session": "D5D5E013", "t": 1793636989.196096, "uuid": "FD4B0002-CCE1-4033-93CE-002D5875F58A"}
+{"ch": "FD4B0003-CCE1-4033-93CE-002D5875F58A", "exp": "E04-realtime-hr", "kind": "fragment", "len": 20, "session": "D5D5E013", "t": 1793636989.197927}
+{"exp": "E04-realtime-hr", "kind": "note", "session": "D5D5E013", "t": 1793636989.198182, "text": "RX response cmd=3 seq=205 result=1 len=20 latency=34ms"}
+{"cmd": 3, "exp": "E04-realtime-hr", "kind": "result", "latency_ms": 34, "outcome": "result 1", "seq": 205, "session": "D5D5E013", "t": 1793636989.198234}
+{"ch": "FD4B0003-CCE1-4033-93CE-002D5875F58A", "cmd": 3, "crc32": true, "dir": "rx", "exp": "E04-realtime-hr", "hdr_crc": true, "hex": "aa010c0001002711247e03cd010000001221e48b", "kind": "frame", "latency_ms": 34, "len": 20, "result": 1, "seq": 205, "session": "D5D5E013", "t": 1793636989.198421, "type": 36}
+{"exp": "E04-realtime-hr", "kind": "note", "session": "D5D5E013", "t": 1793636997.562293, "text": "finished: capture window 50 s elapsed; toggle 3 switched off"}
+{"exp": "E04b-post-state", "kind": "note", "session": "444E8DEF", "t": 1793637087.46083, "text": "central state=5 auth=3"}
+{"exp": "E04b-post-state", "kind": "note", "session": "444E8DEF", "t": 1793637087.468837, "text": "strap already connected to this Mac (shared link) \u2014 attaching"}
+{"exp": "E04b-post-state", "kind": "note", "session": "444E8DEF", "t": 1793637087.469576, "text": "connected; discovering all services"}
+{"exp": "E04b-post-state", "kind": "service", "primary": true, "session": "444E8DEF", "t": 1793637087.470251, "uuid": "180D"}
+{"exp": "E04b-post-state", "kind": "service", "primary": true, "session": "444E8DEF", "t": 1793637087.470389, "uuid": "180A"}
+{"exp": "E04b-post-state", "kind": "service", "primary": true, "session": "444E8DEF", "t": 1793637087.470467, "uuid": "180F"}
+{"exp": "E04b-post-state", "kind": "service", "primary": true, "session": "444E8DEF", "t": 1793637087.470535, "uuid": "FD4B0001-CCE1-4033-93CE-002D5875F58A"}
+{"exp": "E04b-post-state", "kind": "characteristic", "notifying": false, "props": ["notify"], "service": "180D", "session": "444E8DEF", "t": 1793637087.471023, "uuid": "2A37"}
+{"exp": "E04b-post-state", "kind": "characteristic", "notifying": false, "props": ["read"], "service": "180A", "session": "444E8DEF", "t": 1793637087.471249, "uuid": "2A29"}
+{"exp": "E04b-post-state", "kind": "characteristic", "notifying": false, "props": ["read"], "service": "180A", "session": "444E8DEF", "t": 1793637087.471379, "uuid": "2A24"}
+{"exp": "E04b-post-state", "kind": "characteristic", "notifying": false, "props": ["read"], "service": "180A", "session": "444E8DEF", "t": 1793637087.471477, "uuid": "2A25"}
+{"exp": "E04b-post-state", "kind": "characteristic", "notifying": false, "props": ["read"], "service": "180A", "session": "444E8DEF", "t": 1793637087.471592, "uuid": "2A26"}
+{"exp": "E04b-post-state", "kind": "characteristic", "notifying": false, "props": ["read"], "service": "180A", "session": "444E8DEF", "t": 1793637087.4717, "uuid": "2A27"}
+{"exp": "E04b-post-state", "kind": "characteristic", "notifying": false, "props": ["read", "notify"], "service": "180F", "session": "444E8DEF", "t": 1793637087.471864, "uuid": "2A19"}
+{"exp": "E04b-post-state", "kind": "characteristic", "notifying": false, "props": ["writeNoResp", "write"], "service": "FD4B0001-CCE1-4033-93CE-002D5875F58A", "session": "444E8DEF", "t": 1793637087.472021, "uuid": "FD4B0002-CCE1-4033-93CE-002D5875F58A"}
+{"exp": "E04b-post-state", "kind": "characteristic", "notifying": false, "props": ["notify"], "service": "FD4B0001-CCE1-4033-93CE-002D5875F58A", "session": "444E8DEF", "t": 1793637087.4721398, "uuid": "FD4B0003-CCE1-4033-93CE-002D5875F58A"}
+{"exp": "E04b-post-state", "kind": "characteristic", "notifying": false, "props": ["notify"], "service": "FD4B0001-CCE1-4033-93CE-002D5875F58A", "session": "444E8DEF", "t": 1793637087.4722729, "uuid": "FD4B0004-CCE1-4033-93CE-002D5875F58A"}
+{"exp": "E04b-post-state", "kind": "characteristic", "notifying": false, "props": ["notify"], "service": "FD4B0001-CCE1-4033-93CE-002D5875F58A", "session": "444E8DEF", "t": 1793637087.472395, "uuid": "FD4B0005-CCE1-4033-93CE-002D5875F58A"}
+{"exp": "E04b-post-state", "kind": "characteristic", "notifying": false, "props": ["notify"], "service": "FD4B0001-CCE1-4033-93CE-002D5875F58A", "session": "444E8DEF", "t": 1793637087.472508, "uuid": "FD4B0007-CCE1-4033-93CE-002D5875F58A"}
+{"characteristic": "2A37", "exp": "E04b-post-state", "kind": "descriptor", "session": "444E8DEF", "t": 1793637087.472746, "uuid": "2902"}
+{"exp": "E04b-post-state", "hex": "57484f4f5020496e632e", "kind": "read", "len": 10, "service": "180A", "session": "444E8DEF", "t": 1793637088.0310879, "uuid": "2A29", "value": "WHOOP Inc."}
+{"exp": "E04b-post-state", "kind": "note", "session": "444E8DEF", "t": 1793637088.031357, "text": "READ 2A29 = WHOOP Inc."}
+{"exp": "E04b-post-state", "hex": "352e3000", "kind": "read", "len": 4, "service": "180A", "session": "444E8DEF", "t": 1793637088.540911, "uuid": "2A24", "value": "5.0\u0000"}
+{"exp": "E04b-post-state", "kind": "note", "session": "444E8DEF", "t": 1793637088.54115, "text": "READ 2A24 = 5.0\u0000"}
+{"exp": "E04b-post-state", "kind": "read", "len": 11, "service": "180A", "session": "444E8DEF", "t": 1793637089.306339, "uuid": "2A25", "value": "<redacted>"}
+{"exp": "E04b-post-state", "kind": "note", "session": "444E8DEF", "t": 1793637089.30655, "text": "READ 2A25 = <redacted>"}
+{"exp": "E04b-post-state", "hex": "35302e34332e312e30", "kind": "read", "len": 9, "service": "180A", "session": "444E8DEF", "t": 1793637089.818452, "uuid": "2A26", "value": "50.43.1.0"}
+{"exp": "E04b-post-state", "kind": "note", "session": "444E8DEF", "t": 1793637089.818694, "text": "READ 2A26 = 50.43.1.0"}
+{"exp": "E04b-post-state", "hex": "574735305f723532", "kind": "read", "len": 8, "service": "180A", "session": "444E8DEF", "t": 1793637090.5812778, "uuid": "2A27", "value": "WG50_r52"}
+{"exp": "E04b-post-state", "kind": "note", "session": "444E8DEF", "t": 1793637090.581603, "text": "READ 2A27 = WG50_r52"}
+{"characteristic": "2A19", "exp": "E04b-post-state", "kind": "descriptor", "session": "444E8DEF", "t": 1793637090.581811, "uuid": "2902"}
+{"exp": "E04b-post-state", "kind": "read", "len": 1, "service": "180F", "session": "444E8DEF", "t": 1793637091.090932, "uuid": "2A19", "value": 20}
+{"exp": "E04b-post-state", "kind": "note", "session": "444E8DEF", "t": 1793637091.0912619, "text": "READ 2A19 = 20"}
+{"characteristic": "FD4B0003-CCE1-4033-93CE-002D5875F58A", "exp": "E04b-post-state", "kind": "descriptor", "session": "444E8DEF", "t": 1793637091.091364, "uuid": "2902"}
+{"error": "", "exp": "E04b-post-state", "kind": "subscribe", "notifying": true, "session": "444E8DEF", "t": 1793637091.857017, "uuid": "FD4B0003-CCE1-4033-93CE-002D5875F58A"}
+{"characteristic": "FD4B0004-CCE1-4033-93CE-002D5875F58A", "exp": "E04b-post-state", "kind": "descriptor", "session": "444E8DEF", "t": 1793637091.859313, "uuid": "2902"}
+{"error": "", "exp": "E04b-post-state", "kind": "subscribe", "notifying": true, "session": "444E8DEF", "t": 1793637092.366765, "uuid": "FD4B0004-CCE1-4033-93CE-002D5875F58A"}
+{"characteristic": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "exp": "E04b-post-state", "kind": "descriptor", "session": "444E8DEF", "t": 1793637092.367183, "uuid": "2902"}
+{"error": "", "exp": "E04b-post-state", "kind": "subscribe", "notifying": true, "session": "444E8DEF", "t": 1793637092.8764381, "uuid": "FD4B0005-CCE1-4033-93CE-002D5875F58A"}
+{"characteristic": "FD4B0007-CCE1-4033-93CE-002D5875F58A", "exp": "E04b-post-state", "kind": "descriptor", "session": "444E8DEF", "t": 1793637092.876873, "uuid": "2902"}
+{"error": "", "exp": "E04b-post-state", "kind": "subscribe", "notifying": true, "session": "444E8DEF", "t": 1793637093.6405602, "uuid": "FD4B0007-CCE1-4033-93CE-002D5875F58A"}
+{"characteristic": "2A37", "exp": "E04b-post-state", "kind": "descriptor_value", "session": "444E8DEF", "t": 1793637094.153579, "uuid": "2902", "value": "1"}
+{"characteristic": "2A19", "exp": "E04b-post-state", "kind": "descriptor_value", "session": "444E8DEF", "t": 1793637094.661423, "uuid": "2902", "value": "1"}
+{"characteristic": "FD4B0003-CCE1-4033-93CE-002D5875F58A", "exp": "E04b-post-state", "kind": "descriptor_value", "session": "444E8DEF", "t": 1793637095.1717238, "uuid": "2902", "value": "1"}
+{"characteristic": "FD4B0004-CCE1-4033-93CE-002D5875F58A", "exp": "E04b-post-state", "kind": "descriptor_value", "session": "444E8DEF", "t": 1793637095.68117, "uuid": "2902", "value": "1"}
+{"characteristic": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "exp": "E04b-post-state", "kind": "descriptor_value", "session": "444E8DEF", "t": 1793637096.191287, "uuid": "2902", "value": "1"}
+{"characteristic": "FD4B0007-CCE1-4033-93CE-002D5875F58A", "exp": "E04b-post-state", "kind": "descriptor_value", "session": "444E8DEF", "t": 1793637096.700944, "uuid": "2902", "value": "1"}
+{"exp": "E04b-post-state", "kind": "note", "session": "444E8DEF", "t": 1793637103.216687, "text": "finished: capture window 15 s elapsed"}

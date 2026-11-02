@@ -10,7 +10,7 @@ public final class FrameRouter {
     /// Called when the strap pushes an EVENT packet (WHOOP's strap-as-clock catch-up signal). The
     /// BLEManager wires this to a rate-limited requestSync(.strap). nil in pure/unit contexts.
     var onSyncTrigger: (() -> Void)?
-    /// 4.0 only for now: 5.0 frames return from `handle` before the EVENT case.
+    /// 4.0 only: 5.0 events go through BLEManager.handleWhoop5Event.
     var onLog: ((String) -> Void)?
 
     public init(state: LiveState) {
@@ -27,15 +27,8 @@ public final class FrameRouter {
 
         state.lastFrameType = parsed.typeName
 
-        // WHOOP 5.0 realtime: the generic parser exposes no fields for 5.0, so decode the record directly.
-        if family == .whoop5 {
-            if parsed.typeName == "REALTIME_DATA", let rt = decodeWhoop5Realtime(frame) {
-                // Plausibility window: 0 or absurd values are sensor glitches, not heart rates.
-                if (30...220).contains(rt.heartRate) { state.heartRate = rt.heartRate }
-                if !rt.rr.isEmpty { state.rr = rt.rr }
-            }
-            return
-        }
+        // WHOOP 5.0 frames are handled by BLEManager.handleWhoop5Frame with the typed decoders; this router is 4.0-only.
+        if family == .whoop5 { return }
 
         switch parsed.typeName {
         case "REALTIME_DATA":

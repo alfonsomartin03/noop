@@ -172,9 +172,33 @@ struct SettingsView: View {
                     .buttonStyle(.strandSecondary)
                     .disabled(model.intelligence.computing)
                 }
+                if let info = live.deviceInfo {
+                    // From the strap's standard Device Information service (read once per connection).
+                    Text([info.model.map { "WHOOP \($0)" }, info.firmware.map { "firmware \($0)" }, info.hardware.map { "hardware \($0)" }]
+                            .compactMap { $0 }.joined(separator: " · "))
+                        .font(StrandFont.footnote).foregroundStyle(StrandPalette.textSecondary)
+                }
+                if let c = live.clock {
+                    Text(String(format: "Strap clock: %.0f s %@ this Mac (stored times use the strap clock)",
+                                abs(c.offset), c.offset >= 0 ? "behind" : "ahead of"))
+                        .font(StrandFont.footnote).foregroundStyle(StrandPalette.textTertiary)
+                }
+                Divider()
+                Toggle("Notify when the battery drops below 20%", isOn: $notifyLow)
+                    .toggleStyle(.switch)
+                    .onChange(of: notifyLow) { on in if on { BatteryMonitor.requestAuthorization() } }
+                Toggle("Notify when charging reaches 100%", isOn: $notifyFull)
+                    .toggleStyle(.switch)
+                    .onChange(of: notifyFull) { on in if on { BatteryMonitor.requestAuthorization() } }
+                Text("The full-charge alert needs the strap to report that it is charging. WHOOP 5.0 has not been seen to report this yet, so for now only the low-battery alert can fire.")
+                    .font(StrandFont.footnote).foregroundStyle(StrandPalette.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
+
+    @AppStorage(BatteryMonitor.lowEnabledKey) private var notifyLow = true
+    @AppStorage(BatteryMonitor.fullEnabledKey) private var notifyFull = true
 
     // MARK: - Keep data on strap
 
@@ -185,7 +209,7 @@ struct SettingsView: View {
         SettingsSection(
             icon: "externaldrive.badge.checkmark",
             title: "Keep data on strap",
-            blurb: "The strap deletes a batch of history only after an app confirms it received it. With this on, NOOP saves everything it reads but never confirms, so the strap keeps its copy for the WHOOP app."
+            blurb: "Each time NOOP confirms a batch of history, the strap moves its trim pointer past it (seen in the strap's own log); whether the WHOOP app can still read a trimmed batch is not known. With this on, NOOP saves everything it reads but never confirms."
         ) {
             VStack(alignment: .leading, spacing: 12) {
                 Toggle("Never delete data from the strap", isOn: $keepDataOnStrap)

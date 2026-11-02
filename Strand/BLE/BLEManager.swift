@@ -4,9 +4,8 @@ import os
 import WhoopProtocol
 import WhoopStore
 
-/// CoreBluetooth engine for WHOOP 4.0 (full path) and WHOOP 5.0 (connect + hello + frame
-/// validation only; 5.0 command encoding / biometric decode are not implemented):  scan-by-service → connect → discover →
-/// BOND (one confirmed write) → subscribe → reassemble char-05 frames → FrameRouter.
+/// CoreBluetooth engine for WHOOP 4.0 and WHOOP 5.0: scan-by-service → connect → discover → bond → subscribe →
+/// reassemble per characteristic → typed decode (5.0: WhoopProtocol/Whoop5Messages) → state, store, history sync.
 /// Cannot run in the simulator; verified manually on-device (Task C6).
 @MainActor
 public final class BLEManager: NSObject, ObservableObject {
@@ -148,13 +147,40 @@ public final class BLEManager: NSObject, ObservableObject {
     private var historyDecoded: [Whoop5HistoricalRecord] = []
     static let historyMaxCapturedFrames = 600
     static let historyIdleSeconds = 20
-    private var realtimeDecodeLogged = 0
-    private var lastRealtimeTs: UInt32?
     private var heartRateCharacteristic: CBCharacteristic?
     private var whoop5SetupAttempts = 0
     private var whoop5RetryPending = false
     private var whoop5ExhaustedLogged = false
     static let whoop5MaxSetupAttempts = 6
+    static let disService = CBUUID(string: "180A")
+    /// GET_CLOCK requests in flight: app seq → host time the request was written.
+    private var clockRequestSentAt: [UInt8: Double] = [:]
+    private var clockEstimator = DeviceClockEstimator()
+    /// Increments per pull so a late chunk task from an ended pull can never ack into a new one.
+    private var whoop5SessionID = 0
+    /// Set when the open chunk holds a frame NOOP cannot store (unknown record version, IMU records).
+    /// Such a chunk is never acknowledged: the strap keeps it and the pull stops.
+    private var whoop5ChunkProblem: String?
+    /// History frames in the open chunk that NOOP cannot decode yet (record version 0x1a, IMU records). They are
+    /// archived verbatim (RawHistoryArchive) before the chunk is acknowledged, so an ack never discards them.
+    private var whoop5ChunkUndecoded: [[UInt8]] = []
+    private lazy var rawArchive: RawHistoryArchive? = try? RawHistoryArchive.standard()
+    /// Strap events that arrived inside the open chunk; saved with its records (unknown events included).
+    private var whoop5ChunkEvents: [WhoopEvent] = []
+    /// Waiting for GET_DATA_RANGE before starting a pull (the range fixes the session's target).
+    private var whoop5AwaitingRange = false
+    private var whoop5RangeWait: DispatchWorkItem?
+    /// Last realtime (type-40) strap second seen; a repeat is a duplicate frame.
+    private var lastRealtimeSecond: UInt32?
+    private var lastRealtimeAt: Date?
+    /// Cursor: newest strap second the database holds contiguously from WHOOP 5.0 pulls (progress start).
+    static let syncedThroughCursor = "whoop5_synced_through"
+    /// Cursor pair persisting the latest clock estimate (milliseconds) and when it was measured.
+    static let clockOffsetCursor = "whoop5_clock_offset_ms"
+    static let clockMeasuredCursor = "whoop5_clock_measured_at"
+    /// Called when a pull's download finished (strap sent HISTORY_COMPLETE and every chunk was saved),
+    /// so the app can run processing. The bool is false for a pull that ended early.
+    var onSyncDownloadFinished: ((Bool) -> Void)?
     static let whoop5RetryDelaySeconds = 5
 
     /// Stable device id; matches the server's existing device for sync parity. Overridable.
@@ -203,6 +229,7 @@ public final class BLEManager: NSObject, ObservableObject {
                                 },
                                 enableRawCapture: enableRawCapture)
         backfiller?.acknowledgesChunks = { !BLEManager.keepDataOnStrap }
+        syncedThrough = try? await store.cursor(BLEManager.syncedThroughCursor)
         // Strand: no server uploader/sync — all data stays on-device.
     }
 
@@ -369,8 +396,9 @@ public final class BLEManager: NSObject, ObservableObject {
     private static let whoop5Allowed: [WhoopCommand: (_ payload: [UInt8]) -> [UInt8]] = [
         .toggleRealtimeHR:   { $0.isEmpty ? [0] : [$0[0]] },   // [1] on / [0] off
         .toggleGenericHRProfile: { $0.isEmpty ? [0] : [$0[0]] },   // verified live on a 5.0: result=1, then 0x2A37 packets flow
-        .reportVersionInfo:  { _ in [] },
+        .reportVersionInfo:  { _ in [] },   // UNSUPPORTED on fw 50.43.1.0 (E02); allowed but never sent automatically
         .getClock:           { _ in [] },
+        .getBatteryLevel:    { _ in [] },   // verified E02: body[0] = percent, equals 0x2A19
         .getDataRange:       { _ in [] },
         .sendHistoricalData: { _ in [] },   // history pull (see pullWhoop5History)
         .historicalDataResult: { $0 },      // HISTORY_END ack: [0x01] + end_data (see ackWhoop5HistoryChunk)
@@ -392,6 +420,7 @@ public final class BLEManager: NSObject, ObservableObject {
         seq = seq &+ 1
         let data = map(payload)
         let frame = buildWhoop5CommandFrame(seq: seq, command: command.rawValue, data: data)
+        if command == .getClock { clockRequestSentAt[seq] = Date().timeIntervalSince1970 }
         let type: CBCharacteristicWriteType = ch.properties.contains(.writeWithoutResponse) ? writeType : .withResponse
         p.writeValue(Data(frame), for: ch, type: type)
         log("→ 5.0 \(command.label) seq=\(seq) payload=\(hex(data))")
@@ -402,9 +431,11 @@ public final class BLEManager: NSObject, ObservableObject {
     private func whoop5Probe() {
         guard family == .whoop5, !whoop5ProbeSent else { return }
         whoop5ProbeSent = true
-        log("WHOOP 5.0: sending read-only probe (GET_CLOCK, REPORT_VERSION_INFO)")
+        // REPORT_VERSION_INFO answers UNSUPPORTED on this firmware; versions come from Device Information (180A).
+        log("WHOOP 5.0: reading clock and battery")
         send(.getClock, payload: [])
-        send(.reportVersionInfo, payload: [])
+        send(.getBatteryLevel, payload: [])
+        if wantsRealtime { send(.toggleRealtimeHR, payload: [0x01]) }   // resume a stream the user had on before a drop
         // Show the last broadcast choice the user made (the strap can't be asked). When that choice is off, send it
         // again: a reset strap or the WHOOP app can leave the broadcast on, and it's the only way to be sure of the
         // state. Off is idempotent; the strap emits BLE_HR_PROFILE_DISABLED only if it was actually on. "On" is never
@@ -417,6 +448,7 @@ public final class BLEManager: NSObject, ObservableObject {
             }
         }
         autoPullWhoop5History()
+        startKeepAlive()       // battery poll + link watchdog + realtime staleness (previously never started on 5.0)
         startBackfillTimer()   // 5.0 re-pulls every backfillIntervalSeconds too (the 4.0 handshake that starts it never runs here)
     }
 
@@ -437,8 +469,7 @@ public final class BLEManager: NSObject, ObservableObject {
             }
             UserDefaults.standard.set(now, forKey: BLEManager.backfillLastAtKey)
             self.log("History: auto-pulling stored data on connect")
-            self.send(.getDataRange, payload: [])   // gives the Today progress strip its total span
-            self.pullWhoop5History(automatic: true)
+            self.pullWhoop5History(automatic: true)   // asks for the data range first; the range fixes the target
         }
     }
     private var whoop5ProbeSent = false
@@ -601,6 +632,7 @@ public final class BLEManager: NSObject, ObservableObject {
         send(.toggleRealtimeHR, payload: [0x00])
         state.heartRate = nil
         state.rr = []
+        state.realtimeStreaming = false
     }
 
     /// Turn the strap's standard HR broadcast on/off (WHOOP 4.0). The strap answers with a
@@ -635,7 +667,13 @@ public final class BLEManager: NSObject, ObservableObject {
             if let p = peripheral { central.cancelPeripheralConnection(p) }
             return
         }
-        guard !backfilling else { return }            // never poke the strap mid-offload
+        guard !backfilling, !whoop5HistoryActive, !whoop5AwaitingRange else { return }   // never poke the strap mid-offload
+        // A realtime stream that stopped delivering must not leave a frozen bpm on screen.
+        if state.realtimeStreaming, let at = lastRealtimeAt, Date().timeIntervalSince(at) > 10 {
+            state.realtimeStreaming = false
+            state.heartRate = nil
+            log("Realtime HR: no frame for \(Int(Date().timeIntervalSince(at))) s — cleared the live value")
+        }
         if wantsRealtime { send(.toggleRealtimeHR, payload: [0x01]) }   // re-arm so it can't lapse
         // The strap can't report its broadcast state and the official app re-sends "on" periodically, so keep it armed
         // while the user has it switched on (only ever the user's own choice).
@@ -688,7 +726,8 @@ public final class BLEManager: NSObject, ObservableObject {
 
     private func log(_ s: String) {
         state.append(log: "[\(timestamp())] \(s)")
-        BLEManager.osLog.notice("\(s, privacy: .public)")
+        // The unified log can be exported (sysdiagnose, Console) — redact device identifiers there.
+        BLEManager.osLog.notice("\(Redactor.redact(s), privacy: .public)")
     }
 
     /// Redacted name for logs: WHOOP names embed part of the strap serial, so keep only the prefix.
@@ -749,14 +788,15 @@ public final class BLEManager: NSObject, ObservableObject {
         send(.getDataRange, payload: [])
     }
 
-    /// Start a pull: request history, capture raw frames to a local file, ack saved chunks unless
-    /// `keepDataOnStrap` is on. `automatic` pulls (started on connect) skip the raw-frame research file and the capture-frame cap;
-    /// the decoded records are still saved to the database when the pull ends.
+    /// Start a pull. Order: GET_CLOCK + GET_DATA_RANGE → the range fixes this session's target → SEND_HISTORICAL_DATA.
+    /// Chunks are saved, then acknowledged (unless `keepDataOnStrap`); see `commitWhoop5HistoryChunk` for the rules.
+    /// `automatic` pulls skip the raw-frame research file.
     public func pullWhoop5History(automatic: Bool = false) {
-        guard family == .whoop5, didBond, !whoop5HistoryActive else {
+        guard family == .whoop5, didBond, !whoop5HistoryActive, !whoop5AwaitingRange else {
             log("History pull: needs a bonded WHOOP 5.0 and no pull already running"); return
         }
         whoop5HistoryAutomatic = automatic
+        whoop5SessionID += 1
         let stamp = ISO8601DateFormatter().string(from: Date()).replacingOccurrences(of: ":", with: "-")
         if !automatic, let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first {
             let url = dir.appendingPathComponent("whoop5-history-\(stamp).jsonl")
@@ -764,23 +804,74 @@ public final class BLEManager: NSObject, ObservableObject {
             historyCapture = try? FileHandle(forWritingTo: url)
             state.historyCaptureFile = url.lastPathComponent
         }
-        whoop5HistoryActive = true
         historyMetaSeen = []
         historyDecoded = []
+        whoop5ChunkProblem = nil
+        whoop5ChunkEvents = []
+        whoop5ChunkUndecoded = []
         state.historySummary = nil
         state.historyFrames = 0
         state.historyBusy = true
         state.syncSavedRows = 0
         state.syncNewestTs = nil
+        state.syncSession = nil
+        state.processingStatus = nil
+        state.lastSyncOutcome = nil
         historySeenTs = []
-        state.historyStatus = "Requesting stored data…"
+        state.historyStatus = "Checking what the strap holds…"
+        whoop5AwaitingRange = true
+        send(.getClock, payload: [])
+        send(.getDataRange, payload: [])
+        // The range normally answers in ~3 s (PENDING, then the body). Without it the pull still runs, with
+        // indeterminate progress, rather than not syncing at all.
+        whoop5RangeWait?.cancel()
+        let w = DispatchWorkItem { [weak self] in
+            guard let self, self.whoop5AwaitingRange else { return }
+            self.log("History: no data range within 10 s — pulling without a progress target")
+            self.startWhoop5Transfer(range: nil)
+        }
+        whoop5RangeWait = w
+        DispatchQueue.main.asyncAfter(deadline: .now() + 10, execute: w)
+    }
+
+    /// Second half of a pull, once the range is known (or given up on).
+    private func startWhoop5Transfer(range: Whoop5DataRange?) {
+        guard whoop5AwaitingRange else { return }
+        whoop5AwaitingRange = false
+        whoop5RangeWait?.cancel()
+        guard state.connected, let p = peripheral, let ch = cmdCharacteristic else { endWhoop5History("not connected"); return }
+        whoop5HistoryActive = true
+        if let r = range {
+            var session = SyncSession(localFrom: syncedThrough, strapFrom: r.lastSyncedUnix, target: r.newestUnix)
+            session.begin()
+            state.syncSession = session
+            if let gap = session.unavailable, gap.duration > 600 {
+                log("History: \(gap.duration / 60) min between the local data and the strap's oldest unsent record cannot be fetched (already handed over or aged out)")
+            }
+        }
+        state.historyStatus = "Downloading…"
         log(BLEManager.keepDataOnStrap
             ? "History: pull started (keep-on-strap is on: no acknowledgements; the strap keeps its data)"
-            : "History: pull started (each saved chunk is acknowledged; the strap may then discard it)")
-        guard let p = peripheral, let ch = cmdCharacteristic else { endWhoop5History("not connected"); return }
+            : "History: pull started (each chunk is acknowledged only after it is saved; the strap then moves its trim pointer)")
         sendWhoop5(.sendHistoricalData, payload: [], peripheral: p, characteristic: ch, writeType: .withResponse)
         armHistoryIdle()
     }
+
+    /// Undecoded history frames archived during the current pull (for the end-of-pull log line).
+    private var undecodedArchived = 0
+    /// Strap time of an undecoded record, if it carries one at the same place as version 0x12 (payload @7). Used only
+    /// for progress; returns nil when the value is not a plausible time.
+    static func undecodedRecordTime(_ frame: [UInt8]) -> Int? {
+        guard let p = whoop5Payload(frame), p.count >= 11 else { return nil }
+        let t = le32u(p, 7)
+        return isPlausibleUnix(t) ? t : nil
+    }
+    private static func le32u(_ b: [UInt8], _ o: Int) -> Int {
+        Int(b[o]) | Int(b[o + 1]) << 8 | Int(b[o + 2]) << 16 | Int(b[o + 3]) << 24
+    }
+
+    /// Newest strap second stored contiguously by earlier pulls (cached from the store at bootstrap).
+    private var syncedThrough: Int?
 
     public func cancelWhoop5History() { endWhoop5History("cancelled") }
 
@@ -791,150 +882,205 @@ public final class BLEManager: NSObject, ObservableObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + .seconds(BLEManager.historyIdleSeconds), execute: w)
     }
 
-    private func endWhoop5History(_ reason: String) {
-        guard whoop5HistoryActive else { return }
+    /// End the pull. `complete` = the strap sent HISTORY_COMPLETE; anything else is an early end, and the
+    /// session says so (partial / failed) instead of reporting success.
+    private func endWhoop5History(_ reason: String, complete: Bool = false) {
+        if whoop5AwaitingRange { whoop5AwaitingRange = false; whoop5RangeWait?.cancel() }
+        guard whoop5HistoryActive || state.historyBusy else { return }
         whoop5HistoryActive = false
+        whoop5SessionID += 1          // any chunk task still running for this pull will not ack
         historyIdleWork?.cancel()
         try? historyCapture?.close(); historyCapture = nil
         state.historyBusy = false
         state.historyStatus = "Captured \(state.historyFrames) frames (\(reason)). "
-            + (BLEManager.keepDataOnStrap ? "Nothing was cleared from the strap."
-                                          : "Saved batches were confirmed, so the strap may clear them.")
-        saveDecodedHistory()
-        log("History: pull ended — \(reason); frames=\(state.historyFrames); kinds=\(historyMetaSeen.joined(separator: ","))")
-    }
-
-    /// Decode + persist the stored records captured in this pull (heart rate, R-R, gravity). Safe to repeat.
-    private func saveDecodedHistory() {
-        let recs = historyDecoded
+            + (BLEManager.keepDataOnStrap ? "Nothing was acknowledged, so the strap kept everything."
+                                          : "Saved chunks were acknowledged, which moves the strap's trim pointer.")
+        let leftover = historyDecoded
         historyDecoded = []
-        guard !recs.isEmpty else { return }
-        let hr = recs.filter { (30...220).contains($0.heartRate) }.map { HRSample(ts: $0.timestamp, bpm: $0.heartRate) }
-        let rr = recs.flatMap { r in r.rr.map { RRInterval(ts: r.timestamp, rrMs: $0) } }
-        let grav = recs.compactMap { r in r.gravity.map { GravitySample(ts: r.timestamp, x: $0.x, y: $0.y, z: $0.z) } }
-        let lo = recs.map(\.timestamp).min()!, hi = recs.map(\.timestamp).max()!
-        let f = DateFormatter(); f.dateFormat = "MMM d, HH:mm:ss"
-        let avg = hr.isEmpty ? nil : hr.map(\.bpm).reduce(0, +) / hr.count
-        let base = "\(recs.count) records · \(f.string(from: Date(timeIntervalSince1970: TimeInterval(lo)))) → \(f.string(from: Date(timeIntervalSince1970: TimeInterval(hi))))"
-            + (avg.map { " · avg \($0) bpm" } ?? "") + " · \(rr.count) R-R"
-        state.historySummary = base
-        log("History: decoded \(base)")
+        let events = whoop5ChunkEvents
+        whoop5ChunkEvents = []
+        if !whoop5ChunkUndecoded.isEmpty {
+            // Not acknowledged (no END followed), but archive anyway: harmless if the strap re-sends them.
+            try? rawArchive?.append(whoop5ChunkUndecoded)
+            whoop5ChunkUndecoded = []
+        }
+        if undecodedArchived > 0 { log("History: \(undecodedArchived) undecoded record(s) archived this pull (Application Support/OpenWhoop/undecoded-history)") }
+        undecodedArchived = 0
+        log("History: pull ended — \(reason); frames=\(state.historyFrames); chunks=\(historyMetaSeen.filter { $0 == "END" }.count)")
         Task { @MainActor in
-            if let n = await collector?.persistDecodedHistory(Streams(hr: hr, rr: rr, gravity: grav)) {
-                state.syncSavedRows += n
-                state.historySummary = base + " · saved (\(n) new heart-rate rows)"
-                state.lastSyncedAt = Date().timeIntervalSince1970
-                UserDefaults.standard.set(state.lastSyncedAt, forKey: "lastSyncedAt")
-                onStoredDataChanged?()
-                log("History: saved decoded records (\(n) new heart-rate rows)")
+            // Records after the last END were not acknowledged (the strap re-sends them next time); save them anyway.
+            _ = await self.persistWhoop5Records(leftover, events: events)
+            if complete {
+                self.state.syncSession?.downloadFinished()
+                self.onSyncDownloadFinished?(true)
             } else {
-                state.historySummary = base + " · NOT saved (database unavailable)"
-                log("History: could not save decoded records (store unavailable)")
+                self.state.syncSession?.end(early: reason)
+                self.state.lastSyncOutcome = "Sync stopped: \(reason)"
+                self.onSyncDownloadFinished?(false)
             }
+            self.onStoredDataChanged?()
         }
     }
 
-    /// HISTORY_END on 5.0: persist the records accumulated since the last END, then ack so the strap
-    /// sends the next chunk (without the ack it stops after the first ~50 records). The ack is only
-    /// sent once the chunk is durably saved, and never when "Never delete data from the strap" is on.
-    /// end_data layout is the 4.0's (metadata.data[10:18]) shifted by the 5.0's 4 extra header bytes
-    /// → frame[21..<29]; unverified on 5.0 hardware, so the frame is logged on the first few chunks.
-    private func commitWhoop5HistoryChunk(_ frame: [UInt8], type: UInt8) {
-        let recs = historyDecoded
-        historyDecoded = []
-        let endData: [UInt8]? = (type == 49 && frame.count >= 29 + 4) ? Array(frame[21..<29]) : nil
-        if historyEndLogged < 3 {
-            historyEndLogged += 1
-            log("History: END frame len=\(frame.count) hex=\(hex(frame)) → end_data=\(endData.map(hex) ?? "n/a")")
-        }
+    /// Save decoded records (+ the chunk's events) in one database transaction. Returns new heart-rate rows, nil on failure.
+    private func persistWhoop5Records(_ recs: [Whoop5HistoricalRecord], events: [WhoopEvent]) async -> Int? {
+        guard !recs.isEmpty || !events.isEmpty else { return 0 }
         let hr = recs.filter { (30...220).contains($0.heartRate) }.map { HRSample(ts: $0.timestamp, bpm: $0.heartRate) }
         let rr = recs.flatMap { r in r.rr.map { RRInterval(ts: r.timestamp, rrMs: $0) } }
         let grav = recs.compactMap { r in r.gravity.map { GravitySample(ts: r.timestamp, x: $0.x, y: $0.y, z: $0.z) } }
-        Task { @MainActor in
-            if !recs.isEmpty {
-                guard let n = await collector?.persistDecodedHistory(Streams(hr: hr, rr: rr, gravity: grav)) else {
-                    log("History: chunk NOT saved (store unavailable) — not acknowledging")
-                    return
-                }
-                state.syncSavedRows += n
-                state.lastSyncedAt = Date().timeIntervalSince1970
-                UserDefaults.standard.set(state.lastSyncedAt, forKey: "lastSyncedAt")
-                onStoredDataChanged?()
+        guard let n = await collector?.persistDecodedHistory(Streams(hr: hr, rr: rr, gravity: grav, events: events)) else {
+            return nil
+        }
+        state.syncSavedRows += n
+        if !recs.isEmpty {
+            state.lastSyncedAt = Date().timeIntervalSince1970
+            UserDefaults.standard.set(state.lastSyncedAt, forKey: "lastSyncedAt")
+        }
+        return n
+    }
+
+    /// HISTORY_END: the chunk since the previous END is complete. Acknowledgement rules (SAFETY_MATRIX → History acks):
+    /// 1. Never ack a chunk holding a frame NOOP cannot store (unknown record version, historical IMU): the pull stops,
+    ///    the strap keeps the chunk.
+    /// 2. Save first: records + events in one SQLite transaction; ack only once that commit returned.
+    /// 3. Ack only for the pull that received the END (session id), with end_data from this CRC-checked END frame.
+    /// 4. Never ack when "keep data on strap" is on (the strap then stops after one chunk — the cost of keeping it).
+    /// The ack is what lets the strap send the next chunk; it also moves the strap's trim pointer (firmware log),
+    /// and whether trimmed records stay readable is UNKNOWN — so a local save is NOT a guarantee the strap keeps a copy.
+    private func commitWhoop5HistoryChunk(_ frame: [UInt8]) {
+        let recs = historyDecoded
+        historyDecoded = []
+        let events = whoop5ChunkEvents
+        whoop5ChunkEvents = []
+        let undecoded = whoop5ChunkUndecoded
+        whoop5ChunkUndecoded = []
+        var problem = whoop5ChunkProblem
+        whoop5ChunkProblem = nil
+        if !undecoded.isEmpty {
+            do {
+                guard let archive = rawArchive else { throw CocoaError(.fileNoSuchFile) }
+                try archive.append(undecoded)
+                undecodedArchived += undecoded.count
+            } catch {
+                problem = "\(undecoded.count) undecoded record(s) could not be archived (\(error.localizedDescription))"
             }
-            guard !BLEManager.keepDataOnStrap, let endData else { return }
-            send(.historicalDataResult, payload: [0x01] + endData, writeType: .withResponse)
-            log("History: chunk saved (\(recs.count) records) — acked")
+        }
+        let session = whoop5SessionID
+        guard case .end(_, let endData)? = Whoop5HistoryMeta.decode(frame) else {
+            log("History: END frame could not be decoded — not acknowledging")
+            return
+        }
+        if let problem {
+            log("History: chunk not acknowledged — \(problem). The strap keeps it; stopping this pull.")
+            Task { @MainActor in
+                _ = await self.persistWhoop5Records(recs, events: events)   // keep what could be decoded
+                self.endWhoop5History("unrecognised data in a chunk (\(problem))")
+            }
+            return
+        }
+        Task { @MainActor in
+            guard let n = await self.persistWhoop5Records(recs, events: events) else {
+                self.log("History: chunk NOT saved (store unavailable) — not acknowledging")
+                self.endWhoop5History("could not save to the database")
+                return
+            }
+            guard session == self.whoop5SessionID, self.whoop5HistoryActive else {
+                self.log("History: chunk saved after its pull ended — not acknowledging (the strap re-sends it next pull)")
+                return
+            }
+            // Archived-but-undecoded records count as accounted for in time too (the strap won't send them again).
+            let times = recs.map(\.timestamp) + undecoded.compactMap(Self.undecodedRecordTime)
+            self.state.syncSession?.chunkSaved(recordTimes: times, newRows: n)
+            if let frontier = self.state.syncSession?.savedFrontier ?? times.max() {
+                self.syncedThrough = max(self.syncedThrough ?? 0, frontier)
+                await self.collector?.setCursor(BLEManager.syncedThroughCursor, self.syncedThrough ?? frontier)
+            }
+            self.onStoredDataChanged?()
+            guard !BLEManager.keepDataOnStrap else { return }
+            self.send(.historicalDataResult, payload: [0x01] + endData, writeType: .withResponse)
+            if self.historyEndLogged < 3 {
+                self.historyEndLogged += 1
+                self.log("History: chunk saved (\(recs.count) records, \(n) new, \(undecoded.count) archived undecoded) — acked end_data=\(self.hex(endData))")
+            }
         }
     }
 
-    /// Called for every complete 5.0 frame while a pull is active.
+    /// Called for every complete, CRC-valid 5.0 frame while a pull is active.
     private func captureWhoop5HistoryFrame(_ frame: [UInt8], on characteristic: CBCharacteristic) {
         guard whoop5HistoryActive, frame.count > 12 else { return }
         let type = frame[8]
-        // 47 historical data, 52 historical IMU, 49/56 metadata, 48/53/54 events, 50 console — everything except the live flood.
+        // 47 historical data, 52 historical IMU, 49/56 metadata, 48/53/54 events, 50/55 console — everything except the live stream.
         guard [47, 52, 49, 56, 48, 53, 54, 50, 55].contains(type) else { return }
         armHistoryIdle()
         state.historyFrames += 1
-        if type == 47, let rec = decodeWhoop5Historical(frame) {
-            // The strap re-sends an unacked chunk on retry; the DB also enforces uniqueness
-            // (deviceId, ts), this just avoids decoding/writing the same second twice in one pull.
-            if historySeenTs.insert(rec.timestamp).inserted {
-                historyDecoded.append(rec)
-                if rec.timestamp > (state.syncNewestTs ?? 0) { state.syncNewestTs = rec.timestamp }
+        switch type {
+        case 47:
+            if let rec = decodeWhoop5Historical(frame) {
+                // The strap re-sends an unacked chunk on retry; the DB also enforces uniqueness (deviceId, ts).
+                if historySeenTs.insert(rec.timestamp).inserted {
+                    historyDecoded.append(rec)
+                    if rec.timestamp > (state.syncNewestTs ?? 0) { state.syncNewestTs = rec.timestamp }
+                }
+            } else {
+                whoop5ChunkUndecoded.append(frame)   // e.g. version 0x1a: kept verbatim, decoded later
             }
-        }
-        if type == 49 || type == 56 {
-            let kind = type == 49 ? Int(frame[10]) : (Int(frame[10]) | Int(frame[11]) << 8)
-            let name = kind == 1 ? "START" : kind == 2 ? "END" : kind == 3 ? "COMPLETE" : "kind\(kind)"
-            historyMetaSeen.append(name)
-            log("History: metadata \(name) (frame \(state.historyFrames))")
-            if name == "END" { commitWhoop5HistoryChunk(frame, type: type) }
-            if name == "COMPLETE" { endWhoop5History("strap reported HISTORY_COMPLETE") }
-        } else if state.historyFrames <= 3 || state.historyFrames % 50 == 0 {
-            log("History: frame \(state.historyFrames) type=\(type) len=\(frame.count) on \(characteristic.uuid.uuidString.prefix(8))")
+        case 52:
+            whoop5ChunkUndecoded.append(frame)
+        case 48:
+            if case .success(let e) = Whoop5Event.decode(frame) { whoop5ChunkEvents.append(storedEvent(e)) }
+        case 49, 56:
+            switch Whoop5HistoryMeta.decode(frame) {
+            case .start?: historyMetaSeen.append("START")
+            case .end?:
+                historyMetaSeen.append("END")
+                commitWhoop5HistoryChunk(frame)
+            case .complete?:
+                historyMetaSeen.append("COMPLETE")
+                endWhoop5History("strap reported HISTORY_COMPLETE", complete: true)
+            case .other(let k)?:
+                historyMetaSeen.append("kind\(k)")
+                log("History: metadata kind \(k) (not START/END/COMPLETE) — ignored")
+            case nil:
+                log("History: metadata frame could not be decoded (len \(frame.count))")
+            }
+        default:
+            break
         }
         if whoop5HistoryAutomatic { return }
         if state.historyFrames <= BLEManager.historyMaxCapturedFrames {
-            let line = "{\"t\":\(Date().timeIntervalSince1970),\"ch\":\"\(characteristic.uuid.uuidString.prefix(8))\",\"type\":\(type),\"len\":\(frame.count),\"hex\":\"\(hex(frame))\"}\n"
+            // Console text carries Bluetooth addresses: keep it only redacted in the research file.
+            let body: String
+            if type == 50 || type == 55 {
+                let text = String(decoding: frame.dropFirst(19).dropLast(4).filter { $0 != 0 }, as: UTF8.self)
+                body = "\"text\":\(jsonString(Redactor.redact(text)))"
+            } else {
+                body = "\"hex\":\"\(hex(frame))\""
+            }
+            let line = "{\"t\":\(Date().timeIntervalSince1970),\"ch\":\"\(characteristic.uuid.uuidString.prefix(8))\",\"type\":\(type),\"len\":\(frame.count),\(body)}\n"
             historyCapture?.write(Data(line.utf8))
-        } else if state.historyFrames == BLEManager.historyMaxCapturedFrames + 1 {
-            endWhoop5History("capture limit reached (\(BLEManager.historyMaxCapturedFrames) frames)")
         }
     }
 
-    /// Decode the data-range response: list plausible unix timestamps found in the body (layout not published).
-    private func logWhoop5DataRange(_ frame: [UInt8]) {
-        let end = min((Int(frame[2]) | Int(frame[3]) << 8) + 8 - 4, frame.count)
-        guard end > 13 else { return }
-        func word(_ off: Int) -> Int? {
-            let o = 13 + off
-            guard o + 4 <= end else { return nil }
-            return Int(frame[o]) | Int(frame[o+1]) << 8 | Int(frame[o+2]) << 16 | Int(frame[o+3]) << 24
-        }
-        // A real stored-data time is after 2020 and never in the future. Scanning every byte offset also matched
-        // counters/IDs elsewhere in the reply (they showed up as dates like 2030 or 2034), so read the two fields that
-        // were stable across connects (body+33 = oldest stored, body+41 = newest) and only fall back to a scan.
-        let now = Int(Date().timeIntervalSince1970)
-        let plausible: (Int) -> Bool = { $0 >= 1_577_836_800 && $0 <= now + 86_400 }
-        var found: [(Int, Int)] = []
-        if let lo = word(33), let hi = word(41), plausible(lo), plausible(hi), lo <= hi {
-            found = [(33, lo), (41, hi)]
-        } else {
-            var o = 13
-            while o + 4 <= end {
-                let w = Int(frame[o]) | Int(frame[o+1]) << 8 | Int(frame[o+2]) << 16 | Int(frame[o+3]) << 24
-                if plausible(w) { found.append((o - 13, w)) }
-                o += 1
-            }
-        }
+    private func jsonString(_ s: String) -> String {
+        (try? String(data: JSONEncoder().encode(s), encoding: .utf8)) ?? "\"\""
+    }
+
+    /// Strap event as a stored row: the raw body is always kept, so unknown events can be studied later.
+    private func storedEvent(_ e: Whoop5Event) -> WhoopEvent {
+        WhoopEvent(ts: e.unix, kind: e.kind.name,
+                   payload: ["event": .int(e.number), "subsec": .int(e.subseconds), "body": .string(hex(e.body))])
+    }
+
+    /// Typed handling of a final GET_DATA_RANGE answer.
+    private func handleWhoop5DataRange(_ r: Whoop5DataRange) {
         let f = DateFormatter(); f.dateStyle = .medium; f.timeStyle = .short
-        let desc = found.map { "body+\($0.0)=\(f.string(from: Date(timeIntervalSince1970: TimeInterval($0.1))))" }
-        log("History: data range response body=\(end - 13) bytes; timestamps: \(desc.isEmpty ? "none recognised" : desc.joined(separator: " | "))")
-        if let lo = found.map({ $0.1 }).min(), let hi = found.map({ $0.1 }).max() {
-            if hi > lo { state.syncRangeLo = lo; state.syncRangeHi = hi }
-            state.historyRange = lo == hi ? f.string(from: Date(timeIntervalSince1970: TimeInterval(lo)))
-                : "\(f.string(from: Date(timeIntervalSince1970: TimeInterval(lo)))) → \(f.string(from: Date(timeIntervalSince1970: TimeInterval(hi))))"
-        }
+        func d(_ t: Int) -> String { f.string(from: Date(timeIntervalSince1970: TimeInterval(t))) }
+        state.historyRange = "\(d(r.oldestUnix)) → \(d(r.newestUnix))"
+        state.syncRangeLo = r.lastSyncedUnix
+        state.syncRangeHi = r.newestUnix
+        strapNewestTs = r.newestUnix
+        log("History: strap holds \(d(r.oldestUnix)) → \(d(r.newestUnix)); last synced \(d(r.lastSyncedUnix)); trim page \(r.trimPage)/\(r.trimBlock)")
+        if whoop5AwaitingRange { startWhoop5Transfer(range: r) }
     }
 
     // MARK: Alarm API (M6 — additive; does NOT touch connect/offload/sync flows)
@@ -999,7 +1145,128 @@ public final class BLEManager: NSObject, ObservableObject {
         // AppModel medians these into a stable display value.
         if m.hr >= 30 && m.hr <= 220 { state.heartRate = m.hr }
         // Record it continuously — independent of the realtime stream or the open screen.
-        collector?.ingestStandardHR(hr: m.hr, rr: m.rr, at: Int(Date().timeIntervalSince1970))
+        // 0x2A37 has no timestamp: it is stamped on arrival (Mac clock). Stored samples use the STRAP clock (history
+        // records), so convert with the measured offset; otherwise the same beat lands twice, ~15 s apart, and is
+        // counted twice. Without an estimate (4.0, or before GET_CLOCK) the Mac time is used as before.
+        let now = Date().timeIntervalSince1970
+        let ts = state.clock.map { Int($0.deviceTime(fromHost: now).rounded()) } ?? Int(now)
+        collector?.ingestStandardHR(hr: m.hr, rr: m.rr, at: ts)
+    }
+}
+
+// MARK: - WHOOP 5.0 frame handling
+// Every 5.0 frame goes through the typed decoders in WhoopProtocol/Whoop5Messages; nothing here indexes frames by hand.
+extension BLEManager {
+    func handleWhoop5Frame(_ frame: [UInt8], on characteristic: CBCharacteristic) {
+        let chk = verifyFrame(frame, family: .whoop5)
+        guard chk.ok else {
+            // Never silently dropped: a corrupt frame is logged (counts only) and never reaches state or the store.
+            log("RX 5.0 frame failed CRC on \(characteristic.uuid.uuidString.prefix(8)): len=\(frame.count) header=\(chk.crc8OK.map(String.init) ?? "?") payload=\(chk.crc32OK.map(String.init) ?? "?")")
+            return
+        }
+        let type = frame[8]
+        if let r = Whoop5CommandResponse.decode(frame) {
+            handleWhoop5Response(r)
+        } else if type == 48 {
+            switch Whoop5Event.decode(frame) {
+            case .success(let e): handleWhoop5Event(e)
+            case .failure(let err): log("RX 5.0 event could not be decoded: \(err) len=\(frame.count)")
+            }
+        } else if type == 40 {
+            handleWhoop5Realtime(frame)
+        }
+        captureWhoop5HistoryFrame(frame, on: characteristic)
+    }
+
+    private func handleWhoop5Response(_ r: Whoop5CommandResponse) {
+        let name = WhoopCommand(rawValue: r.command)?.label ?? "cmd \(r.command)"
+        if r.command != 23 || r.result != .success {      // per-chunk ack confirmations are too frequent to log
+            log("RX 5.0 \(name) seq=\(r.appSeq) → \(r.result)\(r.body.count > 3 ? " (\(r.body.count) B)" : "")")
+        }
+        switch r.command {
+        case 11:
+            let sent = clockRequestSentAt.removeValue(forKey: r.appSeq)
+            guard r.isFinal else { return }
+            switch Whoop5Clock.decode(r) {
+            case .success(let c):
+                guard let sent else { return }   // another client's request: no send time to pair it with
+                handleClockSample(ClockSample(hostSent: sent, hostReceived: Date().timeIntervalSince1970, device: c.seconds))
+            case .failure(let e): log("Clock: reply not usable (\(e))")
+            }
+        case 34:
+            guard r.isFinal else { return }
+            switch Whoop5DataRange.decode(r) {
+            case .success(let range): handleWhoop5DataRange(range)
+            case .failure(let e):
+                log("History: data range not usable (\(e))")
+                if whoop5AwaitingRange { startWhoop5Transfer(range: nil) }
+            }
+        case 26:
+            if let pct = whoop5BatteryPercent(r) {
+                state.updateBattery(BatteryReading(percent: pct, charging: nil, at: Date().timeIntervalSince1970, source: .vendorCommand))
+            }
+        case 3:
+            if r.result != .success { state.realtimeStreaming = false }
+        case 14:
+            if r.result != .success { log("HR broadcast: strap answered \(r.result)") }
+        default:
+            break
+        }
+    }
+
+    private func handleClockSample(_ sample: ClockSample) {
+        switch clockEstimator.add(sample) {
+        case .accepted(let est):
+            state.clock = est
+            log(String(format: "Clock: strap is %.1f s %@ this Mac (±%.1f s)", abs(est.offset), est.offset >= 0 ? "behind" : "ahead of", est.uncertainty))
+            persistClock(est)
+        case .jumped(let from, let to):
+            state.clock = to
+            log(String(format: "Clock: strap clock jumped (offset %.1f s → %.1f s); new estimate in use", from.offset, to.offset))
+            persistClock(to)
+        case .rejected(let why):
+            log("Clock: sample rejected (\(why)); keeping the previous estimate")
+        }
+    }
+
+    private func persistClock(_ e: ClockEstimate) {
+        Task { @MainActor in
+            await collector?.setCursor(BLEManager.clockOffsetCursor, Int((e.offset * 1000).rounded()))
+            await collector?.setCursor(BLEManager.clockMeasuredCursor, Int(e.measuredAt))
+        }
+    }
+
+    /// Events: always recorded for diagnostics (unknown numbers included). Only events that are LIVE — stamped
+    /// within two minutes of the strap's current time — change UI state; the same event replayed in a history
+    /// pull hours later must not.
+    private func handleWhoop5Event(_ e: Whoop5Event) {
+        let line = "\(e.kind.name) at \(Date(timeIntervalSince1970: TimeInterval(e.unix)).formatted(date: .omitted, time: .standard)) body=\(e.body.count) B"
+        state.record(event: line)
+        state.lastEvent = e.kind.name
+        guard let clock = state.clock else { return }
+        let strapNow = clock.deviceTime(fromHost: Date().timeIntervalSince1970)
+        guard abs(strapNow - Double(e.unix)) < 120 else { return }
+        log("RX 5.0 live event \(e.kind.name)")
+        switch e.kind {
+        case .hrProfileEnabled: state.hrBroadcast = true
+        case .hrProfileDisabled: state.hrBroadcast = false
+        case .realtimeHROff: state.realtimeStreaming = false
+        default: break
+        }
+    }
+
+    /// Realtime HR (type 40, CONFIRMED E04): one frame per strap second. Duplicates and implausible values are dropped;
+    /// realtime HR is display-only and never written to the database (history supplies the stored series).
+    private func handleWhoop5Realtime(_ frame: [UInt8]) {
+        guard let rt = decodeWhoop5Realtime(frame) else {
+            log("RX 5.0 realtime frame rejected (implausible timestamp) len=\(frame.count)")
+            return
+        }
+        if let last = lastRealtimeSecond, rt.timestamp <= last { return }   // duplicate or out-of-order second
+        lastRealtimeSecond = rt.timestamp
+        lastRealtimeAt = Date()
+        state.realtimeStreaming = true
+        if (30...220).contains(rt.heartRate) { state.heartRate = rt.heartRate }
     }
 }
 
@@ -1061,8 +1328,9 @@ extension BLEManager: CBCentralManagerDelegate {
         state.resetTelemetry()
         endWhoop5History("disconnected")
         strapFrameTotal = 0
-        realtimeDecodeLogged = 0
-        lastRealtimeTs = nil
+        lastRealtimeSecond = nil
+        lastRealtimeAt = nil
+        clockRequestSentAt.removeAll()
         heartRateCharacteristic = nil
         helloWatchdog?.cancel()
         reassembler.reset()
@@ -1198,6 +1466,9 @@ extension BLEManager: CBPeripheralDelegate {
                 peripheral.discoverCharacteristics([BLEManager.heartRateChar], for: s)
             case BLEManager.batteryService:
                 peripheral.discoverCharacteristics([BLEManager.batteryChar], for: s)
+            case BLEManager.disService:
+                // Model / firmware / hardware / serial: static, read once per connection (replaces REPORT_VERSION_INFO).
+                peripheral.discoverCharacteristics(nil, for: s)
             default: break
             }
         }
@@ -1211,6 +1482,10 @@ extension BLEManager: CBPeripheralDelegate {
         log("Characteristics of \(service.uuid): " + chars.map { "\($0.uuid.uuidString)[\(BLEManager.propsName($0.properties))]" }.joined(separator: " "))
         if service.uuid == BLEManager.whoop5Service {
             setUpWhoop5(peripheral, chars)
+            return
+        }
+        if service.uuid == BLEManager.disService {
+            for c in chars where c.properties.contains(.read) { peripheral.readValue(for: c) }
             return
         }
         for c in chars {
@@ -1451,7 +1726,12 @@ extension BLEManager: CBPeripheralDelegate {
             if state.hrPackets == 1 { log("First standard heart-rate packet received (\(bytes.count) bytes)") }
             parseStandardHR(bytes)
         case BLEManager.batteryChar:
-            if let pct = bytes.first { state.setBattery(Double(pct)) } // 0x2A19 = percent
+            if let pct = bytes.first, pct <= 100 {                    // 0x2A19 = percent
+                state.updateBattery(BatteryReading(percent: Int(pct), charging: nil,
+                                                   at: Date().timeIntervalSince1970, source: .standardLevel))
+            }
+        case _ where characteristic.service?.uuid == BLEManager.disService:
+            handleDeviceInfo(characteristic.uuid.uuidString, bytes)
         case BLEManager.dataNotifyChar,
              BLEManager.cmdNotifyChar,
              BLEManager.eventNotifyChar,
@@ -1471,35 +1751,8 @@ extension BLEManager: CBPeripheralDelegate {
                 strapFrameTotal += 1
                 if strapFrameTotal <= 20 || strapFrameTotal % 10 == 0 { state.strapFrames = strapFrameTotal }
                 if family == .whoop5 {
-                    // 5.0: validate + route to UI state only. Biometric offsets / historical offload / clock
-                    // correlation are 4.0-only. Log metadata (never payload bytes).
                     rxFrameCount += 1
-                    let chk = verifyFrame(frame, family: .whoop5)
-                    let parsed = parseFrame(frame, family: .whoop5)
-                    if frame.count > 12, parsed.typeName == "COMMAND_RESPONSE" {
-                        // metadata only: [8]=type [9]=seq [10]=responded-to cmd [11]=origin seq [12]=result code
-                        log("RX 5.0 cmd-response to=\(frame[10]) originSeq=\(frame[11]) result=\(frame[12]) len=\(frame.count) crc=\(chk.ok)")
-                    } else if parsed.typeName == "EVENT", let ev = parsed.parsed["event"]?.stringValue {
-                        log("RX 5.0 EVENT \(ev)")
-                    } else if parsed.typeName == "EVENT" {
-                        // parseFrame exposes no fields for 5.0, so event names aren't decoded (and FrameRouter returns
-                        // before its EVENT case). Log the header bytes so a broadcast on/off event can be identified.
-                        log("RX 5.0 EVENT (undecoded) len=\(frame.count) head=\(hex(Array(frame[8..<min(16, frame.count)])))")
-                    } else if rxFrameCount <= 20 {
-                        log("RX 5.0 on \(characteristic.uuid.uuidString.prefix(8)): type=\(parsed.typeName) len=\(frame.count) hdrCRC=\(chk.crc8OK.map(String.init) ?? "?") crc32=\(chk.crc32OK.map(String.init) ?? "?")")
-                    }
-                    router.handle(frame: frame, family: .whoop5)
-                    if chk.ok, frame.count > 12, parsed.typeName == "COMMAND_RESPONSE", frame[10] == WhoopCommand.getDataRange.rawValue, frame[12] == 1 {
-                        logWhoop5DataRange(frame)
-                    }
-                    if chk.ok { captureWhoop5HistoryFrame(frame, on: characteristic) }
-                    if let rt = decodeWhoop5Realtime(frame), realtimeDecodeLogged < 10 {
-                        // Layout validation (first 10 only): timestamps should step ~1 s, HR should be steady.
-                        let dt = lastRealtimeTs.map { Int(rt.timestamp) - Int($0) }
-                        lastRealtimeTs = rt.timestamp
-                        realtimeDecodeLogged += 1
-                        log("5.0 realtime decode check: hr=\(rt.heartRate) rrCount=\(rt.rr.count) tsStep=\(dt.map(String.init) ?? "-")")
-                    }
+                    handleWhoop5Frame(frame, on: characteristic)
                     continue
                 }
                 router.handle(frame: frame)                       // UI (always)
@@ -1555,6 +1808,28 @@ extension BLEManager: CBPeripheralDelegate {
         } else {
             if characteristic.uuid == BLEManager.heartRateChar { state.hrSubscribed = characteristic.isNotifying }
             log("Notify \(characteristic.isNotifying ? "ON" : "OFF") for \(characteristic.uuid)")
+        }
+    }
+}
+
+// MARK: - Device Information (180A)
+extension BLEManager {
+    func handleDeviceInfo(_ uuid: String, _ bytes: [UInt8]) {
+        let text = String(decoding: bytes, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines.union(.controlCharacters))
+        var info = state.deviceInfo ?? DeviceInfo()
+        switch uuid {
+        case "2A29": info.manufacturer = text
+        case "2A24": info.model = text
+        case "2A26": info.firmware = text
+        case "2A27": info.hardware = text
+        case "2A25": Redactor.register(secret: text); return   // serial: only registered for redaction, never stored or logged
+        default: return
+        }
+        info.readAt = Date()
+        if info != state.deviceInfo {
+            state.deviceInfo = info
+            info.save()
+            if uuid == "2A26" { log("Device: firmware \(text)") }
         }
     }
 }
