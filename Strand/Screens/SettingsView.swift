@@ -126,6 +126,30 @@ struct SettingsView: View {
 
     // MARK: - Strap
 
+    /// Remembered Bluetooth choice, the system's own answer when it blocks NOOP, and the next periodic reconnect.
+    @ViewBuilder private var bluetoothAccess: some View {
+        FormRow(label: "Use Bluetooth") {
+            Toggle("Use Bluetooth", isOn: Binding(get: { live.bluetoothChoice != .declined },
+                                                  set: { model.setBluetoothAllowed($0) }))
+                .labelsHidden()
+                .toggleStyle(.switch)
+        }
+        if live.bluetoothChoice == .declined {
+            Text("Bluetooth is off for NOOP, and stays off after relaunch until you turn it on here.")
+                .font(StrandFont.footnote).foregroundStyle(StrandPalette.textTertiary)
+        } else if live.bluetoothDeniedBySystem {
+            HStack(spacing: 12) {
+                Text("macOS is blocking Bluetooth for NOOP.")
+                    .font(StrandFont.footnote).foregroundStyle(StrandPalette.statusWarningInk)
+                Button("Open Privacy Settings") { model.openBluetoothPrivacySettings() }
+                    .buttonStyle(.strandSecondary)
+            }
+        } else if let next = live.nextReconnectAt, !live.connected {
+            Text("Connection lost — NOOP retries every 15 minutes while open. Next attempt \(next.formatted(date: .omitted, time: .shortened)).")
+                .font(StrandFont.footnote).foregroundStyle(StrandPalette.textTertiary)
+        }
+    }
+
     private var strapCard: some View {
         SettingsSection(
             icon: "antenna.radiowaves.left.and.right",
@@ -137,6 +161,7 @@ struct SettingsView: View {
                     StatePill(strapStatusTitle, tone: strapTone, pulsing: live.connected)
                     Spacer(minLength: 0)
                 }
+                bluetoothAccess
                 StrapBatteryPanel()
                 Text(strapStatusDetail)
                     .font(StrandFont.subhead)
@@ -149,6 +174,7 @@ struct SettingsView: View {
                             .padding(.horizontal, 6)
                     }
                     .buttonStyle(.strandPrimary)
+                    .disabled(live.bluetoothChoice == .declined)
 
                     Button {
                         model.disconnect()

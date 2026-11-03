@@ -191,6 +191,18 @@ final class AppModel: ObservableObject {
     }
 
     func scan() { ble.connect() }
+    /// Remember whether NOOP may use Bluetooth (survives relaunch). Allowing while macOS denies NOOP opens the
+    /// Privacy pane, since only the system can lift that.
+    func setBluetoothAllowed(_ allowed: Bool) {
+        ble.setBluetoothAllowed(allowed)
+        if allowed, live.bluetoothDeniedBySystem { openBluetoothPrivacySettings() }
+    }
+    /// Open System Settings ▸ Privacy & Security ▸ Bluetooth.
+    func openBluetoothPrivacySettings() {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Bluetooth") {
+            NSWorkspace.shared.open(url)
+        }
+    }
     func disconnect() { ble.disconnect() }
     /// Retry pairing from scratch after the strap forgot this Mac (see `LiveState.pairingStale`).
     func restartPairing() { ble.restartPairing() }

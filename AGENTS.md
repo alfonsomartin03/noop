@@ -84,6 +84,8 @@ StrandApp / AppEntry -> AppModel
 ### BLE and collection
 
 - `BLEManager`: scan -> connect -> discover -> bond -> subscribe -> per-characteristic reassembly -> decode/routing/store/sync. WHOOP generations differ in GATT and header framing; `DeviceFamily` selects them.
+- Bluetooth access is remembered in `noop.bluetoothChoice` (`BluetoothChoice`): the system's Allow/Don't Allow answer is recorded on each central state update, and Settings ▸ Strap has a Use Bluetooth toggle. While declined, no `CBCentralManager` is created at launch (no scan, no repeated system prompt) unless macOS now reports allowedAlways. macOS keeps its own answer per signature; ad-hoc rebuilds still re-prompt when the choice is allowed/undecided — only stable signing (`Local.xcconfig`) fixes that.
+- Reconnect: besides the 3 s rescan after an unintended disconnect, a 15-min watchdog (`reconnectTimer`, life of the central) cancels a stalled pending connect and rescans while the app is open and the link is lost; skipped after a user Disconnect. `LiveState.nextReconnectAt` drives the Settings caption. Not hardware-tested.
 - `Commands` is a restricted app command set. Protocol research does not grant permission to add destructive/firmware operations to normal flows.
 - `FrameRouter` mutates `LiveState`; standard HR characteristic parsing is separate. Standard broadcast listening is opt-in (`listenToHRBroadcast`), default off.
 - `Collector` buffers frames; default flush 64 frames / 30 s, pre-clock cap 4096. Decode/persist precedes optional raw outbox write. Raw capture defaults off; bounded capture window is at most five minutes.
@@ -161,6 +163,7 @@ Hosted tests use `NOOP_TEST_HOST=1` from the scheme to suppress production start
 | `noop.onboarded` | First-run overlay completion |
 | `scoringVersionApplied` | Applied scoring migration marker, current target 5 |
 | `enableRawCapture` | Research raw capture, default off |
+| `noop.bluetoothChoice` | `undecided`/`allowed`/`declined`; declined keeps Bluetooth off across launches |
 | `listenToHRBroadcast` | Standard HR subscription opt-in |
 | `noop.keepDataOnStrap` | Persist history without trim acknowledgement (`BLEManager.keepDataOnStrapKey`) |
 | `alarm.specs`, `alarm.capabilities`, `alarm.fired`, `alarm.ownsStrapAlarm` | Alarm definitions / cached capabilities / dedupe / ownership in UserDefaults |
@@ -437,6 +440,7 @@ Each entry names an existing file at inspection. Paths are grouped by directory;
 
 - `BLEManager.swift` — Symbols: BLEManager
 - `BackfillPolicy.swift` — Symbols: BackfillTrigger, BackfillPolicy
+- `BluetoothChoice.swift` — Symbols: BluetoothChoice (remembered access choice, launch gate, 15-min reconnect interval)
 - `Commands.swift` — Symbols: WhoopCommand
 - `FrameRouter.swift` — Symbols: FrameRouter
 - `LiveHeartRate.swift` — Symbols: LiveHeartRate
@@ -527,6 +531,7 @@ Each entry names an existing file at inspection. Paths are grouped by directory;
 
 ### `StrandTests`
 
+- `BluetoothChoiceTests.swift` — Test suite: BluetoothChoiceTests; 4 test methods
 - `CollectorBatteryTests.swift` — Test suite: CollectorBatteryTests, SpyStore; 2 test methods
 - `LivePresentationTests.swift` — Test suite: LiveHeartRateTests, BatteryPresentationTests; 11 test methods
 - `RawHistoryArchiveTests.swift` — Test suite: RawHistoryArchiveTests; 2 test methods
@@ -630,6 +635,11 @@ Each entry names an existing file at inspection. Paths are grouped by directory;
 
 ## 08 · Verification record
 
+Bluetooth choice + periodic reconnect, 2026-11-02:
+
+- PASS: `xcodegen generate`; hosted `xcodebuild ... CODE_SIGN_IDENTITY=- CODE_SIGNING_REQUIRED=NO test` (21 tests incl. new `BluetoothChoiceTests`).
+- Not run: live strap disconnect/reconnect, system prompt behaviour, the Settings toggle in the running app. Local builds found ad-hoc signed and no codesigning identity installed, so macOS will still re-prompt after rebuilds until signing is configured.
+
 Charging illustration rework, 2026-11-02:
 
 - PASS: `swift test --package-path Packages/StrandDesign` (27 tests) with `STRAND_SNAPSHOT_DIR`; light/dark static snapshots inspected visually. PASS: app `xcodebuild ... CODE_SIGNING_ALLOWED=NO build`.
@@ -647,6 +657,7 @@ Documentation audit, 2026-11-02:
 
 | Date | Change | Checks / remaining work |
 | --- | --- | --- |
+| 2026-11-02 | Remembered Bluetooth choice (`BluetoothChoice`, Settings toggle, launch gate) and 15-min reconnect watchdog in `BLEManager`; `LiveState`, `AppModel`, `SettingsView`. | Hosted tests pass; no hardware/UI run. |
 | 2026-11-02 | Reworked `ChargingIllustration` (colour-coded phases, bolt/check pack, docking ring, current flow, shimmer, periodic reminder pulse). API unchanged. | StrandDesign tests + snapshots, app build. Live motion/CPU not measured. |
 | 2026-11-02 | Created root `AGENTS.md` as the single agent entry point, architecture/state reference, file index and mandatory update contract. Preserved existing code changes. | Inventory/source consistency checks; no runtime checks. Existing documentation drift and potential alarm sequencing issue recorded in section 04. |
 

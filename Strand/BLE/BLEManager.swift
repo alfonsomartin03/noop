@@ -83,6 +83,9 @@ public final class BLEManager: NSObject, ObservableObject {
     private var keepAliveTimer: DispatchSourceTimer?
     static let keepAliveIntervalSeconds = 30
     private var keepAliveTick = 0
+    /// Reconnect watchdog: while the app is open and the strap link is lost (not a user Disconnect), restart the
+    /// scan every `BluetoothChoice.reconnectIntervalSeconds`. Runs for the life of the central, not just a connection.
+    private var reconnectTimer: DispatchSourceTimer?
     /// Last time ANY notification arrived — drives the liveness watchdog.
     private var lastDataAt = Date()
     /// True while the Live screen wants the (heavy) realtime stream; keep-alive re-arms it.
@@ -205,7 +208,14 @@ public final class BLEManager: NSObject, ObservableObject {
         state.lastSyncedAt = UserDefaults.standard.object(forKey: "lastSyncedAt") as? Double
         // Restore identifier + background-capable central (foundation for M3 state restoration).
         // Strand (macOS desktop): no state-restoration identifier (iOS background feature).
-        if LaunchMode.bluetoothEnabled { central = CBCentralManager(delegate: self, queue: .main) }
+        state.bluetoothChoice = BluetoothChoice.stored()
+        if LaunchMode.bluetoothEnabled {
+            if BluetoothChoice.shouldStartBluetooth(stored: state.bluetoothChoice, authorization: CBCentralManager.authorization) {
+                startCentral()
+            } else {
+                log("Bluetooth off: you chose Don't Allow — turn it on in Settings ▸ Strap")
+            }
+        }
         // Strap-as-clock: an incoming EVENT packet kicks a rate-limited catch-up sync.
         router.onSyncTrigger = { [weak self] in self?.requestSync(.strap) }
         router.onLog = { [weak self] in self?.log($0) }
@@ -246,10 +256,78 @@ public final class BLEManager: NSObject, ObservableObject {
         super.init()
         state.lastSyncedAt = UserDefaults.standard.object(forKey: "lastSyncedAt") as? Double
         // Strand (macOS desktop): no state-restoration identifier (iOS background feature).
-        central = CBCentralManager(delegate: self, queue: .main)
+        startCentral()
         // Strap-as-clock: an incoming EVENT packet kicks a rate-limited catch-up sync.
         router.onSyncTrigger = { [weak self] in self?.requestSync(.strap) }
         router.onLog = { [weak self] in self?.log($0) }
+    }
+
+    // MARK: Bluetooth access
+
+    /// Create the central (raises the system prompt if macOS has not asked yet) and the reconnect watchdog.
+    private func startCentral() {
+        guard central == nil else { return }
+        central = CBCentralManager(delegate: self, queue: .main)
+        startReconnectTimer()
+    }
+
+    /// Remember the user's choice. Allowing starts Bluetooth now (or, when macOS itself denies NOOP, the caller sends the
+    /// user to System Settings); declining disconnects, stops scanning and keeps Bluetooth off on later launches.
+    public func setBluetoothAllowed(_ allowed: Bool) {
+        BluetoothChoice.store(allowed ? .allowed : .declined)
+        state.bluetoothChoice = allowed ? .allowed : .declined
+        if allowed {
+            intentionalDisconnect = false
+            if LaunchMode.bluetoothEnabled { startCentral() }
+            connect()
+        } else {
+            disconnect()
+            reconnectTimer?.cancel()
+            reconnectTimer = nil
+            state.nextReconnectAt = nil
+            central?.delegate = nil
+            central = nil
+            log("Bluetooth turned off in NOOP; remembered across launches")
+        }
+    }
+
+    /// Record the system's answer once it gives one, so a Don't Allow is remembered even if a rebuild resets macOS's copy.
+    private func rememberAuthorization() {
+        let auth = CBCentralManager.authorization
+        state.bluetoothDeniedBySystem = auth == .denied || auth == .restricted
+        guard let choice = BluetoothChoice.from(auth), choice != state.bluetoothChoice else { return }
+        BluetoothChoice.store(choice)
+        state.bluetoothChoice = choice
+    }
+
+    private func startReconnectTimer() {
+        reconnectTimer?.cancel()
+        let s = BluetoothChoice.reconnectIntervalSeconds
+        let t = DispatchSource.makeTimerSource(queue: .main)
+        t.schedule(deadline: .now() + .seconds(s), repeating: .seconds(s))
+        t.setEventHandler { [weak self] in self?.reconnectFire() }
+        t.resume()
+        reconnectTimer = t
+        state.nextReconnectAt = state.connected ? nil : Date().addingTimeInterval(TimeInterval(s))
+    }
+
+    /// Runs every 15 min for as long as the app is open: if the link is lost (and the user did not choose Disconnect),
+    /// drop any connection attempt that never completed and scan again. A stale-pairing strap is retried too, in case the
+    /// user has since reset Bluetooth; it fails fast and stays paused if not.
+    private func reconnectFire() {
+        let next = Date().addingTimeInterval(TimeInterval(BluetoothChoice.reconnectIntervalSeconds))
+        guard !state.connected, !intentionalDisconnect else { state.nextReconnectAt = nil; return }
+        state.nextReconnectAt = next
+        guard let central, central.state == .poweredOn else { return }
+        log("Strap link lost — periodic reconnect attempt")
+        scanFallbackWork?.cancel()
+        central.stopScan()
+        if let p = peripheral, p.state != .connected {
+            central.cancelPeripheralConnection(p)
+            peripheral = nil
+        }
+        restoredPeripheral = nil
+        connect()
     }
 
     // MARK: Public API
@@ -257,7 +335,7 @@ public final class BLEManager: NSObject, ObservableObject {
     public func connect() {
         intentionalDisconnect = false
         guard let central, central.state == .poweredOn else {
-            log("Bluetooth not ready: \(central.map { BLEManager.stateName($0.state) } ?? "off for this launch"); authorization=\(BLEManager.authName(CBCentralManager.authorization))")
+            log("Bluetooth not ready: \(central.map { BLEManager.stateName($0.state) } ?? (state.bluetoothChoice == .declined ? "turned off in NOOP" : "off for this launch")); authorization=\(BLEManager.authName(CBCentralManager.authorization))")
             return
         }
         // A strap that is already connected to macOS (or another app) does NOT advertise, so a scan can't
@@ -327,6 +405,7 @@ public final class BLEManager: NSObject, ObservableObject {
 
     public func disconnect() {
         intentionalDisconnect = true
+        state.nextReconnectAt = nil
         scanFallbackWork?.cancel()
         helloWatchdog?.cancel()
         if let p = peripheral {
@@ -1344,6 +1423,7 @@ extension BLEManager {
 extension BLEManager: CBCentralManagerDelegate {
     public func centralManagerDidUpdateState(_ central: CBCentralManager) {
         log("Central state: \(BLEManager.stateName(central.state)); authorization=\(BLEManager.authName(CBCentralManager.authorization))")
+        rememberAuthorization()
         guard central.state == .poweredOn else { return }
         // Bootstrap the async store once on first poweredOn (idempotent if already set).
         Task { @MainActor in await bootstrapStore() }
@@ -1383,6 +1463,7 @@ extension BLEManager: CBCentralManagerDelegate {
         stalePairingFailures = 0
         state.pairingStale = false
         state.connected = true
+        state.nextReconnectAt = nil
         log("Connected — discovering services")
         // nil = discover everything so the log shows what this strap actually exposes (4.0 vs 5.0).
         peripheral.discoverServices(nil)
@@ -1432,9 +1513,10 @@ extension BLEManager: CBCentralManagerDelegate {
         keepAliveTimer = nil
         Task { @MainActor in await collector?.flushStandardHR() }   // persist any buffered 0x2A37 HR
         if !intentionalDisconnect {
-            log("Disconnected: \(describe(error)); rescanning in 3s")
+            log("Disconnected: \(describe(error)); rescanning in 3s, then retrying every 15 min while the app is open")
+            if reconnectTimer != nil { startReconnectTimer() }   // first periodic attempt 15 min after the loss
             DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
-                guard let self, !self.intentionalDisconnect else { return }
+                guard let self, !self.intentionalDisconnect, self.peripheral == nil else { return }
                 self.connect()
             }
         } else {

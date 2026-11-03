@@ -63,6 +63,12 @@ public final class LiveState: ObservableObject {
     /// True when macOS holds a pairing the strap has forgotten (CBError 14, "Peer removed pairing
     /// information"). Auto-retry stops; the user must forget the strap in System Settings and re-pair.
     @Published public var pairingStale = false
+    /// Remembered Bluetooth decision (see `BluetoothChoice`); `.declined` means NOOP keeps Bluetooth off.
+    @Published var bluetoothChoice: BluetoothChoice = .undecided
+    /// macOS has Bluetooth denied for NOOP; only System Settings ▸ Privacy & Security can change that.
+    @Published public var bluetoothDeniedBySystem = false
+    /// When the next periodic reconnect attempt runs while the link is lost; nil when connected or Bluetooth is off.
+    @Published public var nextReconnectAt: Date? = nil
     /// Rolling log of human-readable lines for the on-device verification checklist.
     @Published public var log: [String] = []
 
