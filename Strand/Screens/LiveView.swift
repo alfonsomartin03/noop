@@ -36,10 +36,10 @@ struct LiveView: View {
             }
         }
         // The heavy realtime stream runs only while this screen is visible, to save strap battery.
-        .onAppear { if live.bonded { model.startRealtimeHR(); model.getBattery() } }
-        .onDisappear { model.stopRealtimeHR() }
+        .onAppear { if live.bonded { model.startRealtimeHR(owner: "live-sheet"); model.getBattery() } }
+        .onDisappear { model.stopRealtimeHR(owner: "live-sheet") }
         .onChange(of: live.bonded) { bonded in
-            if bonded { model.startRealtimeHR(); model.getBattery() }
+            if bonded { model.startRealtimeHR(owner: "live-sheet"); model.getBattery() }
         }
     }
 

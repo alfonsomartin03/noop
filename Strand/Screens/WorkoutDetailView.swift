@@ -7,9 +7,11 @@ import Foundation
 
 // MARK: - Sleep stages for the Today card
 
-/// Turns a night into hypnogram intervals. The on-device scorer stores a real per-epoch timeline (a JSON array of
-/// {start,end,stage}). WHOOP imports only hold stage totals, so for those the same plausible stage order the Sleep tab
-/// uses is drawn and flagged `estimated`.
+/// Turns a night into hypnogram intervals — only from a real per-epoch timeline (the on-device scorer's JSON array of
+/// {start,end,stage}). WHOOP imports hold only stage TOTALS, which have no order; for those this returns nil and callers
+/// draw a proportional stage bar. Nothing here reconstructs a "plausible" order from totals.
+/// Note: a recombined interrupted night (Repository.combineSessions) labels the gaps between its episodes "wake"; that is
+/// fine for drawing the night, but alarm stage lookups use raw episodes (AlarmStageLookup), never these intervals.
 enum SleepTimeline {
     private struct Segment: Decodable { let start: Int; let end: Int; let stage: String }
 
@@ -30,40 +32,22 @@ enum SleepTimeline {
         }
     }
 
-    static func intervals(session: CachedSleepSession?, day: DailyMetric?) -> (intervals: [SleepInterval], estimated: Bool)? {
-        if let session, let data = session.stagesJSON?.data(using: .utf8),
-           let segs = try? JSONDecoder().decode([Segment].self, from: data), !segs.isEmpty {
-            let origin = TimeInterval(session.startTs)
-            let out: [SleepInterval] = segs.sorted { $0.start < $1.start }.compactMap { s in
-                let stage: SleepStage
-                switch s.stage {
-                case "wake": stage = .awake
-                case "light": stage = .light
-                case "deep": stage = .deep
-                case "rem": stage = .rem
-                default: return nil
-                }
-                return SleepInterval(stage: stage, start: TimeInterval(s.start) - origin, end: TimeInterval(s.end) - origin)
+    static func intervals(session: CachedSleepSession?) -> [SleepInterval]? {
+        guard let session, let data = session.stagesJSON?.data(using: .utf8),
+              let segs = try? JSONDecoder().decode([Segment].self, from: data), !segs.isEmpty else { return nil }
+        let origin = TimeInterval(session.startTs)
+        let out: [SleepInterval] = segs.sorted { $0.start < $1.start }.compactMap { s in
+            let stage: SleepStage
+            switch s.stage {
+            case "wake": stage = .awake
+            case "light": stage = .light
+            case "deep": stage = .deep
+            case "rem": stage = .rem
+            default: return nil
             }
-            if !out.isEmpty { return (out, false) }
+            return SleepInterval(stage: stage, start: TimeInterval(s.start) - origin, end: TimeInterval(s.end) - origin)
         }
-        // Stage totals in minutes: the session's JSON dict if present, else the day's columns.
-        var light = day?.lightMin ?? 0, deep = day?.deepMin ?? 0, rem = day?.remMin ?? 0, awake = 0.0
-        if let data = session?.stagesJSON?.data(using: .utf8),
-           let dict = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] {
-            func v(_ k: String) -> Double { (dict[k] as? NSNumber)?.doubleValue ?? 0 }
-            if v("light") + v("deep") + v("rem") > 0 { light = v("light"); deep = v("deep"); rem = v("rem"); awake = v("awake") }
-        }
-        guard light + deep + rem > 0 else { return nil }
-        var t: TimeInterval = 0
-        var out: [SleepInterval] = []
-        func add(_ stage: SleepStage, _ minutes: Double) {
-            guard minutes > 0 else { return }
-            out.append(SleepInterval(stage: stage, start: t, end: t + minutes * 60)); t += minutes * 60
-        }
-        add(.light, light * 0.4); add(.deep, deep); add(.light, light * 0.3)
-        add(.rem, rem); add(.light, light * 0.3); add(.awake, awake)
-        return (out, true)
+        return out.isEmpty ? nil : out
     }
 }
 

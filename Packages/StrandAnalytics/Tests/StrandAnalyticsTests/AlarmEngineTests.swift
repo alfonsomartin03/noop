@@ -60,67 +60,7 @@ final class AlarmEngineTests: XCTestCase {
         XCTAssertEqual(AlarmPlanner.nextAcross([off, late, early], after: d(11, 2, 1), calendar: cal)?.alarmId, early.id)
     }
 
-    // MARK: smart wake
-
-    func occ(_ mode: AlarmSpec.Mode) -> AlarmOccurrence {
-        AlarmPlanner.next(AlarmSpec(hour: 7, minute: 0, mode: mode), after: d(11, 2, 1), calendar: cal)!
-    }
-    func ev(_ t: Date, _ p: Double, usable: Bool = true) -> WakeEvidence { WakeEvidence(at: t, wakeLikelihood: p, usable: usable) }
-
-    func testNoEarlyFireBeforeWindow() {
-        var s = SmartWakeDecider(occurrence: occ(.smart(windowMin: 30)), mode: .smart(windowMin: 30))
-        for m in 0..<10 { XCTAssertEqual(s.step(now: d(11, 2, 6, m), evidence: ev(d(11, 2, 6, m), 1)), .wait) }
-    }
-
-    func testStableLightnessFiresEarlyOnce() {
-        var s = SmartWakeDecider(occurrence: occ(.smart(windowMin: 30)), mode: .smart(windowMin: 30))
-        XCTAssertEqual(s.step(now: d(11, 2, 6, 35), evidence: ev(d(11, 2, 6, 35), 0.8)), .wait)
-        XCTAssertEqual(s.step(now: d(11, 2, 6, 36), evidence: ev(d(11, 2, 6, 36), 0.7)), .wait)
-        guard case .fireEarly = s.step(now: d(11, 2, 6, 37), evidence: ev(d(11, 2, 6, 37), 0.9)) else { return XCTFail("no fire") }
-        XCTAssertEqual(s.step(now: d(11, 2, 7), evidence: nil), .wait)   // never twice (no duplicate execution)
-    }
-
-    func testSingleNoisyMinuteDoesNotFire() {
-        var s = SmartWakeDecider(occurrence: occ(.smart(windowMin: 30)), mode: .smart(windowMin: 30))
-        let seq = [0.9, 0.2, 0.9, 0.1, 0.95, 0.3]
-        for (i, p) in seq.enumerated() {
-            XCTAssertEqual(s.step(now: d(11, 2, 6, 40 + i), evidence: ev(d(11, 2, 6, 40 + i), p)), .wait)
-        }
-    }
-
-    func testNoLightOpportunityFallsBackToDeadline() {
-        var s = SmartWakeDecider(occurrence: occ(.smart(windowMin: 30)), mode: .smart(windowMin: 30))
-        for m in 30..<60 { _ = s.step(now: d(11, 2, 6, m), evidence: ev(d(11, 2, 6, m), 0.1)) }
-        XCTAssertEqual(s.step(now: d(11, 2, 7), evidence: nil), .fireAtDeadline)
-    }
-
-    func testMissingDataNeverFiresEarlyButDeadlineHolds() {
-        var s = SmartWakeDecider(occurrence: occ(.smart(windowMin: 30)), mode: .smart(windowMin: 30))
-        for m in 30..<60 { XCTAssertEqual(s.step(now: d(11, 2, 6, m), evidence: ev(d(11, 2, 6, m), 1, usable: false)), .wait) }
-        XCTAssertEqual(s.step(now: d(11, 2, 7, 3), evidence: nil), .fireAtDeadline)   // late tick (host was busy) still fires
-    }
-
-    func testSleepGoalFiresWhenReached() {
-        let mode = AlarmSpec.Mode.sleepGoal(goalPercent: 85, windowMin: 30)
-        var s = SmartWakeDecider(occurrence: occ(mode), mode: mode)
-        XCTAssertEqual(s.step(now: d(11, 2, 6, 35), evidence: ev(d(11, 2, 6, 35), 0.1), asleepMinutesSoFar: 350, needMinutes: 480), .wait)
-        guard case .fireEarly = s.step(now: d(11, 2, 6, 40), evidence: ev(d(11, 2, 6, 40), 0.8),
-                                        asleepMinutesSoFar: 410, needMinutes: 480) else { return XCTFail("goal not honoured") }
-    }
-
-    func testSleepGoalGraceThenFire() {
-        let mode = AlarmSpec.Mode.sleepGoal(goalPercent: 70, windowMin: 30)
-        var s = SmartWakeDecider(occurrence: occ(mode), mode: mode)
-        XCTAssertEqual(s.step(now: d(11, 2, 6, 31), evidence: ev(d(11, 2, 6, 31), 0.1), asleepMinutesSoFar: 400, needMinutes: 480), .wait)
-        guard case .fireEarly = s.step(now: d(11, 2, 6, 41), evidence: ev(d(11, 2, 6, 41), 0.1),
-                                        asleepMinutesSoFar: 410, needMinutes: 480) else { return XCTFail("grace not applied") }
-    }
-
-    func testExactModeOnlyDeadline() {
-        var s = SmartWakeDecider(occurrence: occ(.exact), mode: .exact)
-        XCTAssertEqual(s.step(now: d(11, 2, 6, 59), evidence: ev(d(11, 2, 6, 59), 1)), .wait)
-        XCTAssertEqual(s.step(now: d(11, 2, 7), evidence: nil), .fireAtDeadline)
-    }
+    // Smart-wake decisions: SmartWakeTests.swift (timestamped, duration-based evidence).
 
     // MARK: evidence + states
 

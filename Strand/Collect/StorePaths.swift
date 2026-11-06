@@ -31,4 +31,9 @@ enum LaunchMode {
     /// Fixture only: `-noop.fixture.battery cycle` plays synthetic battery states (idle, charging, full, disconnected)
     /// through the real battery surfaces; `charging` holds a charging reading. Synthetic: no strap reports charging today.
     static var fixtureBattery: String? { fixtureStore == nil ? nil : UserDefaults.standard.string(forKey: "noop.fixture.battery") }
+    /// Fixture only: `-noop.fixture.alarmHistory YES` appends synthetic alarm history (one occurrence per status) to the
+    /// fixture COPY, for visual checks of Alarms ▸ History. Never runs on the real store.
+    /// Fixture only: `-noop.fixture.alarmDetail YES` opens the newest history occurrence's detail sheet.
+    static var fixtureAlarmDetail: Bool { fixtureStore != nil && UserDefaults.standard.bool(forKey: "noop.fixture.alarmDetail") }
+    static var fixtureAlarmHistory: Bool { fixtureStore != nil && UserDefaults.standard.bool(forKey: "noop.fixture.alarmHistory") }
 }

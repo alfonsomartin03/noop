@@ -19,6 +19,10 @@ public struct ClockEstimate: Equatable, Sendable {
     public let uncertainty: Double
     public let measuredAt: Double
 
+    public init(offset: Double, uncertainty: Double, measuredAt: Double) {
+        self.offset = offset; self.uncertainty = uncertainty; self.measuredAt = measuredAt
+    }
+
     /// Strap time → host time. Applied only to values the caller explicitly converts; stored strap
     /// timestamps are never rewritten.
     public func hostTime(fromDevice t: Double) -> Double { t + offset }

@@ -88,7 +88,7 @@ public enum AlarmPlanner {
     }
 }
 
-/// One minute of evidence about the wearer, built from data NOOP actually has (stored HR, R-R and gravity, or the
+/// A 0…1 heuristic about the wearer (legacy single-value form; SmartWake.swift builds it per evidence window), built from data NOOP actually has (stored HR, R-R and gravity, or the
 /// realtime HR stream). `wakeLikelihood` is a heuristic 0…1, NOT an EEG stage.
 public struct WakeEvidence: Equatable, Sendable {
     public let at: Date
@@ -114,56 +114,7 @@ public struct WakeEvidence: Equatable, Sendable {
     }
 }
 
-/// Decides when a smart / sleep-goal alarm fires inside its window. Never fires before the window, always by the
-/// deadline, and needs a STABLE run of evidence (not one noisy minute) to fire early.
-public struct SmartWakeDecider: Sendable {
-    public enum Decision: Equatable, Sendable { case wait, fireEarly(reason: String), fireAtDeadline }
-
-    public let occurrence: AlarmOccurrence
-    public let mode: AlarmSpec.Mode
-    /// Consecutive usable minutes at or above `threshold` needed to fire early.
-    public var stableMinutes = 3
-    public var threshold = 0.6
-    /// After the sleep goal is met, the longest NOOP waits for a lighter moment.
-    public var goalGraceMinutes = 10
-    public private(set) var fired = false
-    private var run = 0
-    private var goalReachedAt: Date?
-
-    public init(occurrence: AlarmOccurrence, mode: AlarmSpec.Mode) {
-        self.occurrence = occurrence; self.mode = mode
-    }
-
-    /// Feed one minute of evidence (time-ordered). `asleepMinutesSoFar` / `needMinutes` drive the sleep-goal mode.
-    public mutating func step(now: Date, evidence: WakeEvidence?, asleepMinutesSoFar: Double? = nil,
-                              needMinutes: Double? = nil) -> Decision {
-        guard !fired else { return .wait }
-        if now >= occurrence.deadline { fired = true; return .fireAtDeadline }
-        guard now >= occurrence.windowStart else { run = 0; return .wait }
-        switch mode {
-        case .exact:
-            return .wait
-        case .smart:
-            if let e = evidence, e.usable, e.wakeLikelihood >= threshold { run += 1 } else { run = 0 }
-            if run >= stableMinutes {
-                fired = true
-                return .fireEarly(reason: "Looked awake or lightly asleep for \(run) minutes")
-            }
-            return .wait
-        case .sleepGoal(let pct, _):
-            guard let slept = asleepMinutesSoFar, let need = needMinutes, need > 0,
-                  slept >= Double(pct) / 100 * need else { return .wait }
-            // Goal reached: wake at the first lighter-looking minute, or after `goalGraceMinutes` regardless.
-            if goalReachedAt == nil { goalReachedAt = now }
-            let lighter = evidence.map { $0.usable && $0.wakeLikelihood >= threshold } ?? false
-            if lighter || now.timeIntervalSince(goalReachedAt!) >= Double(goalGraceMinutes) * 60 {
-                fired = true
-                return .fireEarly(reason: "Reached \(pct)% of your sleep need")
-            }
-            return .wait
-        }
-    }
-}
+// The smart-wake decision (timestamped evidence windows, policy, decision records) lives in SmartWake.swift.
 
 /// Allowed alarm state transitions. Anything else is a bug and is rejected (the caller logs it).
 public enum AlarmStateMachine {

@@ -3,6 +3,7 @@ import CoreBluetooth
 import os
 import WhoopProtocol
 import WhoopStore
+import StrandAnalytics
 
 /// CoreBluetooth engine for WHOOP 4.0 and WHOOP 5.0: scan-by-service → connect → discover → bond → subscribe →
 /// reassemble per characteristic → typed decode (5.0: WhoopProtocol/Whoop5Messages) → state, store, history sync.
@@ -88,8 +89,16 @@ public final class BLEManager: NSObject, ObservableObject {
     private var reconnectTimer: DispatchSourceTimer?
     /// Last time ANY notification arrived — drives the liveness watchdog.
     private var lastDataAt = Date()
-    /// True while the Live screen wants the (heavy) realtime stream; keep-alive re-arms it.
-    private var wantsRealtime = false
+    /// Who currently needs the (heavy) realtime stream ("live-sheet", "menu", "alarm"…). The stream stays on while any
+    /// owner holds it and keep-alive re-arms it; releasing one owner never stops another's stream.
+    private(set) var realtimeOwners = Set<String>()
+    private var wantsRealtime: Bool { !realtimeOwners.isEmpty }
+    /// Realtime HR samples with their measurement time (strap second mapped to the Mac clock), for smart wake.
+    var onRealtimeHR: ((HRObservation) -> Void)?
+    /// When battery / pack info was last requested; a poll skipped during a history download runs as soon as it ends.
+    private var lastBatteryPollAt = Date.distantPast
+    /// Pack-info requests by app sequence number: when sent and on which connection (a reply describes that moment).
+    private var packInfoRequests: [UInt8: (at: Date, connection: UUID)] = [:]
     /// Last-offload-attempt time (unix seconds), persisted so the rate limiter survives relaunch
     /// (matches WHOOP's DATA_SYNC_WORKER_LAST_WORK_TIME watermark).
     static let backfillLastAtKey = "backfillLastAt"
@@ -187,8 +196,11 @@ public final class BLEManager: NSObject, ObservableObject {
     var onSyncDownloadFinished: ((Bool) -> Void)?
     /// Alarm/haptic command answers and events, for AlarmController's sync verification and dismissal.
     var onAlarmResponse: ((Whoop5CommandResponse) -> Void)?
-    var onAlarmEvent: ((Whoop5Event) -> Void)?
+    /// Second argument: true when the event is live (not a history replay).
+    var onAlarmEvent: ((Whoop5Event, Bool) -> Void)?
     static let whoop5RetryDelaySeconds = 5
+    /// The link dropped (alarm deliveries in flight fail; nothing is assumed delivered).
+    var onLinkDropped: (() -> Void)?
 
     /// Stable device id; matches the server's existing device for sync parity. Overridable.
     let deviceId: String
@@ -400,7 +412,7 @@ public final class BLEManager: NSObject, ObservableObject {
 
     /// Ask a WHOOP 5.0 whether its charging pack is attached (read-only GET_BATTERY_PACK_INFO).
     public func refreshChargingState() {
-        if family == .whoop5 { send(.getBatteryPackInfo, payload: []) }
+        if family == .whoop5 { requestPackInfo() }
     }
 
     public func disconnect() {
@@ -462,20 +474,22 @@ public final class BLEManager: NSObject, ObservableObject {
     ///   - writeType: BLE write type; defaults to `.withoutResponse` so all existing call
     ///     sites are unaffected. Pass `.withResponse` for acked commands (e.g. historicalDataResult).
     // Single place commands are framed and written; picks the 4.0 or 5.0 frame format from the connected family.
+    /// Returns the app sequence number the command went out with (WHOOP 5.0 replies echo it), nil when not sent.
+    @discardableResult
     public func send(_ command: WhoopCommand, payload: [UInt8] = [0x00],
-                     writeType: CBCharacteristicWriteType = .withoutResponse) {
+                     writeType: CBCharacteristicWriteType = .withoutResponse) -> UInt8? {
         guard let p = peripheral, let ch = cmdCharacteristic else {
             log("send(\(command.label)) ignored — not connected")
-            return
+            return nil
         }
         if family == .whoop5 {
-            sendWhoop5(command, payload: payload, peripheral: p, characteristic: ch, writeType: writeType)
-            return
+            return sendWhoop5(command, payload: payload, peripheral: p, characteristic: ch, writeType: writeType)
         }
         seq = seq &+ 1
         let frame = command.frame(seq: seq, payload: payload)
         p.writeValue(Data(frame), for: ch, type: writeType)
         log("→ \(command.label) payload=\(hex(payload))")
+        return seq
     }
 
     /// Commands verified (from the Goose reverse-engineering) to share their command NUMBER with the 4.0
@@ -503,20 +517,20 @@ public final class BLEManager: NSObject, ObservableObject {
     private var whoop5SkippedLogged = Set<UInt8>()
 
     private func sendWhoop5(_ command: WhoopCommand, payload: [UInt8], peripheral p: CBPeripheral,
-                            characteristic ch: CBCharacteristic, writeType: CBCharacteristicWriteType) {
+                            characteristic ch: CBCharacteristic, writeType: CBCharacteristicWriteType) -> UInt8? {
         guard let map = BLEManager.whoop5Allowed[command] else {
             if whoop5SkippedLogged.insert(command.rawValue).inserted {
                 log("send(\(command.label)) not sent on WHOOP 5.0 — its 5.0 payload/encoding is unverified (logged once)")
             }
-            return
+            return nil
         }
         guard didBond else {
             log("send(\(command.label)) deferred — WHOOP 5.0 link not bonded yet")
-            return
+            return nil
         }
         if command == .setAlarmTime, !(payload.count == 20 && payload[0] == 4 && payload[1] == Whoop5Alarm.alarmID) {
             log("send(Set Alarm Time) refused on WHOOP 5.0 — payload is not the verified [4, 1, time, pattern] form")
-            return
+            return nil
         }
         seq = seq &+ 1
         let data = map(payload)
@@ -525,6 +539,7 @@ public final class BLEManager: NSObject, ObservableObject {
         let type: CBCharacteristicWriteType = ch.properties.contains(.writeWithoutResponse) ? writeType : .withResponse
         p.writeValue(Data(frame), for: ch, type: type)
         log("→ 5.0 \(command.label) seq=\(seq) payload=\(hex(data))")
+        return seq
     }
 
     /// One-shot, read-only probe once the 5.0 link is bonded + subscribed: proves the command channel works
@@ -536,7 +551,8 @@ public final class BLEManager: NSObject, ObservableObject {
         log("WHOOP 5.0: reading clock and battery")
         send(.getClock, payload: [])
         send(.getBatteryLevel, payload: [])
-        send(.getBatteryPackInfo, payload: [])   // is the charging pack on?
+        requestPackInfo()                         // is the charging pack on?
+        lastBatteryPollAt = Date()
         if wantsRealtime { send(.toggleRealtimeHR, payload: [0x01]) }   // resume a stream the user had on before a drop
         // Show the last broadcast choice the user made (the strap can't be asked). When that choice is off, send it
         // again: a reset strap or the WHOOP app can leave the broadcast on, and it's the only way to be sure of the
@@ -689,6 +705,7 @@ public final class BLEManager: NSObject, ObservableObject {
         }
         onStoredDataChanged?()
         checkStrapLiveness()         // safety-net: strap ahead of us AND our frontier frozen ⇒ stuck?
+        pollBatteryIfOverdue()
     }
 
     /// After an offload, judge liveness: stuck = strap reports records newer than our frontier AND our
@@ -726,11 +743,15 @@ public final class BLEManager: NSObject, ObservableObject {
     // MARK: - Keep-alive (always-ping + liveness watchdog)
 
     /// Enable the heavy realtime stream (type-40/43) and remember we want it re-armed by keep-alive.
-    public func startRealtime() { wantsRealtime = true; send(.toggleRealtimeHR, payload: [0x01]) }
-    /// Stop the realtime stream and drop the now-stale live reading, so nothing outside the live-HR screen keeps
-    /// showing a frozen bpm. HR and R-R keep being recorded by the strap and arrive with the periodic history offload.
-    public func stopRealtime() {
-        wantsRealtime = false
+    public func startRealtime(owner: String = "ui") {
+        realtimeOwners.insert(owner)
+        send(.toggleRealtimeHR, payload: [0x01])
+    }
+    /// Release one owner's hold on the realtime stream. Only when no owner is left is the stream stopped and the now-stale
+    /// live reading dropped. HR and R-R keep being recorded by the strap and arrive with the periodic history offload.
+    public func stopRealtime(owner: String = "ui") {
+        realtimeOwners.remove(owner)
+        guard realtimeOwners.isEmpty else { return }
         send(.toggleRealtimeHR, payload: [0x00])
         state.heartRate = nil
         state.rr = []
@@ -769,23 +790,41 @@ public final class BLEManager: NSObject, ObservableObject {
             if let p = peripheral { central?.cancelPeripheralConnection(p) }
             return
         }
-        guard !backfilling, !whoop5HistoryActive, !whoop5AwaitingRange else { return }   // never poke the strap mid-offload
-        // A realtime stream that stopped delivering must not leave a frozen bpm on screen.
+        // A realtime stream that stopped delivering must not leave a frozen bpm on screen — checked before the offload
+        // guard below, so stale HR is cleared during a history download too (this sends nothing to the strap).
         if state.realtimeStreaming, let at = lastRealtimeAt, Date().timeIntervalSince(at) > 10 {
             state.realtimeStreaming = false
             state.heartRate = nil
             log("Realtime HR: no frame for \(Int(Date().timeIntervalSince(at))) s — cleared the live value")
         }
+        guard !backfilling, !whoop5HistoryActive, !whoop5AwaitingRange else { return }   // never poke the strap mid-offload
         if wantsRealtime { send(.toggleRealtimeHR, payload: [0x01]) }   // re-arm so it can't lapse
         // The strap can't report its broadcast state and the official app re-sends "on" periodically, so keep it armed
         // while the user has it switched on (only ever the user's own choice).
         if state.hrBroadcast == true { send(.toggleGenericHRProfile, payload: [0x01], writeType: .withResponse) }
         keepAliveTick += 1
-        if keepAliveTick % 2 == 0 {                                          // ~every 60s
-            send(.getBatteryLevel, payload: [])
-            if family == .whoop5 { send(.getBatteryPackInfo, payload: []) }
-            if let c = batteryCharacteristic { peripheral?.readValue(for: c) }   // standard 0x2A19 (also covers 5.0)
-        }
+        if keepAliveTick % 2 == 0 || Date().timeIntervalSince(lastBatteryPollAt) > 60 { pollBattery() }   // ~every 60s
+    }
+
+    /// Battery level + pack info. Read-only; never sent mid-offload (callers check).
+    private func pollBattery() {
+        lastBatteryPollAt = Date()
+        send(.getBatteryLevel, payload: [])
+        if family == .whoop5 { requestPackInfo() }
+        if let c = batteryCharacteristic { peripheral?.readValue(for: c) }   // standard 0x2A19 (also covers 5.0)
+    }
+
+    /// GET_BATTERY_PACK_INFO, remembering when and on which connection it was asked.
+    private func requestPackInfo() {
+        if let seq = send(.getBatteryPackInfo, payload: []) { packInfoRequests[seq] = (Date(), state.connectionId) }
+    }
+
+    /// After a history download (when polling was paused), catch up an overdue battery / pack poll at once.
+    private func pollBatteryIfOverdue() {
+        guard state.connected, didBond, !backfilling, !whoop5HistoryActive, !whoop5AwaitingRange,
+              Date().timeIntervalSince(lastBatteryPollAt) > 60 else { return }
+        log("Battery: poll was paused for the download — refreshing now")
+        pollBattery()
     }
 
     private func startBackfillTimer() {
@@ -1010,6 +1049,7 @@ public final class BLEManager: NSObject, ObservableObject {
         if undecodedArchived > 0 { log("History: \(undecodedArchived) undecoded record(s) archived this pull (Application Support/OpenWhoop/undecoded-history)") }
         undecodedArchived = 0
         log("History: pull ended — \(reason); frames=\(state.historyFrames); chunks=\(historyMetaSeen.filter { $0 == "END" }.count)")
+        if reason != "disconnected" { pollBatteryIfOverdue() }
         Task { @MainActor in
             // Records after the last END were not acknowledged (the strap re-sends them next time); save them anyway.
             _ = await self.persistWhoop5Records(leftover, events: events)
@@ -1207,31 +1247,8 @@ public final class BLEManager: NSObject, ObservableObject {
         log("Alarm: armed for \(date) (epoch \(epochSec))")
     }
 
-    /// Vibrate the strap for a wake alarm. WHOOP 5.0: no vibration command is verified on this firmware yet
-    /// (docs/reverse-engineering/ALARM_CAPABILITIES.md), so nothing is sent and this returns false — the caller must
-    /// not report the strap as having vibrated. Wire the verified command here once a supervised test confirms it.
-    func vibrateStrapForAlarm() -> Bool {
-        // WHOOP 5.0, verified H02b: SET_ALARM_TIME (id 1) then RUN_ALARM fires the stored alarm's pattern now
-        // (SUCCESSFUL_PLAY + APP_DRIVEN_ALARM_EXECUTED + HAPTICS_FIRED; the wearer can stop it with a double tap).
-        // Returns true when the commands were sent; the strap's HAPTICS_FIRED event is the confirmation.
-        guard family == .whoop5, didBond, let strapNow = strapNow() else { return false }
-        send(.setAlarmTime, payload: Whoop5Alarm.setPayload(strapSeconds: UInt32(strapNow + 60)), writeType: .withResponse)
-        send(.runAlarm, payload: [], writeType: .withResponse)
-        log("Alarm: strap alarm run now (set + run, id \(Whoop5Alarm.alarmID))")
-        return true
-    }
-
-    /// Store an alarm on the strap for `deadline` (Mac time), converted to strap time with the measured offset.
-    /// The caller verifies with `readStrapAlarm()`; returns false when not possible (no 5.0 link or no clock estimate).
-    func armWhoop5Alarm(at deadline: Date) -> Bool {
-        guard family == .whoop5, didBond, let c = state.clock else { return false }
-        let strapSecs = UInt32(clamping: Int(c.deviceTime(fromHost: deadline.timeIntervalSince1970).rounded()))
-        send(.setAlarmTime, payload: Whoop5Alarm.setPayload(strapSeconds: strapSecs), writeType: .withResponse)
-        log("Alarm: stored on strap for \(deadline.formatted(date: .abbreviated, time: .standard)) (strap \(strapSecs))")
-        return true
-    }
-    func readStrapAlarm() { send(.getAlarmTime, payload: [], writeType: .withResponse) }
-    func clearStrapAlarms() { send(.disableAlarm, payload: [], writeType: .withResponse) }
+    // Wake-alarm commands go through `AlarmStrapLink` (below): AlarmController serializes SET / GET / RUN and matches each
+    // answer by its sequence number, so nothing here reports an alarm as stored or rung.
     /// Strap seconds now, from the clock estimate.
     func strapNow() -> Int? { state.clock.map { Int($0.deviceTime(fromHost: Date().timeIntervalSince1970).rounded()) } }
 
@@ -1283,6 +1300,23 @@ public final class BLEManager: NSObject, ObservableObject {
         let ts = state.clock.map { Int($0.deviceTime(fromHost: now).rounded()) } ?? Int(now)
         collector?.ingestStandardHR(hr: m.hr, rr: m.rr, at: ts)
     }
+}
+
+// MARK: - Alarm link (AlarmController)
+extension BLEManager: AlarmStrapLink {
+    var alarmLinkReady: Bool { family == .whoop5 && didBond && state.connected }
+    var alarmClock: ClockEstimate? { state.clock }
+    func sendAlarmCommand(_ c: AlarmStrapCommand) -> UInt8? {
+        guard alarmLinkReady else { return nil }
+        switch c {
+        case .set(let secs): return send(.setAlarmTime, payload: Whoop5Alarm.setPayload(strapSeconds: secs), writeType: .withResponse)
+        case .get: return send(.getAlarmTime, payload: [], writeType: .withResponse)
+        case .run: return send(.runAlarm, payload: [], writeType: .withResponse)
+        case .disableAll: return send(.disableAlarm, payload: [], writeType: .withResponse)
+        }
+    }
+    func acquireRealtime(owner: String) { startRealtime(owner: owner) }
+    func releaseRealtime(owner: String) { stopRealtime(owner: owner) }
 }
 
 // MARK: - WHOOP 5.0 frame handling
@@ -1338,10 +1372,12 @@ extension BLEManager {
             }
         case Whoop5Charging.packInfoCommand:
             guard r.isFinal else { return }
-            if let attached = Whoop5Charging.packAttached(r) {
-                if state.chargingReport?.charging != attached { log("Battery pack: \(attached ? "attached, charging" : "not attached")") }
-                state.updateCharging(attached, source: .batteryPack)
-            }
+            let req = packInfoRequests.removeValue(forKey: r.appSeq)
+            guard let req, let reply = Whoop5Charging.packInfo(r) else { return }   // not our request: no time to bind it to
+            let before = state.charging.attached(now: Date())
+            state.applyPackInfo(reply, requestedAt: req.at, connection: req.connection)
+            if reply != .detached { log("Battery pack: reply \(reply) — attachment left unknown") }
+            else if before != .no { log("Battery pack: not attached (verified reply shape)") }
         case 3:
             if r.result != .success { state.realtimeStreaming = false }
         case 14:
@@ -1380,20 +1416,22 @@ extension BLEManager {
     /// within two minutes of the strap's current time — change UI state; the same event replayed in a history
     /// pull hours later must not.
     private func handleWhoop5Event(_ e: Whoop5Event) {
-        switch e.kind {
-        case .alarmSet, .strapAlarmExecuted, .appAlarmExecuted, .alarmDisabled, .hapticsFired, .hapticsTerminated, .doubleTap:
-            onAlarmEvent?(e)
-        default: break
-        }
         let line = "\(e.kind.name) at \(Date(timeIntervalSince1970: TimeInterval(e.unix)).formatted(date: .omitted, time: .standard)) body=\(e.body.count) B"
         state.record(event: line)
         state.lastEvent = e.kind.name
-        guard let clock = state.clock else { return }
-        let strapNow = clock.deviceTime(fromHost: Date().timeIntervalSince1970)
-        guard abs(strapNow - Double(e.unix)) < 120 else { return }
+        // LIVE = stamped within two minutes of the strap's current time. A replayed (history) copy only enriches alarm
+        // history at its original time; it never changes current state.
+        let live = state.clock.map { abs($0.deviceTime(fromHost: Date().timeIntervalSince1970) - Double(e.unix)) < 120 } ?? false
+        switch e.kind {
+        case .alarmSet, .strapAlarmExecuted, .appAlarmExecuted, .alarmDisabled, .hapticsFired, .hapticsTerminated, .doubleTap:
+            onAlarmEvent?(e, live)
+        default: break
+        }
+        guard live, let clock = state.clock else { return }
         log("RX 5.0 live event \(e.kind.name)")
-        if let charging = Whoop5Charging.signal(e.kind) {
-            state.updateCharging(charging, source: e.kind == .chargingOn || e.kind == .chargingOff ? .chargingEvent : .batteryPack)
+        if Whoop5Charging.isChargingEvent(e.kind) {
+            let eventAt = Date(timeIntervalSince1970: clock.hostTime(fromDevice: Double(e.unix) + Double(e.subseconds) / 32768))
+            state.applyChargingEvent(e.kind, eventAt: min(eventAt, Date()))
         }
         switch e.kind {
         case .hrProfileEnabled: state.hrBroadcast = true
@@ -1412,9 +1450,13 @@ extension BLEManager {
         }
         if let last = lastRealtimeSecond, rt.timestamp <= last { return }   // duplicate or out-of-order second
         lastRealtimeSecond = rt.timestamp
-        lastRealtimeAt = Date()
+        let received = Date()
+        lastRealtimeAt = received
         state.realtimeStreaming = true
         if (30...220).contains(rt.heartRate) { state.heartRate = rt.heartRate }
+        // Measured at the strap second (mapped with the clock estimate); without one, stamped on arrival.
+        let at = state.clock.map { Date(timeIntervalSince1970: $0.hostTime(fromDevice: Double(rt.timestamp))) } ?? received
+        onRealtimeHR?(HRObservation(at: at, bpm: rt.heartRate, receivedAt: received))
     }
 }
 
@@ -1463,6 +1505,7 @@ extension BLEManager: CBCentralManagerDelegate {
         stalePairingFailures = 0
         state.pairingStale = false
         state.connected = true
+        state.beginConnection()          // charging facts from a previous connection never carry over
         state.nextReconnectAt = nil
         log("Connected — discovering services")
         // nil = discover everything so the log shows what this strap actually exposes (4.0 vs 5.0).
@@ -1480,6 +1523,8 @@ extension BLEManager: CBCentralManagerDelegate {
         strapFrameTotal = 0
         lastRealtimeSecond = nil
         lastRealtimeAt = nil
+        packInfoRequests.removeAll()
+        onLinkDropped?()
         clockRequestSentAt.removeAll()
         heartRateCharacteristic = nil
         helloWatchdog?.cancel()

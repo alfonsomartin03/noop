@@ -355,6 +355,29 @@ extension WhoopStore {
                 t.column("createdAt", .integer).notNull()
             }
         }
+        migrator.registerMigration("v16") { db in
+            // Append-only alarm history (AlarmHistoryStore.swift). Source data: no deviceId, never touched by re-scoring,
+            // alarm edits or deletion. `dedupeKey` is unique so live and history copies of one strap event land once.
+            try db.create(table: "alarmEvent") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("occurrenceId", .text)
+                t.column("kind", .text).notNull()
+                t.column("recordedAt", .double).notNull()
+                t.column("deviceTs", .integer)
+                t.column("mappedHostTs", .double)
+                t.column("receivedAt", .double)
+                t.column("provenance", .text).notNull()
+                t.column("dedupeKey", .text).unique()
+                t.column("payload", .text)
+            }
+            try db.create(index: "alarmEvent_occurrence", on: "alarmEvent", columns: ["occurrenceId", "recordedAt"])
+            // The wearer's own notes about an occurrence ("felt it", …), kept apart from device evidence.
+            try db.create(table: "alarmAnnotation") { t in
+                t.column("occurrenceId", .text).notNull().primaryKey()
+                t.column("label", .text).notNull()
+                t.column("createdAt", .double).notNull()
+            }
+        }
         return migrator
     }
 }

@@ -25,8 +25,8 @@ final class AppModel: ObservableObject {
     let intelligence: IntelligenceEngine
     /// Low-battery / charging-complete notifications.
     let batteryMonitor = BatteryMonitor()
-    /// Wake alarms (host-driven; see AlarmController).
-    let alarms = AlarmController()
+    /// Wake alarms (host-driven; see AlarmController). History persists in the local store.
+    let alarms: AlarmController
 
     /// Import status surfaced to Settings → Data.
     @Published var importing = false
@@ -49,6 +49,8 @@ final class AppModel: ObservableObject {
         self.ble = BLEManager(state: live, deviceId: "my-whoop")
         self.repo = Repository(deviceId: "my-whoop")
         self.intelligence = IntelligenceEngine(repo: repo, profile: profile, deviceId: "my-whoop")
+        let repoRef = repo
+        self.alarms = AlarmController(history: { await repoRef.storeHandle() })
         // New strap data (offload / stored-data pull) → recompute scores, refresh caches, redraw screens.
         // When new strap data lands: show raw rows immediately, recompute scores, then refresh the UI again.
         ble.onStoredDataChanged = { [weak self] in
@@ -75,19 +77,31 @@ final class AppModel: ObservableObject {
             BatteryMonitor.requestAuthorization()
         }
         alarms.attach(live: live, ble: ble)
-        // Sleeping-HR reference for smart wake: the most recent nightly resting HR.
-        alarms.sleepingHR = { [weak self] in self?.repo.days.last(where: { $0.restingHr != nil })?.restingHr.map(Double.init) }
-        // Sleep-goal progress: tonight's session so far (from the latest sync) against the estimated need.
+        // Sleeping-HR baseline for smart wake, with provenance: NOOP's own most recent nightly resting HR, else an
+        // imported one (labelled as such). Its age is checked by the policy.
+        alarms.baseline = { [weak self] in
+            guard let self else { return nil }
+            func pick(_ rows: [DailyMetric], _ label: String) -> WakeBaseline? {
+                guard let d = rows.last(where: { $0.restingHr != nil }), let hr = d.restingHr,
+                      let r = ZoneTimeline.shared.dayRange(d.day) else { return nil }
+                return WakeBaseline(bpm: Double(hr), source: "\(label) \(d.day)", asOf: Date(timeIntervalSince1970: TimeInterval(r.from)))
+            }
+            return pick(self.repo.estimates.values.sorted { $0.day < $1.day }, "noop-resting-hr")
+                ?? pick(self.repo.official.values.sorted { $0.day < $1.day }, "imported-resting-hr")
+        }
+        // Sleep-goal progress: tonight's main session so far (from the latest sync) against the estimated need, with the
+        // time the synced data reaches so the policy can reject stale progress.
         alarms.sleepProgress = { [weak self] in
             guard let self else { return nil }
             let now = Int(Date().timeIntervalSince1970)
-            let recent = self.repo.recentSleepEpisodes.filter { $0.endTs > now - 3 * 3600 }
-            guard let sid = recent.max(by: { $0.endTs < $1.endTs })?.sessionId else { return nil }
-            let asleep = recent.filter { $0.sessionId == sid }
-                .reduce(0.0) { $0 + Double($1.endTs - $1.startTs) * ($1.efficiency ?? 0.9) } / 60
+            let recent = self.repo.recentSleepEpisodes.filter { $0.endTs > now - 3 * 3600 && $0.isMainSleep }
+            guard let last = recent.max(by: { $0.endTs < $1.endTs }), let sid = last.sessionId else { return nil }
+            let eps = recent.filter { $0.sessionId == sid }
+            let asleep = eps.reduce(0.0) { $0 + Double($1.endTs - $1.startTs) * ($1.efficiency ?? 0.9) } / 60
             let past = self.repo.days.suffix(14).compactMap(\.totalSleepMin)
-            let need = SleepNeed.summarize(officialNeed: nil, officialDebt: nil, asleep: asleep, recentAsleep: past)?.needMin
-            return need.map { (asleep, $0) }
+            guard let need = SleepNeed.summarize(officialNeed: nil, officialDebt: nil, asleep: asleep, recentAsleep: past)?.needMin else { return nil }
+            return SleepGoalProgress(asleepMin: asleep, needMin: need, sessionId: sid, sessionKind: last.kind,
+                                     dataThrough: Date(timeIntervalSince1970: TimeInterval(last.endTs)))
         }
         // A finished (or stopped) pull goes straight to processing, shown as its own stage.
         ble.onSyncDownloadFinished = { [weak self] complete in self?.runPostSyncProcessing(downloadComplete: complete) }
@@ -97,6 +111,7 @@ final class AppModel: ObservableObject {
             .sink { [weak self] _ in self?.alarms.syncDeviceAlarm() }.store(in: &hrCancellables)
 
         if let mode = LaunchMode.fixtureBattery, ["cycle", "charging"].contains(mode) { playFixtureBattery(mode) }
+        if LaunchMode.fixtureAlarmHistory { seedFixtureAlarmHistory() }
 
         // Turn the strap's offloaded raw data into dashboard scores on launch and every 15
         // minutes, so recovery / strain / sleep populate from the strap itself with no import.
@@ -171,18 +186,72 @@ final class AppModel: ObservableObject {
         }
     }
 
+    /// Synthetic alarm history in the fixture copy (see `LaunchMode.fixtureAlarmHistory`): one occurrence per status, at
+    /// 06:40 on each of the last four mornings so the timeline can line up with the copy's own sleep estimates.
+    private func seedFixtureAlarmHistory() {
+        Task { @MainActor [weak self] in
+            guard let self, LaunchMode.fixtureStore != nil, let store = await self.repo.storeHandle() else { return }
+            let cal = Calendar.current
+            var rows: [AlarmEventRow] = []
+            let kinds = ["dismissed", "unconfirmed", "macOnly", "failed"]
+            for (i, k) in kinds.enumerated() {
+                guard let day = cal.date(byAdding: .day, value: -(i + 1), to: cal.startOfDay(for: Date())),
+                      let deadline = cal.date(bySettingHour: 7, minute: 0, second: 0, of: day) else { continue }
+                let occ = "fixture-\(k)@\(Int(deadline.timeIntervalSince1970))"
+                let decided = deadline.addingTimeInterval(-20 * 60).timeIntervalSince1970
+                func row(_ kind: String, _ dt: Double, _ p: [String: Any], prov: String = "host", strap: Bool = false) -> AlarmEventRow {
+                    AlarmEventRow(occurrenceId: occ, kind: kind, recordedAt: decided + dt, deviceTs: strap ? Int(decided + dt) : nil,
+                                  mappedHostTs: strap ? decided + dt : nil, receivedAt: decided + dt, provenance: prov,
+                                  dedupeKey: "fixture:\(occ):\(kind):\(dt)", payload: AlarmHistory.payload(p))
+                }
+                rows.append(row(AlarmHistoryKind.scheduled, -1200, ["alarmId": "fixture", "mode": "Smart wake, 30-min window",
+                                                                   "deadline": deadline.timeIntervalSince1970,
+                                                                   "windowStart": deadline.timeIntervalSince1970 - 1800,
+                                                                   "timeZone": TimeZone.current.identifier, "policyVersion": SmartWakePolicy.current.version]))
+                rows.append(row(AlarmHistoryKind.decision, 0, ["trigger": "hrRun", "reason": "Heart rate stayed above your sleeping level for 60 s",
+                                                               "evidenceQuality": "3 qualifying windows, 58 samples", "baselineSource": "noop-resting-hr (fixture)",
+                                                               "policyVersion": SmartWakePolicy.current.version]))
+                rows.append(row(AlarmHistoryKind.notification, 1, ["outcome": "submitted"]))
+                switch k {
+                case "dismissed":
+                    rows.append(row(AlarmHistoryKind.commandRequested, 1, ["command": "run"]))
+                    rows.append(row(AlarmHistoryKind.strapEvent, 2, ["event": "HAPTICS_FIRED"], prov: "live", strap: true))
+                    rows.append(row(AlarmHistoryKind.dismissal, 18, ["source": "strap"]))
+                case "unconfirmed":
+                    rows.append(row(AlarmHistoryKind.commandRequested, 1, ["command": "run"]))
+                    rows.append(row(AlarmHistoryKind.deliveryOutcome, 32, ["outcome": "unconfirmed", "detail": "The strap accepted the alarm but didn't report vibrating"]))
+                case "macOnly":
+                    rows.append(row(AlarmHistoryKind.deliveryOutcome, 1, ["outcome": "macOnly", "detail": "Strap not reachable for a buzz"]))
+                default:
+                    rows.append(row(AlarmHistoryKind.deliveryOutcome, 11, ["outcome": "failed", "detail": "No answer from the strap to the alarm time"]))
+                }
+            }
+            _ = try? await store.appendAlarmEvents(rows)
+            self.alarms.loadHistory()
+            FileHandle.standardError.write(Data("[fixture] alarm history seeded (\(rows.count) rows)\n".utf8))
+        }
+    }
+
     /// Synthetic battery states for visual checks of a fixture launch (see `LaunchMode.fixtureBattery`): 8 s each.
     private func playFixtureBattery(_ mode: String) {
-        let steps: [(connected: Bool, pct: Int, charging: Bool?)] = mode == "charging" ? [(true, 62, true)]
-            : [(true, 62, nil), (true, 62, true), (true, 100, true), (false, 100, true)]
+        // Each step: connection, percent, then the strap events / pack reply that state would come from.
+        typealias Step = (connected: Bool, pct: Int, events: [Whoop5EventKind], detachedReply: Bool)
+        let steps: [Step] = mode == "charging" ? [(true, 62, [.batteryPackConnected, .chargingOn], false)]
+            : [(true, 62, [], true),                                   // detached (verified reply shape)
+               (true, 62, [.batteryPackConnected], false),             // attached, charging unknown
+               (true, 63, [.chargingOn], false),                       // confirmed charging
+               (true, 100, [], false),                                 // full
+               (false, 100, [], false)]                                // disconnected: stale, unknown
         Task { @MainActor [weak self] in
             for (i, s) in steps.enumerated() {
                 guard let self else { return }
+                if s.connected && !self.live.connected { self.live.beginConnection() }
                 self.live.connected = s.connected
+                if !s.connected { self.live.resetTelemetry() }
                 if s.connected {
-                    self.live.battery = BatteryStatus(reading: BatteryReading(percent: s.pct, charging: s.charging,
-                                                                             at: Date().timeIntervalSince1970, source: .vendorCommand))
-                    self.live.batteryPct = Double(s.pct)
+                    if s.detachedReply { self.live.applyPackInfo(.detached, requestedAt: Date(), connection: self.live.connectionId) }
+                    for e in s.events { self.live.applyChargingEvent(e, eventAt: Date()) }
+                    self.live.updateBattery(BatteryReading(percent: s.pct, charging: nil, at: Date().timeIntervalSince1970, source: .vendorCommand))
                 }
                 FileHandle.standardError.write(Data("[fixture] battery step \(i)\n".utf8))
                 try? await Task.sleep(nanoseconds: 8_000_000_000)
@@ -214,9 +283,9 @@ final class AppModel: ObservableObject {
     }
 
     /// Enable the realtime stream + mark it wanted so the keep-alive re-arms it (can't lapse).
-    func startRealtimeHR() { ble.startRealtime() }
+    func startRealtimeHR(owner: String = "ui") { ble.startRealtime(owner: owner) }
     /// Stop the realtime stream and clear the live reading (HR is still recorded by the strap and offloaded in history).
-    func stopRealtimeHR() { ble.stopRealtime() }
+    func stopRealtimeHR(owner: String = "ui") { ble.stopRealtime(owner: owner) }
     /// Turn the strap's standard heart-rate broadcast on/off (WHOOP 4.0).
     func setHRBroadcast(_ on: Bool) { ble.setHRBroadcast(on) }
     /// Ask the strap for a fresh battery reading and whether its charging pack is on (5.0; ignored on 4.0).

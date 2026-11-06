@@ -225,6 +225,20 @@ final class Repository: ObservableObject {
         return (try? await store.sleepSessions(deviceId: deviceId, from: from, to: to, limit: limit)) ?? []
     }
 
+    /// NOOP's own sleep episodes (raw rows, never recombined, so no repository-inserted gap labels) overlapping a span.
+    /// Imported rows are excluded: they hold stage totals, not a timeline.
+    func noopSleepEpisodes(from: Int, to: Int) async -> [CachedSleepSession] {
+        guard let store = await ensureStore() else { return [] }
+        return ((try? await store.sleepSessions(deviceId: computedDeviceId, from: from - 86_400, to: to + 86_400, limit: 200)) ?? [])
+            .filter { $0.endTs > from && $0.startTs < to }
+    }
+
+    /// Newest stored heart-rate timestamp (any day): how far synced data reaches.
+    func latestHRTimestamp() async -> Int? {
+        guard let store = await ensureStore() else { return nil }
+        return try? await store.latestHRSampleTs(deviceId: deviceId)
+    }
+
     // MARK: - Metric explorer reads (generic substrate)
 
     /// Daily series for any metric key from a given source ("my-whoop" / "apple-health").

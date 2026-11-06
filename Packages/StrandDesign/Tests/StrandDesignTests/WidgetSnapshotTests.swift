@@ -68,7 +68,7 @@ final class WidgetSnapshotTests: XCTestCase {
 
     private var charging: some View {
         HStack(spacing: 20) {
-            ForEach(Array([(ChargingIllustration.Phase.idle, 62, false), (.charging, 48, false), (.full, 100, false), (.idle, 31, true)].enumerated()),
+            ForEach(Array([(ChargingIllustration.Phase.idle, 62, false), (.attached, 62, false), (.charging, 48, false), (.full, 100, false), (.unknown, 31, true)].enumerated()),
                     id: \.offset) { _, s in
                 ChargingIllustration(phase: s.0, percent: s.1, dimmed: s.2, height: 110).frame(width: 220)
             }

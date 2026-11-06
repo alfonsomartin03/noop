@@ -24,6 +24,8 @@ struct TodayView: View {
     @State private var steps: Int?
     /// The picked day's strap heart-rate samples, summarised once per load.
     @State private var dayStats: DayHRStats?
+    /// Newest stored HR anywhere (how far synced data reaches), for the coverage caption.
+    @State private var syncedThrough: Int?
     /// The night's main sleep session (longest one ending on the picked day), for the stage graph.
     @State private var night: CachedSleepSession?
 
@@ -41,6 +43,7 @@ struct TodayView: View {
                 PairingResetNotice()
                 ConnectionStrip()
                 SyncProgressStrip()
+                NextAlarmLink()
                 WeekStrip(activeDay: activeDay, byDay: byDay) { selectedDay = $0 }
                 if let detail {
                     detailPage(detail).transition(.opacity)
@@ -84,7 +87,8 @@ struct TodayView: View {
         VStack(alignment: .leading, spacing: NoopMetrics.gap) {
             // A plain row (not the packing grid) so the gap to the heart-rate card below is exactly one card gap.
             ScoreCardRow(first: { recoveryWidget(d) }, second: { sleepWidget(d) }, third: { strainWidget(d) })
-            HeartRateDayCard(day: activeDay, metric: d, days: repo.days, stats: dayStats) { navigate(.live) }
+            HeartRateDayCard(day: activeDay, metric: d, days: repo.days, stats: dayStats, syncedThrough: syncedThrough,
+                             importedSummary: repo.isOfficial(activeDay)) { navigate(.live) }
         }
         .redacted(reason: repo.loaded ? [] : .placeholder)
     }
@@ -128,15 +132,11 @@ struct TodayView: View {
                     .font(.system(size: 13, weight: .medium)).foregroundStyle(StrandPalette.textSecondary)
                 Spacer(minLength: 0)
                 if d?.totalSleepMin != nil {
-                    if let tl = SleepTimeline.intervals(session: night, day: d) {
-                        // The same stage-over-the-night staircase as the Sleep tab.
-                        Hypnogram(intervals: tl.intervals, height: 84, showsStageAxis: false,
+                    if let tl = SleepTimeline.intervals(session: night) {
+                        // The same stage-over-the-night staircase as the Sleep tab (genuine timestamped stages only).
+                        Hypnogram(intervals: tl, height: 84, showsStageAxis: false,
                                   nightStart: night.map { Date(timeIntervalSince1970: TimeInterval($0.startTs)) },
                                   timeZone: night.map { ZoneTimeline.shared.zone(forSpan: $0.startTs, $0.endTs) } ?? .autoupdatingCurrent)
-                        if tl.estimated {
-                            Text("Stage order estimated from totals").font(.system(size: 10))
-                                .foregroundStyle(StrandPalette.textTertiary)
-                        }
                     } else {
                         SleepStageBar(deep: d?.deepMin, rem: d?.remMin, light: d?.lightMin)
                     }
@@ -206,6 +206,7 @@ struct TodayView: View {
             let samples = await repo.hrSamples(from: r.from, to: r.to, limit: 200_000)
             let scoredMax = await repo.dayLoad(key)?.calibration.hrMax
             dayStats = await DayHRStats.build(hr: samples, profile: profile, restingHR: byDay[key]?.restingHr, maxHR: scoredMax)
+            syncedThrough = await repo.latestHRTimestamp()
             night = SleepTimeline.pick(repo.sleeps, range: r, day: byDay[key])
         }
         let apple = await repo.appleDailyRows().first { $0.day == key }
@@ -440,23 +441,44 @@ private struct HeartRateDayCard: View {
     let metric: DailyMetric?
     let days: [DailyMetric]
     let stats: DayHRStats?
+    var syncedThrough: Int? = nil
+    var importedSummary = false
     let openLive: () -> Void
 
     private var isToday: Bool { day == Repository.dayString(Date()) }
 
     var body: some View {
         StrandWidget("Heart rate", symbol: "heart.fill", tint: StrandPalette.metricRose, trailing: isToday ? "Live" : nil, action: openLive) {
-            SummaryChartLayout {
-                summary
-                chart
+            // Re-evaluated each minute so "recorded so far" follows the clock on today.
+            TimelineView(.periodic(from: .now, by: 60)) { ctx in
+                let cov = coverage(now: ctx.date)
+                SummaryChartLayout {
+                    summary(cov)
+                    VStack(alignment: .leading, spacing: 6) {
+                        chart
+                        if let cov, !cov.details(clock: DayMath.clock).isEmpty {
+                            Text(cov.details(clock: DayMath.clock).joined(separator: " "))
+                                .font(.system(size: 10)).foregroundStyle(StrandPalette.textTertiary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                }
             }
         }
     }
 
-    private var summary: some View {
+    /// Coverage of the picked day: its real length (DST included) clipped to now, against the supported intervals.
+    private func coverage(now: Date) -> DayCoverage? {
+        guard let r = DayMath.range(day) else { return nil }
+        return DayCoverage.compute(dayStart: r.from, dayEnd: r.to, now: Int(now.timeIntervalSince1970),
+                                   intervals: stats?.supportedIntervals ?? [], syncedThrough: syncedThrough,
+                                   hasImportedSummary: importedSummary && (stats?.isEmpty ?? true))
+    }
+
+    private func summary(_ cov: DayCoverage?) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             headline
-            ForEach(insights.prefix(5)) { ins in
+            ForEach(insights(cov).prefix(5)) { ins in
                 HStack(alignment: .top, spacing: 8) {
                     Image(systemName: ins.icon).font(.system(size: 11, weight: .bold)).foregroundStyle(ins.tint).frame(width: 16)
                     Text(ins.text).font(.system(size: 12)).foregroundStyle(StrandPalette.textSecondary)
@@ -559,7 +581,7 @@ private struct HeartRateDayCard: View {
 
     private struct Insight: Identifiable { let id = UUID(); let icon: String; let text: String; let tint: Color }
 
-    private var insights: [Insight] {
+    private func insights(_ cov: DayCoverage?) -> [Insight] {
         var out: [Insight] = []
         if let rhr = metric?.restingHr {
             let base = DayMath.baseline(days, before: day) { $0.restingHr.map(Double.init) }
@@ -587,11 +609,12 @@ private struct HeartRateDayCard: View {
                                text: s.elevatedMin >= 1 ? "Elevated (Zone 3+) for \(DayMath.hm(s.elevatedMin))."
                                                         : "No time in Zone 3 or higher, a calm day for your heart.",
                                tint: StrandPalette.metricAmber))
-            let hours = s.coveredS / 3600
-            out.append(Insight(icon: hours >= 20 ? "checkmark.circle.fill" : "exclamationmark.circle.fill",
-                               text: hours >= 20 ? String(format: "Heart rate recorded for %.0f h of the day.", hours)
-                                                 : String(format: "Only %.1f h recorded. Gaps mean the strap was off or hasn't synced yet.", hours),
-                               tint: hours >= 20 ? StrandPalette.statusPositive : StrandPalette.statusWarning))
+        }
+        // Coverage: neutral wording; a warning only for meaningful missing elapsed time (not the normal sync delay).
+        if let cov, !cov.isFuture {
+            let warn = cov.warrantsWarning
+            out.append(Insight(icon: warn ? "exclamationmark.circle.fill" : "clock",
+                               text: cov.caption(), tint: warn ? StrandPalette.statusWarning : StrandPalette.textTertiary))
         }
         return out
     }

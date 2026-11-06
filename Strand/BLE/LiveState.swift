@@ -53,9 +53,12 @@ public final class LiveState: ObservableObject {
     @Published public var clock: ClockEstimate? = nil
     /// Battery with its source and age. `batteryPct` stays as the plain value existing views read.
     @Published public var battery: BatteryStatus? = nil
-    /// Charging as the strap itself last reported it this connection (a charging event, or whether the charging pack is
-    /// attached). nil = not reported. Cleared on disconnect; never inferred from a rising percentage.
-    @Published public var chargingReport: ChargingReport? = nil
+    /// Pack attachment and active charging as two separate facts, each with source, event/receipt time and the connection
+    /// it arrived on (`ChargingModel`). Reset on every new connection; a rising percentage only feeds the separately
+    /// labelled "charging likely" inference.
+    @Published public private(set) var charging = ChargingModel()
+    /// Identity of the current connection (charging facts and pack-info requests are bound to it).
+    public var connectionId: UUID { charging.connection }
     /// Realtime HR stream (type 40) state: on while frames keep arriving.
     @Published public var realtimeStreaming = false
     /// Recent strap events (newest first, capped) for the diagnostics panel; unknown numbers are kept.
@@ -94,9 +97,12 @@ public final class LiveState: ObservableObject {
 
     /// Funnel for typed battery readings (2A19, GET_BATTERY_LEVEL). Keeps `batteryPct` and the hook in step.
     public func updateBattery(_ r: BatteryReading) {
-        // A level reading carries no charging flag of its own; take the strap's latest charging report with it, so the
-        // badge and the charging-complete alert see the same state.
-        let r = r.charging != nil ? r : BatteryReading(percent: r.percent, charging: chargingReport?.charging, at: r.at, source: r.source)
+        // A level reading carries no charging flag of its own. Stamp it with the CONFIRMED, fresh charging fact only, so
+        // the badge and the charging-complete alert agree; the reading never refreshes that fact, and "likely" never counts.
+        let at = Date(timeIntervalSince1970: r.at)
+        charging.applyPercent(r.percent, at: at, connection: charging.connection)
+        let confirmed: Bool? = switch charging.charging(now: at) { case .yes: true; case .no: false; case .unknown: nil }
+        let r = BatteryReading(percent: r.percent, charging: confirmed, at: r.at, source: r.source)
         battery = BatteryStatus(reading: r)
         setBattery(Double(r.percent))
         onBatteryReading?(r)
@@ -104,11 +110,30 @@ public final class LiveState: ObservableObject {
     /// Typed battery hook (wired by AppModel to the notification monitor).
     public var onBatteryReading: ((BatteryReading) -> Void)?
 
-    /// The strap reported charging on/off. Re-stamps the current battery reading so every surface updates at once.
-    public func updateCharging(_ charging: Bool, source: ChargingReport.Source, at: Date = Date()) {
-        chargingReport = ChargingReport(charging: charging, at: at, source: source)
-        if let b = battery, b.charging != charging {
-            battery = BatteryStatus(reading: BatteryReading(percent: b.percent, charging: charging, at: b.at.timeIntervalSince1970, source: b.source))
+    /// A live charging / pack event (5.0 events 7/8/21/22, or the 4.0 event strings), at its own event time.
+    public func applyChargingEvent(_ kind: Whoop5EventKind, eventAt: Date, receivedAt: Date = Date()) {
+        charging.applyEvent(kind: kind, eventAt: eventAt, receivedAt: receivedAt, connection: charging.connection)
+        restampBattery(now: receivedAt)
+    }
+    /// WHOOP 4.0 BATTERY_LEVEL event charging flag.
+    public func applyCharging4(_ on: Bool, at: Date = Date()) {
+        charging.applyBattery4Flag(on, eventAt: at, receivedAt: at, connection: charging.connection)
+        restampBattery(now: at)
+    }
+    /// A GET_BATTERY_PACK_INFO reply to a request sent at `requestedAt` on `connection`.
+    public func applyPackInfo(_ r: PackInfoReply, requestedAt: Date, connection: UUID, receivedAt: Date = Date()) {
+        charging.applyPackInfo(r, requestedAt: requestedAt, receivedAt: receivedAt, connection: connection)
+        restampBattery(now: receivedAt)
+    }
+    /// A new connection: no charging fact carries over from the previous one.
+    public func beginConnection() { charging.reset(connection: UUID()) }
+
+    /// Keep the shown reading's charging flag in step with the confirmed fact (the reading's own time is kept).
+    private func restampBattery(now: Date) {
+        guard let b = battery else { return }
+        let c: Bool? = switch charging.charging(now: now) { case .yes: true; case .no: false; case .unknown: nil }
+        if b.charging != c {
+            battery = BatteryStatus(reading: BatteryReading(percent: b.percent, charging: c, at: b.at.timeIntervalSince1970, source: b.source))
         }
     }
 
@@ -127,7 +152,7 @@ public final class LiveState: ObservableObject {
 
     /// Clear per-connection telemetry (called on disconnect).
     public func resetTelemetry() {
-        family = nil; historyBusy = false; realtimeStreaming = false; clock = nil; chargingReport = nil; hrSubscribed = false; hrBroadcast = nil; hrPackets = 0; strapFrames = 0; lastDataAt = nil
+        family = nil; historyBusy = false; realtimeStreaming = false; clock = nil; charging.reset(connection: UUID()); hrSubscribed = false; hrBroadcast = nil; hrPackets = 0; strapFrames = 0; lastDataAt = nil
     }
 
     // Capped at 200 lines so the debug log can't grow without bound.
@@ -148,21 +173,6 @@ public struct BatteryStatus: Equatable {
         percent = r.percent; at = Date(timeIntervalSince1970: r.at); source = r.source; charging = r.charging
     }
     public func isStale(now: Date = Date(), after: TimeInterval = 600) -> Bool { now.timeIntervalSince(at) > after }
-}
-
-/// One charging report from the strap, with where it came from.
-public struct ChargingReport: Equatable {
-    public enum Source: String, Equatable {
-        /// CHARGING_ON / CHARGING_OFF event.
-        case chargingEvent
-        /// BATTERY_PACK_CONNECTED / BATTERY_PACK_REMOVED event, or the GET_BATTERY_PACK_INFO reply.
-        case batteryPack
-        /// The charging flag in a WHOOP 4.0 BATTERY_LEVEL event.
-        case batteryEvent
-    }
-    public let charging: Bool
-    public let at: Date
-    public let source: Source
 }
 
 /// Standard Device Information service values. Cached in UserDefaults so Settings can show them offline.

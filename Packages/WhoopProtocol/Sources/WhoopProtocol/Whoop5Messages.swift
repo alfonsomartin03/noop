@@ -56,6 +56,10 @@ public struct Whoop5CommandResponse: Equatable, Sendable {
     /// PENDING is always followed by a second response carrying the final result.
     public var isFinal: Bool { result != .pending }
 
+    public init(command: UInt8, appSeq: UInt8, strapSeq: UInt8, result: Whoop5Result, body: [UInt8]) {
+        self.command = command; self.appSeq = appSeq; self.strapSeq = strapSeq; self.result = result; self.body = body
+    }
+
     public static func decode(_ frame: [UInt8]) -> Whoop5CommandResponse? {
         guard let p = whoop5Payload(frame), p.count >= 5, p[0] == 36 || p[0] == 38 else { return nil }
         return Whoop5CommandResponse(command: p[2], appSeq: p[3], strapSeq: p[1], result: Whoop5Result(p[4]),
@@ -238,6 +242,10 @@ public struct Whoop5Event: Equatable, Sendable {
     public let subseconds: Int
     public let body: [UInt8]
 
+    public init(number: Int, kind: Whoop5EventKind, unix: Int, subseconds: Int, body: [UInt8]) {
+        self.number = number; self.kind = kind; self.unix = unix; self.subseconds = subseconds; self.body = body
+    }
+
     public static func decode(_ frame: [UInt8]) -> Result<Whoop5Event, Whoop5DecodeError> {
         guard let p = whoop5Payload(frame) else { return .failure(.badFrame) }
         guard p.first == 48 else { return .failure(.wrongType(p.first ?? 0)) }
@@ -263,30 +271,31 @@ public struct Whoop5Event: Equatable, Sendable {
 
 /// What the strap itself reports about charging. NOOP shows "charging" only from these, never from a rising percentage.
 public enum Whoop5Charging {
-    /// Charging events: CHARGING_ON/OFF and BATTERY_PACK_CONNECTED/REMOVED (the pack is the charger). nil for others.
-    public static func signal(_ kind: Whoop5EventKind) -> Bool? {
+    /// True for the four events `ChargingModel.applyEvent` reads: CHARGING_ON/OFF (activity) and
+    /// BATTERY_PACK_CONNECTED/REMOVED (attachment; removal also ends charging).
+    public static func isChargingEvent(_ kind: Whoop5EventKind) -> Bool {
         switch kind {
-        case .chargingOn, .batteryPackConnected: return true
-        case .chargingOff, .batteryPackRemoved: return false
-        default: return nil
+        case .chargingOn, .chargingOff, .batteryPackConnected, .batteryPackRemoved: return true
+        default: return false
         }
     }
 
     public static let packInfoCommand: UInt8 = 151
 
-    /// GET_BATTERY_PACK_INFO (151) reply: is a battery pack attached? CONFIRMED detached form (E02): result FAILURE with
-    /// body `01` + zero bytes. Any SUCCESS is read as attached (the attached body layout is not decoded). nil = no answer.
-    public static func packAttached(command: UInt8, result: Whoop5Result, body: [UInt8]) -> Bool? {
+    /// GET_BATTERY_PACK_INFO (151) reply, parsed only into captured shapes. Detached (E02): result FAILURE with a 31-byte
+    /// body `01` + 30 zero bytes. SUCCESS has never been captured, so its layout is not decoded and it is NOT read as
+    /// "attached". PENDING (non-final) and every other shape are unrecognized.
+    public static func packInfo(command: UInt8, result: Whoop5Result, body: [UInt8]) -> PackInfoReply? {
         guard command == packInfoCommand else { return nil }
         switch result {
-        case .success: return true
-        case .failure where body.first == 1 && body.dropFirst().allSatisfy({ $0 == 0 }): return false
-        default: return nil
+        case .failure where body.count == 31 && body.first == 1 && body.dropFirst().allSatisfy({ $0 == 0 }): return .detached
+        case .success: return .answeredUndecoded
+        default: return .unrecognized
         }
     }
 
-    public static func packAttached(_ r: Whoop5CommandResponse) -> Bool? {
-        packAttached(command: r.command, result: r.result, body: r.body)
+    public static func packInfo(_ r: Whoop5CommandResponse) -> PackInfoReply? {
+        packInfo(command: r.command, result: r.result, body: r.body)
     }
 }
 

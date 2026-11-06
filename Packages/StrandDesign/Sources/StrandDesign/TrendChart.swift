@@ -22,6 +22,11 @@ public struct TrendPoint: Identifiable, Sendable {
 
 public struct TrendChart: View {
 
+    /// `.standard` draws every point; `.soft` is the rounder, Health-app look: a thick monotone
+    /// line with no overshoot, a fuller fade beneath it, one glowing bubble on the latest point,
+    /// dashed whisper-light grid lines and rounded axis labels.
+    public enum Style: Sendable { case standard, soft }
+
     public var points: [TrendPoint]
     /// The gradient the line/area is stroked with (defaults to the recovery scale).
     public var gradient: Gradient
@@ -36,6 +41,7 @@ public struct TrendChart: View {
     public var valueFormat: (Double) -> String
     /// Formats a point's date for the tooltip's secondary line.
     public var dateFormat: (Date) -> String
+    public var style: Style
 
     public init(
         points: [TrendPoint],
@@ -45,7 +51,8 @@ public struct TrendChart: View {
         height: CGFloat = 220,
         showsHover: Bool = true,
         valueFormat: @escaping (Double) -> String = { String(Int($0.rounded())) },
-        dateFormat: @escaping (Date) -> String = { TrendChart.defaultDateString($0) }
+        dateFormat: @escaping (Date) -> String = { TrendChart.defaultDateString($0) },
+        style: Style = .standard
     ) {
         self.points = points.sorted { $0.date < $1.date }
         self.gradient = gradient
@@ -55,6 +62,7 @@ public struct TrendChart: View {
         self.showsHover = showsHover
         self.valueFormat = valueFormat
         self.dateFormat = dateFormat
+        self.style = style
     }
 
     /// The x-position the cursor is hovering, in chart-local coordinates.
@@ -95,6 +103,11 @@ public struct TrendChart: View {
         LinearGradient(gradient: gradient, startPoint: .bottom, endPoint: .top)
     }
 
+    private var soft: Bool { style == .soft }
+    private var interpolation: InterpolationMethod { soft ? .monotone : .catmullRom }
+    private var axisFont: Font { soft ? .system(size: 11, weight: .medium, design: .rounded) : StrandFont.footnote }
+    private var gridStroke: StrokeStyle { soft ? StrokeStyle(lineWidth: 0.6, dash: [2, 4]) : StrokeStyle(lineWidth: 0.5) }
+
     public var body: some View {
         Chart {
             if showsArea {
@@ -103,11 +116,12 @@ public struct TrendChart: View {
                         x: .value("Date", p.date),
                         y: .value("Value", p.value)
                     )
-                    .interpolationMethod(.catmullRom)
+                    .interpolationMethod(interpolation)
                     .foregroundStyle(
                         LinearGradient(
                             colors: [
-                                StrandPalette.sample(stops: gradient.toStops(), at: unit(averageValue)).opacity(0.28),
+                                StrandPalette.sample(stops: gradient.toStops(), at: unit(averageValue)).opacity(soft ? 0.34 : 0.28),
+                                StrandPalette.sample(stops: gradient.toStops(), at: unit(averageValue)).opacity(soft ? 0.08 : 0),
                                 Color.clear
                             ],
                             startPoint: .top, endPoint: .bottom
@@ -120,36 +134,49 @@ public struct TrendChart: View {
                     x: .value("Date", p.date),
                     y: .value("Value", p.value)
                 )
-                .interpolationMethod(.catmullRom)
-                .lineStyle(StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round))
+                .interpolationMethod(interpolation)
+                .lineStyle(StrokeStyle(lineWidth: soft ? 3.5 : 2.5, lineCap: .round, lineJoin: .round))
                 .foregroundStyle(valueGradient)
             }
-            ForEach(points) { p in
-                PointMark(
-                    x: .value("Date", p.date),
-                    y: .value("Value", p.value)
-                )
-                .symbolSize(18)
-                .foregroundStyle(StrandPalette.sample(stops: gradient.toStops(), at: unit(p.value)))
+            if soft {
+                // One bubble on the latest reading: a soft halo with a white-rimmed dot inside.
+                if let last = points.last {
+                    let color = StrandPalette.sample(stops: gradient.toStops(), at: unit(last.value))
+                    PointMark(x: .value("Date", last.date), y: .value("Value", last.value))
+                        .symbolSize(260).foregroundStyle(color.opacity(0.18))
+                    PointMark(x: .value("Date", last.date), y: .value("Value", last.value))
+                        .symbolSize(70).foregroundStyle(Color.white)
+                    PointMark(x: .value("Date", last.date), y: .value("Value", last.value))
+                        .symbolSize(36).foregroundStyle(color)
+                }
+            } else {
+                ForEach(points) { p in
+                    PointMark(
+                        x: .value("Date", p.date),
+                        y: .value("Value", p.value)
+                    )
+                    .symbolSize(18)
+                    .foregroundStyle(StrandPalette.sample(stops: gradient.toStops(), at: unit(p.value)))
+                }
             }
         }
         .chartYScale(domain: valueRange)
         // Marks outside the value domain (out-of-range points, catmull-rom overshoot) would otherwise
         // draw past the plot area and across the page. Inset, then clip to the plot frame.
-        .chartPlotStyle { $0.padding(.vertical, 5).padding(.horizontal, 6).clipped() }
+        .chartPlotStyle { $0.padding(.vertical, soft ? 10 : 5).padding(.horizontal, soft ? 10 : 6).clipped() }
         .chartXAxis {
             // Aligned, so the first and last dates stay inside the plot instead of truncating at its edge.
             AxisMarks(preset: .aligned, values: .automatic(desiredCount: 5)) { _ in
-                AxisGridLine().foregroundStyle(StrandPalette.hairline.opacity(0.4))
+                AxisGridLine(stroke: gridStroke).foregroundStyle(StrandPalette.hairline.opacity(soft ? 0.6 : 0.4))
                 AxisValueLabel().foregroundStyle(StrandPalette.textTertiary)
-                    .font(StrandFont.footnote)
+                    .font(axisFont)
             }
         }
         .chartYAxis {
             AxisMarks(position: .leading, values: .automatic(desiredCount: 4)) { _ in
-                AxisGridLine().foregroundStyle(StrandPalette.hairline.opacity(0.4))
+                AxisGridLine(stroke: gridStroke).foregroundStyle(StrandPalette.hairline.opacity(soft ? 0.6 : 0.4))
                 AxisValueLabel().foregroundStyle(StrandPalette.textTertiary)
-                    .font(StrandFont.footnote)
+                    .font(axisFont)
             }
         }
         .chartOverlay { proxy in

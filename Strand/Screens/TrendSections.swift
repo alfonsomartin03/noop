@@ -153,30 +153,67 @@ struct TrendRangeBar: View {
     }
 }
 
-/// A compact number: small label, large value with its unit, one line of context.
+/// A compact number in a soft, rounded bubble: a tinted icon badge and label, a large rounded value with its unit,
+/// one line of context. `accent` washes the bubble and colors the badge; `tint` colors the value itself.
 struct TrendStat: View {
     let label: String
     let value: String?
     var unit: String? = nil
     var caption: String? = nil
     var tint: Color = StrandPalette.textPrimary
+    var symbol: String? = nil
+    var accent: Color = StrandPalette.accent
+
+    @State private var hovering = false
+    private static let radius: CGFloat = 26
 
     var body: some View {
-        NoopCard {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(label).strandOverline().lineLimit(1)
-                HStack(alignment: .firstTextBaseline, spacing: 4) {
-                    Text(value ?? "—").font(.system(size: 28, weight: .bold).monospacedDigit())
+        let shape = RoundedRectangle(cornerRadius: Self.radius, style: .continuous)
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 7) {
+                if let symbol {
+                    Image(systemName: symbol)
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(StrandPalette.ink(accent))
+                        .frame(width: 24, height: 24)
+                        .background(accent.opacity(0.18), in: Circle())
+                }
+                Text(label)
+                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    .foregroundStyle(StrandPalette.textSecondary)
+                    .lineLimit(1)
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(alignment: .firstTextBaseline, spacing: 3) {
+                    Text(value ?? "—").font(.system(size: 30, weight: .bold, design: .rounded).monospacedDigit())
                         .foregroundStyle(value == nil ? StrandPalette.textTertiary : tint)
                         .lineLimit(1).minimumScaleFactor(0.7)
                     if let unit, value != nil {
-                        Text(unit).font(.system(size: 13, weight: .semibold)).foregroundStyle(StrandPalette.textSecondary)
+                        Text(unit).font(.system(size: 14, weight: .semibold, design: .rounded))
+                            .foregroundStyle(StrandPalette.textSecondary)
                     }
                 }
-                Text(caption ?? " ").font(StrandFont.footnote).foregroundStyle(StrandPalette.textTertiary).lineLimit(1)
+                Text(caption ?? " ").font(.system(size: 12, weight: .medium, design: .rounded))
+                    .foregroundStyle(StrandPalette.textTertiary).lineLimit(1)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .padding(.horizontal, 18).padding(.vertical, 16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(StrandPalette.surfaceRaised, in: shape)
+        // Soft wash of the accent from the top-leading corner, like a lit bubble.
+        .background(
+            shape.fill(RadialGradient(colors: [accent.opacity(0.16), accent.opacity(0.04)],
+                                      center: .topLeading, startRadius: 0, endRadius: 220))
+                .allowsHitTesting(false),
+            alignment: .center
+        )
+        .overlay(shape.fill(LinearGradient(colors: [Color.white.opacity(0.08), .clear], startPoint: .top, endPoint: .center))
+            .allowsHitTesting(false))
+        .overlay(shape.strokeBorder(accent.opacity(hovering ? 0.35 : 0.18), lineWidth: 0.75))
+        .shadow(color: accent.opacity(hovering ? 0.18 : 0.08), radius: hovering ? 18 : 12, y: hovering ? 8 : 5)
+        .scaleEffect(hovering ? 1.02 : 1)
+        .animation(StrandMotion.respecting(.spring(response: 0.35, dampingFraction: 0.7)), value: hovering)
+        .onHover { hovering = $0 }
         .accessibilityElement(children: .combine)
     }
 }
@@ -196,29 +233,56 @@ struct TrendCard<Chart: View, Footer: View>: View {
     var value: String? = nil
     var valueLabel: String = "average"
     var height: CGFloat = NoopMetrics.chartHeight
+    /// Colors the headline number; text-primary when nil.
+    var accent: Color? = nil
     @ViewBuilder var chart: () -> Chart
     @ViewBuilder var footer: () -> Footer
 
     var body: some View {
         NoopCard {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 14) {
                 HStack(alignment: .top) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(title).font(.system(size: 16, weight: .semibold)).foregroundStyle(StrandPalette.textPrimary)
-                        Text(caption).font(StrandFont.footnote).foregroundStyle(StrandPalette.textTertiary)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(title).font(.system(size: 17, weight: .semibold, design: .rounded)).foregroundStyle(StrandPalette.textPrimary)
+                        Text(caption).font(.system(size: 12, weight: .medium, design: .rounded)).foregroundStyle(StrandPalette.textTertiary)
                     }
                     Spacer(minLength: 12)
                     if let value {
                         VStack(alignment: .trailing, spacing: 0) {
-                            Text(value).font(.system(size: 22, weight: .bold).monospacedDigit())
-                                .foregroundStyle(StrandPalette.textPrimary)
-                            Text(valueLabel).font(StrandFont.footnote).foregroundStyle(StrandPalette.textTertiary)
+                            Text(value).font(.system(size: 26, weight: .bold, design: .rounded).monospacedDigit())
+                                .foregroundStyle(accent.map(StrandPalette.scoreInk) ?? StrandPalette.textPrimary)
+                            Text(valueLabel).font(.system(size: 12, weight: .medium, design: .rounded))
+                                .foregroundStyle(StrandPalette.textTertiary)
                         }
                     }
                 }
                 .accessibilityElement(children: .combine)
                 chart().frame(height: height)
                 footer()
+            }
+        }
+    }
+}
+
+/// The numbers under a trend chart as soft rounded pills.
+struct TrendFooter: View {
+    let items: [(String, String)]
+    var accent: Color = StrandPalette.accent
+    init(_ items: [(String, String)], accent: Color = StrandPalette.accent) { self.items = items; self.accent = accent }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            ForEach(Array(items.enumerated()), id: \.offset) { _, it in
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(it.0).font(.system(size: 11, weight: .medium, design: .rounded)).foregroundStyle(StrandPalette.textTertiary)
+                        .lineLimit(1)
+                    Text(it.1).font(.system(size: 14, weight: .semibold, design: .rounded).monospacedDigit())
+                        .foregroundStyle(StrandPalette.textPrimary).lineLimit(1).minimumScaleFactor(0.75)
+                }
+                .padding(.horizontal, 12).padding(.vertical, 8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(accent.opacity(0.08), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .accessibilityElement(children: .combine)
             }
         }
     }
@@ -233,13 +297,15 @@ struct TrendEmptyChart: View {
     var needs = "A trend needs at least two days."
     var body: some View {
         VStack(spacing: 6) {
-            Image(systemName: "chart.line.uptrend.xyaxis").font(.system(size: 18)).foregroundStyle(StrandPalette.textTertiary)
+            Image(systemName: "chart.line.uptrend.xyaxis").font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(StrandPalette.textTertiary)
+                .frame(width: 40, height: 40).background(StrandPalette.surfaceRaised, in: Circle())
             Text(count == 1 ? one : none)
-                .font(StrandFont.subhead).foregroundStyle(StrandPalette.textSecondary)
-            Text(needs).font(StrandFont.footnote).foregroundStyle(StrandPalette.textTertiary)
+                .font(.system(size: 14, weight: .semibold, design: .rounded)).foregroundStyle(StrandPalette.textSecondary)
+            Text(needs).font(.system(size: 12, weight: .medium, design: .rounded)).foregroundStyle(StrandPalette.textTertiary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(StrandPalette.surfaceInset, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .background(StrandPalette.surfaceInset, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         .accessibilityElement(children: .combine)
     }
 }
@@ -255,18 +321,25 @@ struct TrendLineCard: View {
     var format: (Double) -> String = { "\(Int($0.rounded()))" }
     var note: String? = nil
 
+    /// The gradient's color at the series average, for the headline and footer.
+    private var accent: Color {
+        let lo = valueRange.lowerBound, hi = valueRange.upperBound
+        let t = hi > lo ? min(max(((series.mean ?? lo) - lo) / (hi - lo), 0), 1) : 1
+        return StrandPalette.sample(stops: gradient.stops, at: t)
+    }
+
     var body: some View {
         TrendCard(title: title, caption: note.map { "\(series.caption) · \($0)" } ?? series.caption,
-                  value: series.mean.map { unit.isEmpty ? format($0) : "\(format($0)) \(unit)" }, height: height) {
+                  value: series.mean.map { unit.isEmpty ? format($0) : "\(format($0)) \(unit)" }, height: height, accent: accent) {
             if series.canDraw {
                 TrendChart(points: series.points, gradient: gradient, valueRange: valueRange, showsArea: true, height: height,
-                           valueFormat: { unit.isEmpty ? format($0) : "\(format($0)) \(unit)" })
+                           valueFormat: { unit.isEmpty ? format($0) : "\(format($0)) \(unit)" }, style: .soft)
             } else {
                 TrendEmptyChart(count: series.points.count)
             }
         } footer: {
-            ChartFooter([("Low", series.low.map(format) ?? "—"), ("High", series.high.map(format) ?? "—"),
-                         ("Days", "\(series.points.count)")])
+            TrendFooter([("Low", series.low.map(format) ?? "—"), ("High", series.high.map(format) ?? "—"),
+                         ("Days", "\(series.points.count)")], accent: accent)
         }
     }
 }
@@ -306,28 +379,33 @@ struct SleepTrendsContent: View {
 
                 TrendRangeBar(range: $range, sparseNote: duration.widened ? duration.caption : nil)
                 TrendSummaryRow {
-                    TrendStat(label: "Average asleep", value: duration.mean.map(Self.hoursText), caption: "per night")
+                    TrendStat(label: "Average asleep", value: duration.mean.map(Self.hoursText), caption: "per night",
+                              symbol: "bed.double.fill", accent: StrandPalette.sleepLight)
                     TrendStat(label: "Efficiency", value: efficiency.mean.map { String(format: "%.0f", $0) }, unit: "%",
-                              caption: efficiency.points.isEmpty ? "Not recorded" : "average")
+                              caption: efficiency.points.isEmpty ? "Not recorded" : "average",
+                              symbol: "checkmark.seal.fill", accent: StrandPalette.statusPositive)
                     TrendStat(label: "Deep + REM", value: restorative.mean.map(DayMath.hm),
-                              caption: restorative.points.isEmpty ? "Not recorded" : "per night")
-                    TrendStat(label: "Nights", value: "\(duration.points.count)", caption: duration.effective.subtitle)
+                              caption: restorative.points.isEmpty ? "Not recorded" : "per night",
+                              symbol: "moon.stars.fill", accent: StrandPalette.sleepDeep)
+                    TrendStat(label: "Nights", value: "\(duration.points.count)", caption: duration.effective.subtitle,
+                              symbol: "calendar", accent: StrandPalette.sleepREM)
                 }
                 TrendLineCard(title: "Time asleep", unit: "", series: duration, gradient: TrendWindow.gradient(StrandPalette.sleepLight),
                               valueRange: TrendWindow.valueRange(duration.points, fallback: 4...10), format: Self.hoursText, note: "hours")
                 LazyVGrid(columns: trendCardColumns, alignment: .leading, spacing: NoopMetrics.gap) {
                     TrendLineCard(title: "Sleep efficiency", unit: "%", series: efficiency, gradient: TrendWindow.gradient(StrandPalette.statusPositive),
                                   valueRange: TrendWindow.valueRange(efficiency.points, fallback: 60...100))
-                    TrendCard(title: "Sleep stages", caption: stages.caption, value: stages.totalText, valueLabel: "staged, average") {
+                    TrendCard(title: "Sleep stages", caption: stages.caption, value: stages.totalText, valueLabel: "staged, average",
+                              accent: StrandPalette.sleepDeep) {
                         if stages.buckets.count >= 2 {
                             StageChart(window: stages)
                         } else {
                             TrendEmptyChart(count: stages.buckets.count)
                         }
                     } footer: {
-                        ChartFooter(StageWindow.Stage.allCases.map { s in
+                        TrendFooter(StageWindow.Stage.allCases.map { s in
                             (s.title, stages.mean(s).map { "\(DayMath.hm($0)) · \(stages.share(s))%" } ?? "—")
-                        })
+                        }, accent: StrandPalette.sleepDeep)
                     }
                 }
             }
@@ -406,12 +484,14 @@ private struct StageChart: View {
                     BarMark(x: .value("Date", b.date, unit: window.weekly ? .weekOfYear : .day),
                             y: .value("Hours", (b.minutes[s] ?? 0) / 60))
                         .foregroundStyle(by: .value("Stage", s.title))
+                        .cornerRadius(window.buckets.count > 20 ? 2 : 5, style: .continuous)
                 }
             }
         }
         .chartForegroundStyleScale(domain: StageWindow.Stage.allCases.map(\.title), range: StageWindow.Stage.allCases.map(\.color))
-        .chartLegend(position: .top, alignment: .leading, spacing: 8)
-        .chartXAxis { AxisMarks(preset: .aligned, values: .automatic(desiredCount: 4)) }
+        .chartLegend(position: .top, alignment: .leading, spacing: 10)
+        .chartXAxis { SoftAxis.x(count: 4) }
+        .chartYAxis { SoftAxis.y(count: 4) }
         .chartYAxisLabel("hours")
         .accessibilityLabel("Sleep stages over time")
         .accessibilityValue(StageWindow.Stage.allCases.map { "\($0.title) \(window.share($0)) percent" }.joined(separator: ", "))
@@ -448,10 +528,14 @@ struct VitalsTrendsContent: View {
                 let lead = [rhr, hrv].first { !$0.points.isEmpty } ?? resp
                 TrendRangeBar(range: $range, sparseNote: lead.widened ? lead.caption : nil)
                 TrendSummaryRow {
-                    TrendStat(label: "Resting HR", value: rhr.mean.map { "\(Int($0.rounded()))" }, unit: "bpm", caption: rhr.points.isEmpty ? "Not recorded" : "average")
-                    TrendStat(label: "HRV", value: hrv.mean.map { "\(Int($0.rounded()))" }, unit: "ms", caption: hrv.points.isEmpty ? "Not recorded" : "average")
-                    TrendStat(label: "Respiration", value: resp.mean.map(oneDecimal), unit: "rpm", caption: resp.points.isEmpty ? "Not recorded" : "average")
-                    TrendStat(label: "Blood oxygen", value: spo2.mean.map(oneDecimal), unit: "%", caption: spo2.points.isEmpty ? "Not recorded" : "average")
+                    TrendStat(label: "Resting HR", value: rhr.mean.map { "\(Int($0.rounded()))" }, unit: "bpm", caption: rhr.points.isEmpty ? "Not recorded" : "average",
+                              symbol: "heart.fill", accent: StrandPalette.metricRose)
+                    TrendStat(label: "HRV", value: hrv.mean.map { "\(Int($0.rounded()))" }, unit: "ms", caption: hrv.points.isEmpty ? "Not recorded" : "average",
+                              symbol: "waveform.path.ecg", accent: StrandPalette.metricPurple)
+                    TrendStat(label: "Respiration", value: resp.mean.map(oneDecimal), unit: "rpm", caption: resp.points.isEmpty ? "Not recorded" : "average",
+                              symbol: "lungs.fill", accent: StrandPalette.metricCyan)
+                    TrendStat(label: "Blood oxygen", value: spo2.mean.map(oneDecimal), unit: "%", caption: spo2.points.isEmpty ? "Not recorded" : "average",
+                              symbol: "drop.fill", accent: StrandPalette.accent)
                 }
                 LazyVGrid(columns: trendCardColumns, alignment: .leading, spacing: NoopMetrics.gap) {
                     TrendLineCard(title: "Resting heart rate", unit: "bpm", series: rhr, gradient: TrendWindow.gradient(StrandPalette.metricRose),
@@ -545,20 +629,26 @@ struct ActivityTrendsContent: View {
     private func summary(strain: TrendSeries, sessions: WorkoutWindow, steps: TrendSeries, energy: TrendSeries) -> some View {
         TrendSummaryRow {
             TrendStat(label: "Average strain", value: strain.mean.map { String(format: "%.1f", $0) }, unit: "/ 21",
-                      caption: strain.points.isEmpty ? "Not recorded" : "per day")
-            TrendStat(label: "Workouts", value: "\(sessions.rows.count)", caption: sessions.rows.isEmpty ? "None stored" : sessions.effective.subtitle)
-            TrendStat(label: "Workout time", value: sessions.rows.isEmpty ? nil : DayMath.hm(sessions.totalMinutes), caption: sessions.topActivity)
+                      caption: strain.points.isEmpty ? "Not recorded" : "per day",
+                      symbol: "flame.fill", accent: StrandPalette.zone4)
+            TrendStat(label: "Workouts", value: "\(sessions.rows.count)", caption: sessions.rows.isEmpty ? "None stored" : sessions.effective.subtitle,
+                      symbol: "figure.run", accent: StrandPalette.statusPositive)
+            TrendStat(label: "Workout time", value: sessions.rows.isEmpty ? nil : DayMath.hm(sessions.totalMinutes), caption: sessions.topActivity,
+                      symbol: "stopwatch.fill", accent: StrandPalette.metricAmber)
             if !steps.points.isEmpty {
-                TrendStat(label: "Average steps", value: steps.mean.map(Self.thousands), caption: "Apple Health")
+                TrendStat(label: "Average steps", value: steps.mean.map(Self.thousands), caption: "Apple Health",
+                          symbol: "shoeprints.fill", accent: StrandPalette.accent)
             } else if !energy.points.isEmpty {
-                TrendStat(label: "Active energy", value: energy.mean.map(Self.thousands), unit: "kcal", caption: "Apple Health")
+                TrendStat(label: "Active energy", value: energy.mean.map(Self.thousands), unit: "kcal", caption: "Apple Health",
+                          symbol: "bolt.heart.fill", accent: StrandPalette.metricRose)
             }
         }
     }
 
     private func workoutsCard(_ sessions: WorkoutWindow) -> some View {
         TrendCard(title: "Workouts per week", caption: sessions.caption,
-                  value: sessions.weeks.isEmpty ? nil : String(format: "%.1f", sessions.averagePerWeek), valueLabel: "average, active weeks") {
+                  value: sessions.weeks.isEmpty ? nil : String(format: "%.1f", sessions.averagePerWeek), valueLabel: "average, active weeks",
+                  accent: StrandPalette.metricAmber) {
             if sessions.weeks.count >= 2 {
                 WeeklyWorkoutChart(weeks: sessions.weeks)
             } else {
@@ -566,8 +656,8 @@ struct ActivityTrendsContent: View {
                                 needs: "A trend needs at least two weeks.")
             }
         } footer: {
-            ChartFooter([("Sessions", "\(sessions.rows.count)"), ("Active weeks", "\(sessions.weeks.count)"),
-                         ("Longest", sessions.longestMinutes.map(DayMath.hm) ?? "—")])
+            TrendFooter([("Sessions", "\(sessions.rows.count)"), ("Active weeks", "\(sessions.weeks.count)"),
+                         ("Longest", sessions.longestMinutes.map(DayMath.hm) ?? "—")], accent: StrandPalette.metricAmber)
         }
     }
 
@@ -642,12 +732,31 @@ private struct WeeklyWorkoutChart: View {
     var body: some View {
         Chart(weeks) { w in
             BarMark(x: .value("Week", w.start, unit: .weekOfYear), y: .value("Workouts", w.count))
-                .foregroundStyle(StrandPalette.metricAmber)
-                .cornerRadius(3)
+                .foregroundStyle(LinearGradient(colors: [StrandPalette.metricAmber, StrandPalette.metricAmber.opacity(0.55)],
+                                                startPoint: .top, endPoint: .bottom))
+                .cornerRadius(weeks.count > 20 ? 3 : 8, style: .continuous)
         }
-        .chartXAxis { AxisMarks(preset: .aligned, values: .automatic(desiredCount: 4)) }
-        .chartYAxis { AxisMarks(values: .automatic(desiredCount: 3)) }
+        .chartXAxis { SoftAxis.x(count: 4) }
+        .chartYAxis { SoftAxis.y(count: 3) }
         .accessibilityLabel("Workouts per week")
+    }
+}
+
+/// Axis marks for the bar charts, matching `TrendChart`'s soft style: dashed light grid, rounded labels.
+enum SoftAxis {
+    private static let font = Font.system(size: 11, weight: .medium, design: .rounded)
+    private static let grid = StrokeStyle(lineWidth: 0.6, dash: [2, 4])
+
+    static func x(count: Int) -> some AxisContent {
+        AxisMarks(preset: .aligned, values: .automatic(desiredCount: count)) { _ in
+            AxisValueLabel().font(font).foregroundStyle(StrandPalette.textTertiary)
+        }
+    }
+    static func y(count: Int) -> some AxisContent {
+        AxisMarks(values: .automatic(desiredCount: count)) { _ in
+            AxisGridLine(stroke: grid).foregroundStyle(StrandPalette.hairline.opacity(0.6))
+            AxisValueLabel().font(font).foregroundStyle(StrandPalette.textTertiary)
+        }
     }
 }
 

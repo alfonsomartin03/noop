@@ -7,8 +7,8 @@ import WhoopStore
 // MARK: - SleepView
 //
 // Whoop-sleep clarity on the locked Noop component system. Scannable in two seconds:
-//   1. HERO ChartCard "Last night" — the stage breakdown (Hypnogram if intervals
-//      reconstruct from stagesJSON, else a clean proportional stacked stage bar),
+//   1. HERO ChartCard "Last night" — the stage breakdown (Hypnogram only from genuine timestamped
+//      stage segments; imported stage totals get a proportional stacked bar, never a synthetic order),
 //      trailing = total asleep, footer = REM/Deep/Light/Awake each "Xh Ym · NN%".
 //   2. A uniform grid of fixed StatTiles, each with a sparkline and a "vs typical"
 //      caption: Performance, Efficiency, Consistency, Hours vs Needed, Restorative,
@@ -51,7 +51,7 @@ struct SleepView: View {
                     VStack(alignment: .leading, spacing: NoopMetrics.sectionGap) {
                         hero(resolved)
                         SleepSessionsCard()
-                        AlarmSection()
+                        NextAlarmLink()
                         SleepNeedCard()
                         metricGrid(resolved)
                         stagesVsTypical(resolved)
@@ -101,7 +101,11 @@ struct SleepView: View {
                                   showsStageAxis: true,
                                   nightStart: night.onsetDate, timeZone: night.zone)
                     } else {
-                        stageBar(s)
+                        VStack(alignment: .leading, spacing: 6) {
+                            stageBar(s)
+                            Text("Stage totals only — the order of stages through the night isn't known for this night.")
+                                .font(StrandFont.footnote).foregroundStyle(StrandPalette.textTertiary)
+                        }
                     }
                 },
                 footer: {
@@ -116,7 +120,8 @@ struct SleepView: View {
         }
     }
 
-    /// Full-width proportional stacked stage bar (fallback when no intervals).
+    /// Full-width proportional stacked stage bar: stage totals only, no order implied (used whenever no genuine
+    /// timestamped stages exist, e.g. imported nights).
     @ViewBuilder
     private func stageBar(_ s: Stages) -> some View {
         let total = max(1, s.total)
@@ -391,7 +396,7 @@ struct SleepView: View {
 
     // MARK: - Derived model
 
-    /// The most recent imported sleep, decoded into stage durations.
+    /// The most recent night (imported totals or NOOP's own segments), decoded into stage durations.
     private var latestNight: Night? {
         guard let s = repo.sleeps.last,
               let stages = decodeStages(s.stagesJSON),
@@ -622,8 +627,19 @@ struct SleepView: View {
     // Stored stages are JSON of minutes per stage (from an import) - decoded defensively because older rows may lack keys.
     private func decodeStages(_ json: String?) -> Stages? {
         guard let json, let data = json.data(using: .utf8) else { return nil }
-        guard let obj = try? JSONSerialization.jsonObject(with: data),
-              let dict = obj as? [String: Any] else { return nil }
+        guard let obj = try? JSONSerialization.jsonObject(with: data) else { return nil }
+        if let segs = obj as? [[String: Any]] {
+            // NOOP's own timeline: total minutes per estimated stage (unknown / unstaged segments are not counted).
+            var m: [String: Double] = [:]
+            for seg in segs {
+                guard let a = (seg["start"] as? NSNumber)?.doubleValue, let b = (seg["end"] as? NSNumber)?.doubleValue,
+                      let st = seg["stage"] as? String, b > a else { continue }
+                m[st == "wake" ? "awake" : st, default: 0] += (b - a) / 60
+            }
+            let s = Stages(awake: m["awake"] ?? 0, light: m["light"] ?? 0, deep: m["deep"] ?? 0, rem: m["rem"] ?? 0)
+            return s.total > 0 ? s : nil
+        }
+        guard let dict = obj as? [String: Any] else { return nil }
         func val(_ key: String) -> Double {
             if let n = dict[key] as? NSNumber { return n.doubleValue }
             if let d = dict[key] as? Double { return d }
@@ -671,8 +687,7 @@ private struct SleepModel {
     typealias Metric = (latest: Double?, typical: Double?, series: [Double])
 
     let night: Night
-    /// Reconstructed stage intervals for the hypnogram — computed once (Night.intervals is a
-    /// computed property; it was previously re-derived on each access during render).
+    /// Genuine (timestamped) stage intervals for the hypnogram, or empty — computed once per data change.
     let intervals: [SleepInterval]
 
     let performance: Metric
@@ -712,26 +727,9 @@ private struct Night {
     /// The wall-clock start of the night (for the Hypnogram's clock labels).
     var onsetDate: Date { Date(timeIntervalSince1970: TimeInterval(session.startTs)) }
 
-    /// Stage intervals laid end-to-end across the night, in seconds from start.
-    /// Reconstructed from durations only (export has no per-epoch timeline).
-    var intervals: [SleepInterval] {
-        var t: TimeInterval = 0
-        var out: [SleepInterval] = []
-        func add(_ stage: SleepStage, _ minutes: Double) {
-            guard minutes > 0 else { return }
-            let secs = minutes * 60
-            out.append(SleepInterval(stage: stage, start: t, end: t + secs))
-            t += secs
-        }
-        // A plausible architecture: deep early, REM later, awake last.
-        add(.light, stages.light * 0.4)
-        add(.deep, stages.deep)
-        add(.light, stages.light * 0.3)
-        add(.rem, stages.rem)
-        add(.light, stages.light * 0.3)
-        add(.awake, stages.awake)
-        return out
-    }
+    /// Genuine stage segments only (NOOP's timestamped staging). Imported nights hold stage TOTALS, which have no order:
+    /// they are drawn as a proportional bar, never as a reconstructed hypnogram.
+    var intervals: [SleepInterval] { SleepTimeline.intervals(session: session) ?? [] }
 
     /// The zone this night was slept in (in force at its midpoint).
     var zone: TimeZone { ZoneTimeline.shared.zone(forSpan: session.startTs, session.endTs) }

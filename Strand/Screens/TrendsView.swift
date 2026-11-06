@@ -62,13 +62,19 @@ struct TrendsView: View {
     /// The four numbers to read first. Each shares its window with the chart below it.
     private func summary(recovery: TrendSeries, hrv: TrendSeries, rhr: TrendSeries, strain: TrendSeries) -> some View {
         let whole: (Double) -> String = { "\(Int($0.rounded()))" }
+        let recoveryColor = recovery.mean.map(StrandPalette.recoveryColor)
+        let strainColor = strain.mean.map(StrandPalette.strainColor)
         return TrendSummaryRow {
             TrendStat(label: "Recovery", value: recovery.mean.map(whole), unit: "%", caption: recovery.effective.subtitle,
-                      tint: recovery.mean.map { StrandPalette.scoreInk(StrandPalette.recoveryColor($0)) } ?? StrandPalette.textPrimary)
-            TrendStat(label: "HRV", value: hrv.mean.map(whole), unit: "ms", caption: hrv.effective.subtitle)
-            TrendStat(label: "Resting HR", value: rhr.mean.map(whole), unit: "bpm", caption: rhr.effective.subtitle)
+                      tint: recoveryColor.map(StrandPalette.scoreInk) ?? StrandPalette.textPrimary,
+                      symbol: "bolt.heart.fill", accent: recoveryColor ?? StrandPalette.statusPositive)
+            TrendStat(label: "HRV", value: hrv.mean.map(whole), unit: "ms", caption: hrv.effective.subtitle,
+                      symbol: "waveform.path.ecg", accent: StrandPalette.metricPurple)
+            TrendStat(label: "Resting HR", value: rhr.mean.map(whole), unit: "bpm", caption: rhr.effective.subtitle,
+                      symbol: "heart.fill", accent: StrandPalette.metricRose)
             TrendStat(label: "Day strain", value: strain.mean.map { String(format: "%.1f", $0) }, unit: "/ 21", caption: strain.effective.subtitle,
-                      tint: strain.mean.map { StrandPalette.scoreInk(StrandPalette.strainColor($0)) } ?? StrandPalette.textPrimary)
+                      tint: strainColor.map(StrandPalette.scoreInk) ?? StrandPalette.textPrimary,
+                      symbol: "flame.fill", accent: strainColor ?? StrandPalette.zone4)
         }
     }
 
@@ -76,23 +82,25 @@ struct TrendsView: View {
 
     private func heroRecovery(recovery: TrendSeries) -> some View {
         let whole: (Double) -> String = { "\(Int($0.rounded()))" }
-        return TrendCard(title: "Recovery", caption: recovery.caption, value: recovery.mean.map(whole)) {
+        let accent = recovery.mean.map(StrandPalette.recoveryColor)
+        return TrendCard(title: "Recovery", caption: recovery.caption, value: recovery.mean.map(whole), accent: accent) {
             if recovery.canDraw {
                 TrendChart(points: recovery.points,
                            gradient: StrandPalette.recoveryGradient,
                            valueRange: 0...100,
                            showsArea: true,
-                           height: NoopMetrics.chartHeight)
+                           height: NoopMetrics.chartHeight,
+                           style: .soft)
             } else {
                 TrendEmptyChart(count: recovery.points.count)
             }
         } footer: {
-            ChartFooter([
+            TrendFooter([
                 ("Average", recovery.mean.map(whole) ?? "—"),
                 ("Peak", recovery.high.map(whole) ?? "—"),
                 ("Low", recovery.low.map(whole) ?? "—"),
                 ("Days", "\(recovery.points.count)"),
-            ])
+            ], accent: accent ?? StrandPalette.statusPositive)
         }
     }
 

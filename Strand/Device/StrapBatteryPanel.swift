@@ -22,7 +22,23 @@ struct StrapBatteryContent: View {
     var compact = false
 
     private var phase: ChargingIllustration.Phase {
-        battery.isFull ? .full : battery.isCharging ? .charging : .idle
+        switch battery.illustration {
+        case .full: return .full
+        case .charging: return .charging
+        case .attached: return .attached
+        case .detached: return .idle
+        case .unknown: return .unknown
+        }
+    }
+
+    /// Where the charging claim comes from: confirmed (strap-reported, with time) vs inferred.
+    private var sourceNote: String? {
+        switch battery.charge {
+        case .charging:
+            return "Reported by the strap" + (battery.chargeReportedAt.map { " at \($0.formatted(date: .omitted, time: .shortened))" } ?? "")
+        case .likely: return "Inferred from a rising percentage — not reported by the strap"
+        default: return nil
+        }
     }
 
     var body: some View {
@@ -41,15 +57,14 @@ struct StrapBatteryContent: View {
                 }
                 .font(StrandFont.subhead)
                 .foregroundStyle(StrandPalette.textSecondary)
-                if battery.isCharging, !compact {
-                    // Charging comes from the strap's own report (charging / pack events, or the pack-info reply).
-                    Text("Reported by the strap")
-                        .font(StrandFont.footnote).foregroundStyle(StrandPalette.textTertiary)
+                if !compact, let note = sourceNote {
+                    Text(note).font(StrandFont.footnote).foregroundStyle(StrandPalette.textTertiary)
                 }
             }
             Spacer(minLength: 0)
         }
         .animation(StrandMotion.respecting(StrandMotion.gentle), value: battery.charge)
+        .animation(StrandMotion.respecting(StrandMotion.gentle), value: battery.attachment)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(battery.accessibilityLabel)
     }
@@ -60,6 +75,9 @@ struct StrapBatteryContent: View {
     let now = Date()
     return VStack(alignment: .leading, spacing: 20) {
         StrapBatteryContent(battery: .init(percent: 64, stale: false, charge: .unknown, connected: true, measuredAt: now))
+        StrapBatteryContent(battery: .init(percent: 64, stale: false, charge: .notCharging, attachment: .detached, connected: true, measuredAt: now))
+        StrapBatteryContent(battery: .init(percent: 64, stale: false, charge: .unknown, attachment: .attached, connected: true, measuredAt: now))
+        StrapBatteryContent(battery: .init(percent: 52, stale: false, charge: .likely, connected: true, measuredAt: now))
         StrapBatteryContent(battery: .init(percent: 48, stale: false, charge: .charging, connected: true, measuredAt: now))
         StrapBatteryContent(battery: .init(percent: 100, stale: false, charge: .charging, connected: true, measuredAt: now))
         StrapBatteryContent(battery: .init(percent: 37, stale: true, charge: .charging, connected: false, measuredAt: now.addingTimeInterval(-1800)))

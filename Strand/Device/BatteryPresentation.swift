@@ -3,50 +3,76 @@ import StrandDesign
 import WhoopProtocol
 
 /// The strap battery as every surface shows it (top-right badge, menu bar, Settings → Strap, the live sheet), so they
-/// agree on thresholds, freshness and charging.
+/// agree on thresholds, freshness, attachment and charging.
 ///
 /// - Low is below the low-battery alert's threshold (`BatteryAlertPolicy.lowPercent`), so the red badge and the
 ///   notification mean the same thing.
-/// - A reading older than the alert policy's `staleAfter`, or one from before a disconnect, is stale: shown dimmed
-///   with its time, and never shown as charging.
-/// - Charging is only what a verified source reported on a fresh reading. A rising percentage is never taken as
-///   charging, and nothing here estimates time to full or a charging-pack level (the protocol reports neither).
+/// - The PERCENTAGE is stale when older than the alert policy's `staleAfter` or from before a disconnect: shown dimmed
+///   with its time. Charging and attachment have their own freshness (`ChargingModel`); a fresh percentage never
+///   refreshes them, and a disconnect makes both unknown.
+/// - Charging is only what the strap reported (confirmed). A sustained percentage rise is shown separately as
+///   "charging likely", never as charging, and never counts as full. Nothing here estimates time to full.
 struct BatteryPresentation: Equatable {
-    enum Charge: Equatable { case charging, notCharging, unknown }
+    enum Charge: Equatable { case charging, likely, notCharging, unknown }
+    enum Attachment: Equatable { case attached, detached, unknown }
     enum Level: Equatable { case low, medium, normal }
 
     let percent: Int?
     let stale: Bool
     let charge: Charge
+    let attachment: Attachment
     let connected: Bool
     let measuredAt: Date?
+    /// When the strap's charging fact was received (for "reported 14:02").
+    let chargeReportedAt: Date?
 
     static let lowBelow = BatteryAlertPolicy().lowPercent
     static let mediumBelow = 35
     static let staleAfter = BatteryAlertPolicy().staleAfter
 
-    init(percent: Int?, stale: Bool, charge: Charge, connected: Bool, measuredAt: Date?) {
+    init(percent: Int?, stale: Bool, charge: Charge, attachment: Attachment = .unknown, connected: Bool, measuredAt: Date?,
+         chargeReportedAt: Date? = nil) {
         self.percent = percent.map { min(max($0, 0), 100) }
         self.stale = stale
-        self.charge = stale ? .unknown : charge
+        self.charge = connected ? charge : .unknown
+        self.attachment = connected ? attachment : .unknown
         self.connected = connected
         self.measuredAt = measuredAt
+        self.chargeReportedAt = chargeReportedAt
     }
 
     /// From the live strap state. A typed reading (`battery`) carries its time and source; the plain `batteryPct`
-    /// fallback is used only while connected, as before.
+    /// fallback is used only while connected, as before. Charging and attachment come from `live.charging`.
     @MainActor
     init(live: LiveState, now: Date = Date()) {
         let status = live.battery
         let pct = status?.percent ?? (live.connected ? live.batteryPct.map { Int($0.rounded()) } : nil)
         let stale = !live.connected || (status?.isStale(now: now, after: Self.staleAfter) ?? false)
-        let charge: Charge = switch status?.charging { case true?: .charging; case false?: .notCharging; case nil: .unknown }
-        self.init(percent: pct, stale: stale, charge: charge, connected: live.connected, measuredAt: status?.at)
+        let m = live.charging
+        let charge: Charge = switch m.charging(now: now) {
+        case .yes: .charging
+        case .no: .notCharging
+        case .unknown: m.chargingLikely(now: now) ? .likely : .unknown
+        }
+        let attachment: Attachment = switch m.attached(now: now) { case .yes: .attached; case .no: .detached; case .unknown: .unknown }
+        self.init(percent: pct, stale: stale, charge: charge, attachment: attachment, connected: live.connected,
+                  measuredAt: status?.at, chargeReportedAt: m.chargingEvidence(now: now)?.receivedAt)
     }
 
+    /// What the charging illustration draws, from the same model (never more than it says).
+    var illustration: IllustrationState {
+        if !connected { return .unknown }
+        if isFull { return .full }
+        if isCharging { return .charging }
+        if attachment == .attached { return .attached }
+        if attachment == .detached { return .detached }
+        return .unknown
+    }
+    enum IllustrationState: Equatable { case detached, attached, charging, full, unknown }
+
     var isCharging: Bool { charge == .charging }
-    /// Charging confirmed and the strap reads 100 %, the same condition the charging-complete alert uses.
-    var isFull: Bool { isCharging && (percent ?? 0) >= 100 }
+    /// Charging confirmed and a fresh reading of 100 %, the same condition the charging-complete alert uses.
+    var isFull: Bool { isCharging && !stale && (percent ?? 0) >= 100 }
 
     var level: Level? {
         guard let p = percent else { return nil }
@@ -101,12 +127,17 @@ struct BatteryPresentation: Equatable {
         guard let percent else { return connected ? "Reading battery…" : "Strap not connected" }
         if stale {
             let when = measuredAt.map { " at \($0.formatted(date: .omitted, time: .shortened))" } ?? ""
-            return connected ? "Last reading\(when)" : "Not connected · last reading\(when)"
+            if !connected { return "Not connected · last reading\(when)" }
+            // The percentage is old, but a charging fact keeps its own freshness.
+            let prefix = isCharging ? "Charging · " : attachment == .attached ? "Charger attached · " : ""
+            return prefix.isEmpty ? "Last reading\(when)" : prefix + "last reading\(when)"
         }
         if isFull { return "Fully charged" }
         if isCharging { return "Charging" }
+        if charge == .likely { return "Battery increasing — charging likely" }
+        if attachment == .attached { return charge == .notCharging ? "Charger attached · not charging" : "Charger attached" }
         if percent < Self.lowBelow { return "Low · charge soon to avoid gaps" }
-        return charge == .notCharging ? "On battery" : "Battery"
+        return attachment == .detached || charge == .notCharging ? "On battery" : "Battery"
     }
 
     var accessibilityLabel: String {

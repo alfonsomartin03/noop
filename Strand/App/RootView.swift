@@ -2,10 +2,11 @@ import SwiftUI
 import AppKit
 import StrandDesign
 
-/// The three primary destinations. Everything else is reached from a card (detail view / sheet) or a segment.
+/// The four primary destinations. Everything else is reached from a card (detail view / sheet) or a segment.
 enum NavItem: String, CaseIterable, Identifiable, Hashable {
     case overview = "Overview"
     case trends = "Trends"
+    case alarms = "Alarms"
     case settings = "Settings"
 
     var id: String { rawValue }
@@ -13,13 +14,14 @@ enum NavItem: String, CaseIterable, Identifiable, Hashable {
         switch self {
         case .overview: return "square.grid.2x2.fill"
         case .trends: return "chart.xyaxis.line"
+        case .alarms: return "alarm.fill"
         case .settings: return "gearshape.fill"
         }
     }
 }
 
 /// Where a card can send the user: a primary tab, or the live-strap sheet (a contextual detail, not a destination).
-enum NavTarget { case overview, trends, settings, live }
+enum NavTarget { case overview, trends, alarms, settings, live }
 
 private struct NavigateKey: EnvironmentKey {
     static let defaultValue: (NavTarget) -> Void = { _ in }
@@ -59,6 +61,7 @@ struct RootView: View {
             switch target {
             case .overview: selection = .overview
             case .trends: selection = .trends
+            case .alarms: selection = .alarms
             case .settings: selection = .settings
             case .live: showLive = true
             }
@@ -70,6 +73,7 @@ struct RootView: View {
         switch selection {
         case .overview: TodayView()
         case .trends: TrendsHub()
+        case .alarms: AlarmsView()
         case .settings: SettingsHub()
         }
     }
@@ -87,7 +91,7 @@ private struct LiveSheet: View {
     }
 }
 
-/// Compact floating pill: three icons, the active one expands to show its name.
+/// Compact floating pill: four icons, the active one expands to show its name.
 private struct FloatingNav: View {
     @Binding var selection: NavItem
     @Namespace private var ns

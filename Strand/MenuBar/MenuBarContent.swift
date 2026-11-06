@@ -200,12 +200,14 @@ struct MenuBarContent: View {
     private var actions: some View {
         VStack(spacing: 8) {
             if live.bonded {
+                // The menu holds its own stream ownership; an alarm window or the live sheet may hold the stream too.
+                let mine = live.realtimeStreaming && model.ble.realtimeOwners.contains("menu")
                 menuButton(
-                    live.realtimeStreaming ? "Stop live feed" : "Start live feed",
-                    systemImage: live.realtimeStreaming ? "pause.fill" : "play.fill",
+                    mine ? "Stop live feed" : "Start live feed",
+                    systemImage: mine ? "pause.fill" : "play.fill",
                     tone: .accent
                 ) {
-                    if live.realtimeStreaming { model.stopRealtimeHR() } else { model.startRealtimeHR() }
+                    if model.ble.realtimeOwners.contains("menu") { model.stopRealtimeHR(owner: "menu") } else { model.startRealtimeHR(owner: "menu") }
                 }
             } else {
                 menuButton(

@@ -75,9 +75,11 @@ final class LiveHeartRateTests: XCTestCase {
 final class BatteryPresentationTests: XCTestCase {
     private let now = Date(timeIntervalSince1970: 2_000_000)
 
+    /// `charging` is what the strap reported (CHARGING_ON/OFF at `now`), not a flag on the reading.
     private func live(_ pct: Int, charging: Bool?, age: TimeInterval = 0, connected: Bool = true) -> LiveState {
         let l = LiveState()
         l.connected = connected
+        if let c = charging { l.applyChargingEvent(c ? .chargingOn : .chargingOff, eventAt: now, receivedAt: now) }
         l.battery = BatteryStatus(reading: BatteryReading(percent: pct, charging: charging,
                                                          at: now.timeIntervalSince1970 - age, source: .vendorCommand))
         l.batteryPct = Double(pct)
@@ -94,10 +96,13 @@ final class BatteryPresentationTests: XCTestCase {
         XCTAssertTrue(BatteryPresentation(live: live(48, charging: true), now: now).isCharging)
         // Unknown is not charging, whatever the level does.
         XCTAssertFalse(BatteryPresentation(live: live(48, charging: nil), now: now).isCharging)
-        // Stale (older than the alert policy's window) or disconnected: never shown as charging.
+        // An old PERCENTAGE is stale, but the strap's charging report keeps its own freshness.
         let stale = BatteryPresentation(live: live(48, charging: true, age: BatteryAlertPolicy().staleAfter + 1), now: now)
         XCTAssertTrue(stale.stale)
-        XCTAssertFalse(stale.isCharging)
+        XCTAssertTrue(stale.isCharging)
+        XCTAssertFalse(stale.isFull)
+        XCTAssertEqual(stale.statusText.prefix(10), "Charging ·")
+        // Disconnected: never shown as charging.
         let gone = BatteryPresentation(live: live(48, charging: true, connected: false), now: now)
         XCTAssertFalse(gone.isCharging)
         XCTAssertTrue(gone.statusText.hasPrefix("Not connected"))
@@ -109,22 +114,45 @@ final class BatteryPresentationTests: XCTestCase {
         XCTAssertEqual(BatteryPresentation(live: live(100, charging: true), now: now).statusText, "Fully charged")
     }
 
-    /// Charging comes from the strap's own report (pack attached, charging events) and reaches every battery surface.
-    func testStrapChargingReportDrivesTheBatteryState() {
+    /// Attachment and charging are separate; a fresh percentage stamps the CONFIRMED fact only; disconnect forgets both.
+    func testChargingModelDrivesEverySurface() {
         let l = live(48, charging: nil)
-        XCTAssertFalse(BatteryPresentation(live: l, now: now).isCharging)
-        l.updateCharging(true, source: .batteryPack, at: now)
-        XCTAssertTrue(BatteryPresentation(live: l, now: now).isCharging)
-        // A later level reading (which carries no flag of its own) keeps the reported state.
+        XCTAssertEqual(BatteryPresentation(live: l, now: now).illustration, .unknown)
+        l.applyChargingEvent(.batteryPackConnected, eventAt: now, receivedAt: now)
+        var b = BatteryPresentation(live: l, now: now)
+        XCTAssertEqual(b.attachment, .attached)
+        XCTAssertFalse(b.isCharging)                                  // attached is not charging
+        XCTAssertEqual(b.illustration, .attached)
+        XCTAssertEqual(b.statusText, "Charger attached")
+        l.applyChargingEvent(.chargingOn, eventAt: now, receivedAt: now)
         l.updateBattery(BatteryReading(percent: 49, charging: nil, at: now.timeIntervalSince1970, source: .standardLevel))
-        XCTAssertTrue(BatteryPresentation(live: l, now: now).isCharging)
-        XCTAssertEqual(l.battery?.charging, true)
-        l.updateCharging(false, source: .batteryPack, at: now)
-        XCTAssertEqual(BatteryPresentation(live: l, now: now).charge, .notCharging)
-        // Disconnecting forgets it: the next connection has to report again.
-        l.updateCharging(true, source: .chargingEvent, at: now)
+        b = BatteryPresentation(live: l, now: now)
+        XCTAssertTrue(b.isCharging)
+        XCTAssertEqual(l.battery?.charging, true)                     // the alert sees the same confirmed state
+        // Removal: a late pack-info reply requested before it changes nothing.
+        l.applyChargingEvent(.batteryPackRemoved, eventAt: now.addingTimeInterval(10), receivedAt: now.addingTimeInterval(10))
+        l.applyPackInfo(.answeredUndecoded, requestedAt: now.addingTimeInterval(5), connection: l.connectionId, receivedAt: now.addingTimeInterval(12))
+        b = BatteryPresentation(live: l, now: now.addingTimeInterval(13))
+        XCTAssertEqual(b.charge, .notCharging)
+        XCTAssertEqual(b.illustration, .detached)
+        XCTAssertEqual(l.battery?.charging, false)
+        // Disconnect forgets it: the next connection has to report again.
+        l.applyChargingEvent(.chargingOn, eventAt: now.addingTimeInterval(20), receivedAt: now.addingTimeInterval(20))
         l.resetTelemetry()
-        XCTAssertNil(l.chargingReport)
+        XCTAssertEqual(l.charging.charging(now: now.addingTimeInterval(21)), .unknown)
+    }
+
+    /// A rising percentage shows "charging likely", never confirmed charging, and never counts toward the full alert.
+    func testRisingPercentageIsLabelledLikelyOnly() {
+        let l = LiveState(); l.connected = true
+        for (i, p) in [60, 61, 62, 64].enumerated() {
+            l.updateBattery(BatteryReading(percent: p, charging: nil, at: now.timeIntervalSince1970 + Double(i) * 300, source: .standardLevel))
+        }
+        let b = BatteryPresentation(live: l, now: now.addingTimeInterval(901))
+        XCTAssertEqual(b.charge, .likely)
+        XCTAssertFalse(b.isCharging)
+        XCTAssertNil(l.battery?.charging)
+        XCTAssertEqual(b.statusText, "Battery increasing — charging likely")
     }
 
     func testMissingReadingIsNotZero() {

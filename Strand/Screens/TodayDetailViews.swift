@@ -54,6 +54,8 @@ struct DayHRStats {
     let inZone: TimeInZone
     /// Seconds of the day actually covered by recorded heart rate.
     let coveredS: Double
+    /// The supported intervals behind `coveredS` (for the coverage caption; never changes scoring).
+    let supportedIntervals: [(start: Int, end: Int)]
     /// Time-weighted mean over supported seconds.
     private let meanBPM: Double?
     /// Time-weighted energy estimate over the recorded time (Keytel), nil when there is no data.
@@ -77,6 +79,7 @@ struct DayHRStats {
         zoneSet = HRZones.zones(age: inputs.age, maxHROverride: maxHR ?? inputs.maxHROverride)
         inZone = HRZones.timeInZone(support, zoneSet: zoneSet)
         coveredS = Double(support.observedSeconds)
+        supportedIntervals = support.intervals.map { ($0.start, $0.end) }
         meanBPM = LoadSummary(support, requestedS: 0, hrMax: zoneSet.maxHR).meanHR
         kcal = hr.isEmpty ? nil : Calories.estimateDayCalories(support, profile: inputs.body, hrmax: zoneSet.maxHR,
                                                                restingHR: restingHR.map(Double.init))
@@ -294,8 +297,8 @@ struct SleepDetailView: View {
     /// Real sleep onset / final wake as unix seconds (stage timeline), falling back to the session's bed / wake times.
     private var onsetWake: (onset: Int, wake: Int)? {
         guard let t = tonight else { return nil }
-        if let tl = SleepTimeline.intervals(session: t, day: d0), !tl.estimated {
-            let asleep = tl.intervals.filter { $0.stage != .awake }
+        if let tl = SleepTimeline.intervals(session: t) {
+            let asleep = tl.filter { $0.stage != .awake }
             if let f = asleep.first, let l = asleep.last {
                 return (t.startTs + Int(f.start), t.startTs + Int(l.end))
             }
@@ -371,15 +374,14 @@ struct SleepDetailView: View {
     }
 
     /// The night as a large stage-over-time graph: hover anywhere to read the stage and clock time, with when you fell
-    /// asleep and woke up above it. Imported nights only hold stage totals, so their order is estimated and the
-    /// asleep/awake times fall back to the session's bed and wake times.
+    /// asleep and woke up above it. Only genuine timestamped stages are drawn: imported nights hold stage totals only, so
+    /// they get a note instead of an invented order.
     @ViewBuilder private var nightTimeline: some View {
-        if let tl = SleepTimeline.intervals(session: tonight, day: d0) {
-            let ivs = tl.intervals
+        if let ivs = SleepTimeline.intervals(session: tonight) {
             let asleepIvs = ivs.filter { $0.stage != .awake }
             let origin = tonight.map { TimeInterval($0.startTs) }
-            let fell = tl.estimated ? 0 : asleepIvs.first?.start
-            let woke = tl.estimated ? tonight.map { TimeInterval($0.endTs) - TimeInterval($0.startTs) } : asleepIvs.last?.end
+            let fell = asleepIvs.first?.start
+            let woke = asleepIvs.last?.end
             VStack(alignment: .leading, spacing: 14) {
                 HStack {
                     Text("Night timeline").font(.system(size: 17, weight: .semibold)).foregroundStyle(StrandPalette.textPrimary)
@@ -387,17 +389,22 @@ struct SleepDetailView: View {
                     Text("Move across the night to see the stage, minute by minute").font(.system(size: 12)).foregroundStyle(StrandPalette.textTertiary)
                 }
                 HStack(spacing: NoopMetrics.gap) {
-                    timeStat(tl.estimated ? "Bedtime" : "Fell asleep", clockAt(origin, fell), StrandPalette.sleepLight)
-                    timeStat(tl.estimated ? "Wake time" : "Woke up", clockAt(origin, woke), StrandPalette.accent)
+                    timeStat("Fell asleep", clockAt(origin, fell), StrandPalette.sleepLight)
+                    timeStat("Woke up", clockAt(origin, woke), StrandPalette.accent)
                     if let t = tonight { timeStat("Time in bed", DayMath.hm(Double(t.endTs - t.startTs) / 60), StrandPalette.sleepDeep) }
                 }
                 Hypnogram(intervals: ivs, height: 280, showsStageAxis: true,
                           nightStart: tonight.map { Date(timeIntervalSince1970: TimeInterval($0.startTs)) },
                           scrubsByMinute: true, showsTimeAxis: true, timeZone: nightZone)
-                if tl.estimated {
-                    Text("This night came from an import that only has stage totals, so the order of stages is estimated. Nights scored from your strap show the real timeline.")
-                        .font(.system(size: 11)).foregroundStyle(StrandPalette.textTertiary)
-                }
+            }
+            .padding(NoopMetrics.cardPadding)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .strandSurface()
+        } else if tonight != nil {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Night timeline").font(.system(size: 17, weight: .semibold)).foregroundStyle(StrandPalette.textPrimary)
+                Text("Stage timeline unavailable: this night has stage totals only (an import), so the order of stages isn't known. Nights scored from your strap show their estimated timeline.")
+                    .font(.system(size: 12)).foregroundStyle(StrandPalette.textTertiary).fixedSize(horizontal: false, vertical: true)
             }
             .padding(NoopMetrics.cardPadding)
             .frame(maxWidth: .infinity, alignment: .leading)

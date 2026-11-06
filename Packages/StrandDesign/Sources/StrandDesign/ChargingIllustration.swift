@@ -7,7 +7,9 @@ import AppKit
 //
 // A stylised strap (band + sensor pod) with its battery pack, drawn from shapes so it stays crisp, themes with the
 // palette and stays cheap to render. The three phases read apart even when still:
-//   idle     – grey pack resting beside the strap, contacts showing, neutral pod.
+//   idle     – pack reported detached: grey pack resting beside the strap, contacts showing, neutral pod.
+//   attached – pack reported attached, charging not confirmed: seated, unlit, no flow.
+//   unknown  – nothing known about the pack: drawn faint beside the strap.
 //   charging – pack seated on the pod with a lit bolt, a blue→green current at the seam, the pod outlined and its
 //              level bar filled in the charging gradient.
 //   full     – the same seated pack, all green, bolt replaced by a check.
@@ -16,12 +18,16 @@ import AppKit
 // After that a single reminder cycle plays every `reminderInterval`, and hovering replays it. Only the small flow layer
 // redraws, and only on screen, with the app active and Reduce Motion off.
 // It is an illustration: callers decide the phase from verified device state, and the pack drawn here is not a claim
-// that a pack is attached (no attachment telemetry exists).
+// that a pack is attached beyond what the caller's model says.
 
 public struct ChargingIllustration: View {
     public enum Phase: Equatable {
-        /// No verified charging: the pack rests beside the strap.
+        /// Pack reported detached: it rests beside the strap.
         case idle
+        /// Pack reported attached, charging not confirmed (unknown or not charging): seated, unlit, no flow.
+        case attached
+        /// Nothing known about the pack (no report, or a stale / disconnected state): the pack is drawn faint.
+        case unknown
         /// Verified charging on a fresh reading.
         case charging
         /// Verified charging at 100 %.
@@ -61,8 +67,10 @@ public struct ChargingIllustration: View {
 
     // Colour: grey when idle, a blue→green current while charging, solid green when full. The saturated tones carry
     // glows and fills; the ink tones carry strokes and glyphs so they keep contrast on the light surface.
-    private var energy: Color { phase == .idle ? StrandPalette.textTertiary : StrandPalette.statusPositive }
-    private var energyInk: Color { phase == .idle ? StrandPalette.textTertiary : StrandPalette.statusPositiveInk }
+    /// Lit only for confirmed charging or full; attached-but-not-charging stays grey.
+    private var lit: Bool { phase == .charging || phase == .full }
+    private var energy: Color { lit ? StrandPalette.statusPositive : StrandPalette.textTertiary }
+    private var energyInk: Color { lit ? StrandPalette.statusPositiveInk : StrandPalette.textTertiary }
     private var current: Color { phase == .charging ? StrandPalette.accent : energy }
     private var energyGradient: Gradient { Gradient(colors: [current, energy]) }
 
@@ -83,6 +91,7 @@ public struct ChargingIllustration: View {
                 }
                 pack(g)
                     .position(docked ? g.packDocked : g.packResting)
+                    .opacity(phase == .unknown ? 0.3 : 1)
             }
         }
         .frame(height: height)
@@ -144,7 +153,7 @@ public struct ChargingIllustration: View {
 
     /// The pack drops onto the pod when charging starts and lifts off when it stops, once per change.
     private func dock(to phase: Phase, animated: Bool) {
-        let target = phase != .idle
+        let target = phase == .attached || phase == .charging || phase == .full
         guard docked != target else { return }
         if animated, !reduceMotion {
             withAnimation(.spring(response: 0.5, dampingFraction: 0.62)) { docked = target }
@@ -181,7 +190,6 @@ public struct ChargingIllustration: View {
 
     private func pack(_ g: Geometry) -> some View {
         let r = g.h * 0.07
-        let lit = phase != .idle
         return RoundedRectangle(cornerRadius: r, style: .continuous)
             .fill(LinearGradient(colors: [StrandPalette.surfaceOverlay, StrandPalette.surfaceInset], startPoint: .top, endPoint: .bottom))
             .overlay(RoundedRectangle(cornerRadius: r, style: .continuous)
@@ -222,7 +230,6 @@ public struct ChargingIllustration: View {
     private func draw(in ctx: inout GraphicsContext, g: Geometry) {
         let h = g.h, w = g.size.width
         let mid = g.mid
-        let lit = phase != .idle
 
         // Band: a long soft capsule behind the pod.
         let band = CGRect(x: w * 0.06, y: mid.y - h * 0.09, width: w * 0.88, height: h * 0.18)
@@ -343,9 +350,10 @@ public struct ChargingIllustration: View {
 #Preview("Charging illustration") {
     VStack(spacing: 24) {
         ChargingIllustration(phase: .idle, percent: 62)
+        ChargingIllustration(phase: .attached, percent: 62)
         ChargingIllustration(phase: .charging, percent: 48)
         ChargingIllustration(phase: .full, percent: 100)
-        ChargingIllustration(phase: .idle, percent: 31, dimmed: true)
+        ChargingIllustration(phase: .unknown, percent: 31, dimmed: true)
     }
     .padding(24)
     .background(StrandPalette.surfaceBase)
