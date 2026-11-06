@@ -225,6 +225,25 @@ final class IncrementalScorerTests: XCTestCase {
         XCTAssertEqual(states[next]?.finalized, false)
     }
 
+    func testTodayIsScoredOnlyToNowAndOnceMoreAfterItEnds() async throws {
+        let c = calendar(2)
+        let store = try await populated(c)
+        _ = try await IncrementalScorer.run(store: store, request: request(c))
+        let today = c.days.last!
+        let r = ZoneTimeline.shared.dayRange(today)!
+        let open = try await store.loadRecords(deviceId: computed, from: today, to: today).compactMap(DayLoadRecord.init(row:)).first!
+        XCTAssertEqual(open.rangeEnd, c.now, "the hours after now are not requested")
+        XCTAssertLessThan(open.summary!.unknownS, 600)
+        // Nothing new arrives, but the day ends: the open marker makes it re-score once over the whole day.
+        let next = AnalyticsEngine.dayString(r.to + 3600)
+        let after = try await IncrementalScorer.run(store: store, request: request((c.days + [next], r.to + 3600)))
+        XCTAssertTrue(after.recomputed.contains(today))
+        let closed = try await store.loadRecords(deviceId: computed, from: today, to: today).compactMap(DayLoadRecord.init(row:)).first!
+        XCTAssertEqual(closed.rangeEnd, r.to)
+        let again = try await IncrementalScorer.run(store: store, request: request((c.days + [next], r.to + 7200)))
+        XCTAssertFalse(again.recomputed.contains(today), "no repeated re-scoring")
+    }
+
     func testAlgorithmChangeResumesAndNeverRepeatsFinishedDays() async throws {
         let c = calendar(5)
         let store = try await populated(c)
