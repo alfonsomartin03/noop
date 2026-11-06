@@ -572,8 +572,11 @@ private struct BondedStep: View {
     }
 
     private var batteryLine: String {
-        if let pct = BatteryPresentation(live: live).percent {
-            return "Your strap is bonded · \(pct)% battery."
+        let b = BatteryPresentation(live: live)
+        if let pct = b.percent {
+            // Same status words as Settings and the menu bar; the plain "Battery" adds nothing here.
+            let status = b.statusText == "Battery" ? "" : " · \(b.statusText.lowercased())"
+            return "Your strap is bonded · \(pct)% battery\(status)."
         }
         return "Your strap is bonded and ready to stream."
     }

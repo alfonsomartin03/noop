@@ -282,6 +282,10 @@ public enum Whoop5Charging {
 
     public static let packInfoCommand: UInt8 = 151
 
+    /// An event is LIVE when stamped within this many seconds of the strap's current time; older copies are replays.
+    public static let liveWindow: Double = 120
+    public static func isLive(eventUnix: Int, strapNow: Double) -> Bool { abs(strapNow - Double(eventUnix)) < liveWindow }
+
     /// GET_BATTERY_PACK_INFO (151) reply, parsed only into captured shapes. Detached (E02): result FAILURE with a 31-byte
     /// body `01` + 30 zero bytes. SUCCESS has never been captured, so its layout is not decoded and it is NOT read as
     /// "attached". PENDING (non-final) and every other shape are unrecognized.

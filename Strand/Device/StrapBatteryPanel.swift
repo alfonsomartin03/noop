@@ -41,6 +41,25 @@ struct StrapBatteryContent: View {
         }
     }
 
+    /// Strap battery, charging pack and charging as three labelled rows, so the pack is never read as the strap.
+    private var factList: some View {
+        Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 3) {
+            ForEach(battery.facts) { f in
+                GridRow {
+                    Text(f.label).font(StrandFont.footnote).foregroundStyle(StrandPalette.textTertiary)
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text(f.value).font(StrandFont.footnote.weight(.semibold))
+                            .foregroundStyle(f.known ? StrandPalette.textPrimary : StrandPalette.textSecondary)
+                        if let d = f.detail {
+                            Text(d).font(.system(size: 10)).foregroundStyle(StrandPalette.textTertiary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     var body: some View {
         HStack(alignment: .center, spacing: NoopMetrics.gap) {
             ChargingIllustration(phase: phase, percent: battery.percent, dimmed: battery.stale || battery.percent == nil,
@@ -57,16 +76,18 @@ struct StrapBatteryContent: View {
                 }
                 .font(StrandFont.subhead)
                 .foregroundStyle(StrandPalette.textSecondary)
-                if !compact, let note = sourceNote {
+                if compact, let note = sourceNote {
                     Text(note).font(StrandFont.footnote).foregroundStyle(StrandPalette.textTertiary)
                 }
+                if !compact { factList.padding(.top, 4) }
             }
             Spacer(minLength: 0)
         }
         .animation(StrandMotion.respecting(StrandMotion.gentle), value: battery.charge)
         .animation(StrandMotion.respecting(StrandMotion.gentle), value: battery.attachment)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(battery.accessibilityLabel)
+        .accessibilityLabel(compact ? battery.accessibilityLabel
+                                     : battery.facts.map { "\($0.label): \($0.value)" }.joined(separator: ", "))
     }
 }
 

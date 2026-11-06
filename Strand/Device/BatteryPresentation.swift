@@ -25,13 +25,15 @@ struct BatteryPresentation: Equatable {
     let measuredAt: Date?
     /// When the strap's charging fact was received (for "reported 14:02").
     let chargeReportedAt: Date?
+    /// "Charging likely" holds against an older strap report of not charging / detached: when that report was received.
+    let contradictedReportAt: Date?
 
     static let lowBelow = BatteryAlertPolicy().lowPercent
     static let mediumBelow = 35
     static let staleAfter = BatteryAlertPolicy().staleAfter
 
     init(percent: Int?, stale: Bool, charge: Charge, attachment: Attachment = .unknown, connected: Bool, measuredAt: Date?,
-         chargeReportedAt: Date? = nil) {
+         chargeReportedAt: Date? = nil, contradictedReportAt: Date? = nil) {
         self.percent = percent.map { min(max($0, 0), 100) }
         self.stale = stale
         self.charge = connected ? charge : .unknown
@@ -39,6 +41,7 @@ struct BatteryPresentation: Equatable {
         self.connected = connected
         self.measuredAt = measuredAt
         self.chargeReportedAt = chargeReportedAt
+        self.contradictedReportAt = connected && charge == .likely ? contradictedReportAt : nil
     }
 
     /// From the live strap state. A typed reading (`battery`) carries its time and source; the plain `batteryPct`
@@ -49,14 +52,16 @@ struct BatteryPresentation: Equatable {
         let pct = status?.percent ?? (live.connected ? live.batteryPct.map { Int($0.rounded()) } : nil)
         let stale = !live.connected || (status?.isStale(now: now, after: Self.staleAfter) ?? false)
         let m = live.charging
+        // A rise that began after the strap's last "not charging" outranks it as "likely" (never as charging).
         let charge: Charge = switch m.charging(now: now) {
         case .yes: .charging
-        case .no: .notCharging
+        case .no: m.chargingLikely(now: now) ? .likely : .notCharging
         case .unknown: m.chargingLikely(now: now) ? .likely : .unknown
         }
         let attachment: Attachment = switch m.attached(now: now) { case .yes: .attached; case .no: .detached; case .unknown: .unknown }
         self.init(percent: pct, stale: stale, charge: charge, attachment: attachment, connected: live.connected,
-                  measuredAt: status?.at, chargeReportedAt: m.chargingEvidence(now: now)?.receivedAt)
+                  measuredAt: status?.at, chargeReportedAt: m.chargingEvidence(now: now)?.receivedAt,
+                  contradictedReportAt: m.likelyContradicts(now: now)?.receivedAt)
     }
 
     /// What the charging illustration draws, from the same model (never more than it says).
@@ -138,6 +143,58 @@ struct BatteryPresentation: Equatable {
         if attachment == .attached { return charge == .notCharging ? "Charger attached · not charging" : "Charger attached" }
         if percent < Self.lowBelow { return "Low · charge soon to avoid gaps" }
         return attachment == .detached || charge == .notCharging ? "On battery" : "Battery"
+    }
+
+    // MARK: The three facts, kept apart
+
+    /// One labelled fact: what is known, and how (or "unknown" with why). Strap battery, pack and charging never merge.
+    struct Fact: Equatable, Identifiable {
+        let id: String
+        let label: String
+        let value: String
+        let detail: String?
+        let known: Bool
+    }
+
+    private static func time(_ d: Date) -> String { d.formatted(date: .omitted, time: .shortened) }
+
+    var facts: [Fact] {
+        let strap: Fact = {
+            guard let percent else {
+                return Fact(id: "strap", label: "Strap battery", value: "Unknown",
+                            detail: connected ? "Waiting for a reading" : "Strap not connected", known: false)
+            }
+            let when = measuredAt.map { "at \(Self.time($0))" }
+            return Fact(id: "strap", label: "Strap battery", value: "\(percent)%",
+                        detail: stale ? (connected ? "Last reading" : "Not connected · last reading") + (when.map { " \($0)" } ?? "") : nil,
+                        known: !stale)
+        }()
+        let pack: Fact = {
+            guard connected else { return Fact(id: "pack", label: "Charging pack", value: "Unknown", detail: "Strap not connected", known: false) }
+            switch attachment {
+            case .attached: return Fact(id: "pack", label: "Charging pack", value: "Attached", detail: "Reported by the strap", known: true)
+            case .detached: return Fact(id: "pack", label: "Charging pack", value: "Not attached", detail: "Reported by the strap", known: true)
+            case .unknown: return Fact(id: "pack", label: "Charging pack", value: "Unknown", detail: "No recent report from the strap", known: false)
+            }
+        }()
+        let charging: Fact = {
+            guard connected else { return Fact(id: "charging", label: "Charging", value: "Unknown", detail: "Strap not connected", known: false) }
+            switch charge {
+            case .charging:
+                return Fact(id: "charging", label: "Charging", value: isFull ? "Full" : "Yes",
+                            detail: "Reported by the strap" + (chargeReportedAt.map { " at \(Self.time($0))" } ?? ""), known: true)
+            case .likely:
+                let conflict = contradictedReportAt.map { " · the strap reported otherwise at \(Self.time($0))" } ?? ""
+                return Fact(id: "charging", label: "Charging", value: "Likely",
+                            detail: "Inferred from a rising percentage, not reported by the strap" + conflict, known: false)
+            case .notCharging:
+                return Fact(id: "charging", label: "Charging", value: "No",
+                            detail: "Reported by the strap" + (chargeReportedAt.map { " at \(Self.time($0))" } ?? ""), known: true)
+            case .unknown:
+                return Fact(id: "charging", label: "Charging", value: "Unknown", detail: "No recent report from the strap", known: false)
+            }
+        }()
+        return [strap, pack, charging]
     }
 
     var accessibilityLabel: String {

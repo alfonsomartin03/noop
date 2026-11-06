@@ -114,4 +114,75 @@ final class ChargingModelTests: XCTestCase {
         n.applyPackInfo(.detached, requestedAt: at(801), receivedAt: at(801), connection: c)
         XCTAssertFalse(n.chargingLikely(now: at(802)))
     }
+
+    // MARK: conflicting, delayed and stale evidence
+
+    private func rising(_ m: inout ChargingModel, from start: TimeInterval) {
+        for (k, pct) in [40, 41, 42, 43].enumerated() { m.applyPercent(pct, at: at(start + Double(k) * 240), connection: c) }
+    }
+
+    func testOlderNotChargingIsContradictedByALaterRiseButNotConfirmed() {
+        var m = ChargingModel(connection: c)
+        m.applyEvent(kind: .chargingOff, eventAt: at(0), receivedAt: at(0), connection: c)
+        rising(&m, from: 600)                                     // rise begins after the report
+        let now = at(600 + 3 * 240 + 1)
+        XCTAssertEqual(m.charging(now: now), .no, "the strap's report is kept as reported")
+        XCTAssertTrue(m.chargingLikely(now: now))
+        XCTAssertEqual(m.likelyContradicts(now: now)?.source, .chargingEvent, "the conflict is surfaced, not hidden")
+    }
+
+    func testContraryFactAfterTheRiseBeganWins() {
+        var m = ChargingModel(connection: c)
+        rising(&m, from: 0)
+        m.applyEvent(kind: .chargingOff, eventAt: at(300), receivedAt: at(300), connection: c)
+        XCTAssertFalse(m.chargingLikely(now: at(3 * 240 + 1)))
+        XCTAssertNil(m.likelyContradicts(now: at(3 * 240 + 1)))
+    }
+
+    func testConfirmedChargingIsNotAlsoLikely() {
+        var m = ChargingModel(connection: c)
+        m.applyEvent(kind: .chargingOn, eventAt: at(0), receivedAt: at(0), connection: c)
+        rising(&m, from: 60)
+        XCTAssertEqual(m.charging(now: at(800)), .yes)
+        XCTAssertFalse(m.chargingLikely(now: at(800)))
+    }
+
+    func testStaleFactsExpireToUnknown() {
+        var m = ChargingModel(connection: c)
+        m.applyEvent(kind: .batteryPackConnected, eventAt: at(0), receivedAt: at(0), connection: c)
+        m.applyEvent(kind: .chargingOn, eventAt: at(0), receivedAt: at(0), connection: c)
+        let later = at(ChargingModel.factMaxAge + 1)
+        XCTAssertEqual(m.attached(now: later), .unknown)
+        XCTAssertEqual(m.charging(now: later), .unknown)
+    }
+
+    // MARK: events before the strap clock is known
+
+    private func event(_ kind: Whoop5EventKind, unix: Int) -> Whoop5Event {
+        Whoop5Event(number: 0, kind: kind, unix: unix, subseconds: 0, body: [])
+    }
+
+    func testHeldEventIsJudgedAgainstStrapTimeAtReceipt() {
+        // Strap clock is 100 s behind the Mac. The event was stamped just before it arrived: live.
+        let offset = 100.0
+        var p = PendingChargingEvents()
+        let rx = at(10)
+        p.hold(event(.batteryPackConnected, unix: Int(rx.timeIntervalSince1970 - offset) - 2), receivedAt: rx)
+        p.hold(event(.chargingOn, unix: Int(rx.timeIntervalSince1970 - offset) - 3600), receivedAt: rx)   // a replay
+        p.hold(event(.hapticsFired, unix: Int(rx.timeIntervalSince1970 - offset)), receivedAt: rx)          // not a charging event
+        XCTAssertEqual(p.items.count, 2)
+        let live = p.drain(now: at(30), deviceTime: { $0 - offset }, hostTime: { $0 + offset })
+        XCTAssertEqual(live.map(\.kind), [.batteryPackConnected])
+        XCTAssertEqual(live.first!.eventAt.timeIntervalSince1970, rx.timeIntervalSince1970 - 2, accuracy: 0.01)
+        XCTAssertTrue(p.items.isEmpty)
+    }
+
+    func testHeldEventsExpireAndAreBounded() {
+        var p = PendingChargingEvents()
+        for k in 0..<20 { p.hold(event(.chargingOn, unix: Int(t0.timeIntervalSince1970) + k), receivedAt: at(Double(k))) }
+        XCTAssertEqual(p.items.count, PendingChargingEvents.maxCount)
+        let late = p.drain(now: at(19 + PendingChargingEvents.maxHold + 1), deviceTime: { $0 }, hostTime: { $0 })
+        XCTAssertTrue(late.isEmpty, "a clock that arrives too late can't vouch for old events")
+    }
 }
+
