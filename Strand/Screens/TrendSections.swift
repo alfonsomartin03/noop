@@ -114,6 +114,25 @@ enum TrendWindow {
         return resolve(all, range: range, anchor: anchor)
     }
 
+    /// The selected window against the equal window before it (`TrendPeriodComparison` holds the rule). Nil for "all
+    /// history". Uses the series' effective range, so a widened window compares like with like.
+    static func change(_ days: [DailyMetric], _ value: (DailyMetric) -> Double?, series: TrendSeries, anchor: Date?,
+                       unit: String, tolerance: Double, format: @escaping (Double) -> String) -> TrendChange? {
+        let all = days.compactMap { d -> (date: Date, value: Double)? in
+            guard let v = value(d), let dt = date(d.day) else { return nil }
+            return (dt, v)
+        }
+        return change(all, range: series.effective, anchor: anchor, unit: unit, tolerance: tolerance, format: format)
+    }
+
+    static func change(_ all: [(date: Date, value: Double)], range: TrendRange, anchor: Date?, unit: String, tolerance: Double,
+                       format: @escaping (Double) -> String) -> TrendChange? {
+        guard let n = range.days, let anchor,
+              let c = TrendPeriodComparison.compare(all, days: n, latest: anchor, today: date(AnalyticsEngine.dayString(Int(Date().timeIntervalSince1970))),
+                                                    tolerance: tolerance) else { return nil }
+        return TrendChange(comparison: c, unit: unit, format: format)
+    }
+
     /// A padded value range for a series so the line isn't flat against the axis.
     static func valueRange(_ pts: [TrendPoint], fallback: ClosedRange<Double>, pad: Double = 0.12) -> ClosedRange<Double> {
         let vals = pts.map(\.value)
@@ -153,6 +172,54 @@ struct TrendRangeBar: View {
     }
 }
 
+/// One period comparison in words: direction, difference with its unit, and both periods. Neutral: up is not "better".
+struct TrendChange {
+    let comparison: TrendPeriodComparison
+    let unit: String
+    let format: (Double) -> String
+
+    private static func span(_ a: Date, _ b: Date) -> String {
+        // Day dates are UTC midnights (see `TrendWindow.date`), so format them in UTC.
+        var f = Date.FormatStyle(date: .abbreviated, time: .omitted)
+        f.timeZone = TimeZone(identifier: "UTC")!
+        return "\(a.formatted(f))–\(b.formatted(f))"
+    }
+    private var unitSuffix: String { unit.isEmpty ? "" : " \(unit)" }
+
+    var symbol: String {
+        switch comparison.direction {
+        case .up: return "arrow.up.right"
+        case .down: return "arrow.down.right"
+        case .unchanged: return "equal"
+        case .insufficient: return "ellipsis"
+        }
+    }
+    /// Short line for the stat bubble.
+    var text: String {
+        let prior = "vs prior \(comparison.days) d"
+        switch comparison.direction {
+        case .up, .down:
+            let d = comparison.delta ?? 0
+            return "\(d > 0 ? "+" : "−")\(format(abs(d)))\(unitSuffix) \(prior)"
+        case .unchanged: return "About the same \(prior)"
+        case .insufficient: return "Not enough data to compare"
+        }
+    }
+    /// Both periods spelled out, for the tooltip and VoiceOver.
+    var detail: String {
+        let cur = "\(Self.span(comparison.currentStart, comparison.currentEnd)) (\(comparison.currentCount) days with data)"
+        let prev = "\(Self.span(comparison.previousStart, comparison.previousEnd)) (\(comparison.previousCount) days with data)"
+        let means = [comparison.currentMean, comparison.previousMean].map { $0.map { format($0) + unitSuffix } ?? "no data" }
+        let head: String = switch comparison.direction {
+        case .up: "Up"
+        case .down: "Down"
+        case .unchanged: "About the same"
+        case .insufficient: "Not enough data to compare"
+        }
+        return "\(head). Average \(means[0]) for \(cur), compared with \(means[1]) for \(prev). Completed days only; missing days are not counted as zero."
+    }
+}
+
 /// A compact number in a soft, rounded bubble: a tinted icon badge and label, a large rounded value with its unit,
 /// one line of context. `accent` washes the bubble and colors the badge; `tint` colors the value itself.
 struct TrendStat: View {
@@ -163,6 +230,8 @@ struct TrendStat: View {
     var tint: Color = StrandPalette.textPrimary
     var symbol: String? = nil
     var accent: Color = StrandPalette.accent
+    /// Against the preceding period; nil for none (e.g. all history).
+    var change: TrendChange? = nil
 
     @State private var hovering = false
     private static let radius: CGFloat = 26
@@ -195,6 +264,14 @@ struct TrendStat: View {
                 }
                 Text(caption ?? " ").font(.system(size: 12, weight: .medium, design: .rounded))
                     .foregroundStyle(StrandPalette.textTertiary).lineLimit(1)
+                if let change {
+                    Label(change.text, systemImage: change.symbol)
+                        .font(.system(size: 11, weight: .semibold, design: .rounded))
+                        .foregroundStyle(StrandPalette.textSecondary)   // neutral on purpose: direction is not a verdict
+                        .lineLimit(1).minimumScaleFactor(0.8)
+                        .help(change.detail)
+                        .accessibilityLabel(change.detail)
+                }
             }
         }
         .padding(.horizontal, 18).padding(.vertical, 16)
@@ -378,15 +455,21 @@ struct SleepTrendsContent: View {
                 let stages = StageWindow(days: days, range: range, anchor: anchor)
 
                 TrendRangeBar(range: $range, sparseNote: duration.widened ? duration.caption : nil)
+                let change = { (v: @escaping (DailyMetric) -> Double?, s: TrendSeries, unit: String, tol: Double, f: @escaping (Double) -> String) in
+                    TrendWindow.change(days, v, series: s, anchor: anchor, unit: unit, tolerance: tol, format: f)
+                }
                 TrendSummaryRow {
                     TrendStat(label: "Average asleep", value: duration.mean.map(Self.hoursText), caption: "per night",
-                              symbol: "bed.double.fill", accent: StrandPalette.sleepLight)
+                              symbol: "bed.double.fill", accent: StrandPalette.sleepLight,
+                              change: change({ $0.totalSleepMin.map { $0 / 60 } }, duration, "", 10.0 / 60, Self.hoursText))
                     TrendStat(label: "Efficiency", value: efficiency.mean.map { String(format: "%.0f", $0) }, unit: "%",
                               caption: efficiency.points.isEmpty ? "Not recorded" : "average",
-                              symbol: "checkmark.seal.fill", accent: StrandPalette.statusPositive)
+                              symbol: "checkmark.seal.fill", accent: StrandPalette.statusPositive,
+                              change: change({ $0.efficiency }, efficiency, "%", 1, { String(format: "%.0f", $0) }))
                     TrendStat(label: "Deep + REM", value: restorative.mean.map(DayMath.hm),
                               caption: restorative.points.isEmpty ? "Not recorded" : "per night",
-                              symbol: "moon.stars.fill", accent: StrandPalette.sleepDeep)
+                              symbol: "moon.stars.fill", accent: StrandPalette.sleepDeep,
+                              change: change({ d in d.deepMin.flatMap { a in d.remMin.map { a + $0 } } }, restorative, "", 10, DayMath.hm))
                     TrendStat(label: "Nights", value: "\(duration.points.count)", caption: duration.effective.subtitle,
                               symbol: "calendar", accent: StrandPalette.sleepREM)
                 }
@@ -527,15 +610,24 @@ struct VitalsTrendsContent: View {
             } else {
                 let lead = [rhr, hrv].first { !$0.points.isEmpty } ?? resp
                 TrendRangeBar(range: $range, sparseNote: lead.widened ? lead.caption : nil)
+                let anchor = days.last.flatMap { TrendWindow.date($0.day) }
+                let whole: (Double) -> String = { "\(Int($0.rounded()))" }
+                let change = { (v: @escaping (DailyMetric) -> Double?, s: TrendSeries, unit: String, tol: Double, f: @escaping (Double) -> String) in
+                    TrendWindow.change(days, v, series: s, anchor: anchor, unit: unit, tolerance: tol, format: f)
+                }
                 TrendSummaryRow {
                     TrendStat(label: "Resting HR", value: rhr.mean.map { "\(Int($0.rounded()))" }, unit: "bpm", caption: rhr.points.isEmpty ? "Not recorded" : "average",
-                              symbol: "heart.fill", accent: StrandPalette.metricRose)
+                              symbol: "heart.fill", accent: StrandPalette.metricRose,
+                              change: change({ $0.restingHr.map(Double.init) }, rhr, "bpm", 1, whole))
                     TrendStat(label: "HRV", value: hrv.mean.map { "\(Int($0.rounded()))" }, unit: "ms", caption: hrv.points.isEmpty ? "Not recorded" : "average",
-                              symbol: "waveform.path.ecg", accent: StrandPalette.metricPurple)
+                              symbol: "waveform.path.ecg", accent: StrandPalette.metricPurple,
+                              change: change({ $0.avgHrv }, hrv, "ms", 2, whole))
                     TrendStat(label: "Respiration", value: resp.mean.map(oneDecimal), unit: "rpm", caption: resp.points.isEmpty ? "Not recorded" : "average",
-                              symbol: "lungs.fill", accent: StrandPalette.metricCyan)
+                              symbol: "lungs.fill", accent: StrandPalette.metricCyan,
+                              change: change({ $0.respRateBpm }, resp, "rpm", 0.3, oneDecimal))
                     TrendStat(label: "Blood oxygen", value: spo2.mean.map(oneDecimal), unit: "%", caption: spo2.points.isEmpty ? "Not recorded" : "average",
-                              symbol: "drop.fill", accent: StrandPalette.accent)
+                              symbol: "drop.fill", accent: StrandPalette.accent,
+                              change: change({ $0.spo2Pct }, spo2, "%", 0.5, oneDecimal))
                 }
                 LazyVGrid(columns: trendCardColumns, alignment: .leading, spacing: NoopMetrics.gap) {
                     TrendLineCard(title: "Resting heart rate", unit: "bpm", series: rhr, gradient: TrendWindow.gradient(StrandPalette.metricRose),
@@ -568,13 +660,15 @@ struct ActivityTrendsView: View {
     @EnvironmentObject var repo: Repository
     @State private var workouts: [WorkoutRow] = []
     @State private var apple: [AppleDaily] = []
+    @State private var loads: [DayLoadRecord] = []
     @State private var loaded = false
 
     var body: some View {
-        ActivityTrendsContent(days: repo.days, workouts: workouts, apple: apple, loaded: loaded && repo.loaded)
+        ActivityTrendsContent(days: repo.days, workouts: workouts, apple: apple, loads: loads, loaded: loaded && repo.loaded)
             .task(id: repo.dataVersion) {
                 workouts = await repo.workoutRows()
                 apple = await repo.appleDailyRows()
+                loads = await repo.dayLoads(from: "0000-00-00", to: "9999-99-99")
                 loaded = true
             }
     }
@@ -584,6 +678,7 @@ struct ActivityTrendsContent: View {
     let days: [DailyMetric]
     let workouts: [WorkoutRow]
     let apple: [AppleDaily]
+    var loads: [DayLoadRecord] = []
     let loaded: Bool
     @State private var range: TrendRange = .month
 
@@ -604,6 +699,14 @@ struct ActivityTrendsContent: View {
 
     private static func thousands(_ v: Double) -> String { Int(v.rounded()).formatted() }
 
+    /// Scored days inside the same window the strain chart shows.
+    private func zoneWindow(_ r: TrendRange, anchor: Date?) -> [DayLoadRecord] {
+        guard let n = r.days else { return loads }
+        guard let anchor else { return [] }
+        let cutoff = anchor.addingTimeInterval(-Double(n - 1) * 86_400)
+        return loads.filter { TrendWindow.date($0.day).map { $0 >= cutoff && $0 <= anchor } ?? false }
+    }
+
     var body: some View {
         ScreenScaffold(title: "Activity trends") {
             let anchor = self.anchor
@@ -621,6 +724,7 @@ struct ActivityTrendsContent: View {
                 TrendLineCard(title: "Day strain", unit: "", series: strain, gradient: StrandPalette.strainGradient,
                               valueRange: 0...21, format: { String(format: "%.1f", $0) },
                               note: "cardiovascular load, awake time")
+                ZoneTotalsCard(totals: ZoneTotals.sum(zoneWindow(strain.effective, anchor: anchor)), range: strain.effective)
                 charts(sessions: sessions, steps: steps, energy: energy)
             }
         }
@@ -630,7 +734,9 @@ struct ActivityTrendsContent: View {
         TrendSummaryRow {
             TrendStat(label: "Average strain", value: strain.mean.map { String(format: "%.1f", $0) }, unit: "/ 21",
                       caption: strain.points.isEmpty ? "Not recorded" : "per day",
-                      symbol: "flame.fill", accent: StrandPalette.zone4)
+                      symbol: "flame.fill", accent: StrandPalette.zone4,
+                      change: TrendWindow.change(days, { $0.strain }, series: strain, anchor: anchor, unit: "", tolerance: 0.5,
+                                                 format: { String(format: "%.1f", $0) }))
             TrendStat(label: "Workouts", value: "\(sessions.rows.count)", caption: sessions.rows.isEmpty ? "None stored" : sessions.effective.subtitle,
                       symbol: "figure.run", accent: StrandPalette.statusPositive)
             TrendStat(label: "Workout time", value: sessions.rows.isEmpty ? nil : DayMath.hm(sessions.totalMinutes), caption: sessions.topActivity,
@@ -679,6 +785,49 @@ struct ActivityTrendsContent: View {
                                   valueRange: TrendWindow.valueRange(energy.points, fallback: 0...1_000), format: Self.thousands, note: "Apple Health")
                 }
             }
+        }
+    }
+}
+
+/// Time in Zones 1–5 over the window, from NOOP's scored awake heart-rate seconds. Zone 0 is left out on purpose, and
+/// unrecorded time and sleep are in no zone, so the bars never add up to the whole window.
+struct ZoneTotalsCard: View {
+    let totals: ZoneTotals
+    let range: TrendRange
+    private static let colors = [StrandPalette.zone1, StrandPalette.zone2, StrandPalette.zone3, StrandPalette.zone4, StrandPalette.zone5]
+
+    var body: some View {
+        TrendCard(title: "Time in heart-rate zones", caption: "Zones 1–5 · \(range.subtitle.lowercased()) · \(totals.days) scored day\(totals.days == 1 ? "" : "s")",
+                  value: totals.days == 0 ? nil : DayMath.hm(Double(totals.totalS) / 60), valueLabel: "Zones 1–5 total",
+                  height: 150, accent: StrandPalette.zone3) {
+            if totals.days == 0 {
+                TrendEmptyChart(count: 0, none: "No scored days in this window",
+                                needs: "Zone time comes from days NOOP scored from the strap's heart rate.")
+            } else {
+                let top = max(totals.seconds.max() ?? 0, 1)
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(0..<5, id: \.self) { i in
+                        HStack(spacing: 10) {
+                            Text("Z\(i + 1)").font(.system(size: 12, weight: .semibold, design: .rounded))
+                                .foregroundStyle(StrandPalette.textSecondary).frame(width: 24, alignment: .leading)
+                            GeometryReader { g in
+                                Capsule(style: .continuous).fill(Self.colors[i])
+                                    .frame(width: max(4, g.size.width * CGFloat(totals.seconds[i]) / CGFloat(top)))
+                            }
+                            .frame(height: 12)
+                            Text(DayMath.hm(Double(totals.seconds[i]) / 60))
+                                .font(.system(size: 12, weight: .semibold, design: .rounded).monospacedDigit())
+                                .foregroundStyle(StrandPalette.textPrimary).frame(width: 64, alignment: .trailing)
+                        }
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel("Zone \(i + 1): \(DayMath.hm(Double(totals.seconds[i]) / 60))")
+                    }
+                }
+            }
+        } footer: {
+            Text("Awake heart-rate time NOOP scored, in hours and minutes. Unrecorded time and sleep are in no zone; Zone 0 isn't shown.")
+                .font(StrandFont.footnote).foregroundStyle(StrandPalette.textTertiary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 }
@@ -777,11 +926,7 @@ struct TrendTabSwitcher<Trends: View, Detail: View>: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Picker("View", selection: $showDetail) {
-                Text("Trends").tag(false)
-                Text(detailTitle).tag(true)
-            }
-            .pickerStyle(.segmented).labelsHidden().fixedSize().controlSize(.small)
+            SegmentedPillControl([false, true], selection: $showDetail, title: "View", controlSize: .small) { $0 ? detailTitle : "Trends" }
             .padding(.horizontal, NoopMetrics.screenPadding).padding(.top, 2).padding(.bottom, 4)
             .frame(maxWidth: NoopMetrics.contentMaxWidth, alignment: .leading)
             .frame(maxWidth: .infinity)

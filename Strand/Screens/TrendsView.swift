@@ -64,17 +64,25 @@ struct TrendsView: View {
         let whole: (Double) -> String = { "\(Int($0.rounded()))" }
         let recoveryColor = recovery.mean.map(StrandPalette.recoveryColor)
         let strainColor = strain.mean.map(StrandPalette.strainColor)
+        let one: (Double) -> String = { String(format: "%.1f", $0) }
+        func change(_ v: @escaping (DailyMetric) -> Double?, _ s: TrendSeries, _ unit: String, _ tol: Double, _ f: @escaping (Double) -> String) -> TrendChange? {
+            TrendWindow.change(repo.days, v, series: s, anchor: latestDay, unit: unit, tolerance: tol, format: f)
+        }
         return TrendSummaryRow {
             TrendStat(label: "Recovery", value: recovery.mean.map(whole), unit: "%", caption: recovery.effective.subtitle,
                       tint: recoveryColor.map(StrandPalette.scoreInk) ?? StrandPalette.textPrimary,
-                      symbol: "bolt.heart.fill", accent: recoveryColor ?? StrandPalette.statusPositive)
+                      symbol: "bolt.heart.fill", accent: recoveryColor ?? StrandPalette.statusPositive,
+                      change: change({ $0.recovery }, recovery, "%", 2, whole))
             TrendStat(label: "HRV", value: hrv.mean.map(whole), unit: "ms", caption: hrv.effective.subtitle,
-                      symbol: "waveform.path.ecg", accent: StrandPalette.metricPurple)
+                      symbol: "waveform.path.ecg", accent: StrandPalette.metricPurple,
+                      change: change({ $0.avgHrv }, hrv, "ms", 2, whole))
             TrendStat(label: "Resting HR", value: rhr.mean.map(whole), unit: "bpm", caption: rhr.effective.subtitle,
-                      symbol: "heart.fill", accent: StrandPalette.metricRose)
+                      symbol: "heart.fill", accent: StrandPalette.metricRose,
+                      change: change({ $0.restingHr.map(Double.init) }, rhr, "bpm", 1, whole))
             TrendStat(label: "Day strain", value: strain.mean.map { String(format: "%.1f", $0) }, unit: "/ 21", caption: strain.effective.subtitle,
                       tint: strainColor.map(StrandPalette.scoreInk) ?? StrandPalette.textPrimary,
-                      symbol: "flame.fill", accent: strainColor ?? StrandPalette.zone4)
+                      symbol: "flame.fill", accent: strainColor ?? StrandPalette.zone4,
+                      change: change({ $0.strain }, strain, "", 0.5, one))
         }
     }
 

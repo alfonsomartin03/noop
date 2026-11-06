@@ -228,3 +228,14 @@ final class StrandDesignTests: XCTestCase {
         XCTAssertEqual(Sparkline.defaultValueString(64.5), "64.5")
     }
 }
+
+final class SegmentedPillKeyboardTests: XCTestCase {
+    func testArrowKeysMoveSelectionAndClampAtTheEnds() {
+        let items = ["Scores", "Sleep", "Vitals", "Activity"]
+        XCTAssertEqual(SegmentedPillControl<String>.moved(items, from: "Sleep", by: 1), "Vitals")
+        XCTAssertEqual(SegmentedPillControl<String>.moved(items, from: "Sleep", by: -1), "Scores")
+        XCTAssertNil(SegmentedPillControl<String>.moved(items, from: "Scores", by: -1))
+        XCTAssertNil(SegmentedPillControl<String>.moved(items, from: "Activity", by: 1))
+        XCTAssertEqual(SegmentedPillControl<String>.moved(items, from: "Missing", by: 1), "Scores")
+    }
+}

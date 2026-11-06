@@ -5,6 +5,8 @@ import StrandDesign
 private struct SegmentedHub<Seg: Hashable & CaseIterable & RawRepresentable, Body: View>: View where Seg.RawValue == String, Seg.AllCases: RandomAccessCollection {
     let title: String
     @Binding var selection: Seg
+    /// Trends uses the app's own pill control (as its range pills do); Settings keeps the system segmented picker.
+    var pills = false
     @ViewBuilder var content: (Seg) -> Body
 
     var body: some View {
@@ -14,10 +16,16 @@ private struct SegmentedHub<Seg: Hashable & CaseIterable & RawRepresentable, Bod
                 Spacer()
             }
             .padding(.horizontal, NoopMetrics.screenPadding).padding(.top, 20)
-            Picker(title, selection: $selection) {
-                ForEach(Seg.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+            Group {
+                if pills {
+                    SegmentedPillControl(Array(Seg.allCases), selection: $selection, title: "\(title) sections") { $0.rawValue }
+                } else {
+                    Picker(title, selection: $selection) {
+                        ForEach(Seg.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                    }
+                    .pickerStyle(.segmented).labelsHidden().fixedSize()
+                }
             }
-            .pickerStyle(.segmented).labelsHidden().fixedSize()
             .padding(.horizontal, NoopMetrics.screenPadding).padding(.top, 12).padding(.bottom, 6)
             .frame(maxWidth: .infinity, alignment: .leading)
             content(selection)
@@ -33,7 +41,7 @@ struct TrendsHub: View {
     private var sel: Binding<Seg> { Binding(get: { Seg(rawValue: raw) ?? .scores }, set: { raw = $0.rawValue }) }
 
     var body: some View {
-        SegmentedHub(title: "Trends", selection: sel) { seg in
+        SegmentedHub(title: "Trends", selection: sel, pills: true) { seg in
             switch seg {
             case .scores: TrendsView()
             case .sleep:

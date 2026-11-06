@@ -190,31 +190,60 @@ public struct InsightCard: View {
 // MARK: - Range control (the ONE segmented pill control, used everywhere)
 
 // The single segmented control used for every range/mode picker.
+/// Pill segmented control (range pills, Trends sub-tabs). Each pill is a button with the selected trait; the control
+/// takes keyboard focus and Left/Right arrows move the selection. `title` names the group for VoiceOver.
 public struct SegmentedPillControl<T: Hashable>: View {
     let items: [T]
     let label: (T) -> String
+    let title: String?
+    var controlSize: ControlSize
     @Binding var selection: T
-    public init(_ items: [T], selection: Binding<T>, label: @escaping (T) -> String) {
-        self.items = items; self._selection = selection; self.label = label
+    public init(_ items: [T], selection: Binding<T>, title: String? = nil, controlSize: ControlSize = .regular,
+                label: @escaping (T) -> String) {
+        self.items = items; self._selection = selection; self.title = title; self.controlSize = controlSize; self.label = label
     }
+
+    private func select(_ item: T) { withAnimation(StrandMotion.respecting(StrandMotion.interactive)) { selection = item } }
+
+    /// The item `step` places from the current selection, clamped to the ends.
+    static func moved(_ items: [T], from current: T, by step: Int) -> T? {
+        guard let i = items.firstIndex(of: current) else { return items.first }
+        let j = min(max(i + step, 0), items.count - 1)
+        return j == i ? nil : items[j]
+    }
+
     public var body: some View {
+        let large = controlSize != .small && controlSize != .mini
         HStack(spacing: 4) {
             ForEach(Array(items.enumerated()), id: \.offset) { _, item in
                 let sel = item == selection
-                Button { withAnimation(StrandMotion.respecting(StrandMotion.interactive)) { selection = item } } label: {
+                Button { select(item) } label: {
                     Text(label(item))
-                        .font(StrandFont.captionNumber)
+                        .font(large ? StrandFont.captionNumber : .system(size: 12, weight: .semibold, design: .rounded))
                         .foregroundStyle(sel ? StrandPalette.textPrimary : StrandPalette.textSecondary)
                         .frame(minWidth: 32)
-                        .padding(.vertical, 5).padding(.horizontal, 11)
+                        .padding(.vertical, large ? 5 : 4).padding(.horizontal, large ? 11 : 12)
                         .background(Capsule(style: .continuous).fill(sel ? StrandPalette.surfaceRaised : Color.clear)
                             .shadow(color: StrandPalette.shadow.opacity(sel ? 1.6 : 0), radius: 3, y: 1))
+                        .contentShape(Capsule(style: .continuous))
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel(label(item))
+                .accessibilityAddTraits(sel ? [.isSelected] : [])
             }
         }
         .padding(3)
         .background(StrandPalette.surfaceInset, in: Capsule(style: .continuous))
+        .focusable()
+        .onMoveCommand { dir in
+            switch dir {
+            case .left: if let n = Self.moved(items, from: selection, by: -1) { select(n) }
+            case .right: if let n = Self.moved(items, from: selection, by: 1) { select(n) }
+            default: break
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(title ?? "")
     }
 }
 
