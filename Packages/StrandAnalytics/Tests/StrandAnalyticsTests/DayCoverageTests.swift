@@ -72,4 +72,27 @@ final class DayCoverageTests: XCTestCase {
         XCTAssertTrue(imp.importedSummaryOnly)
         XCTAssertFalse(imp.warrantsWarning)
     }
+
+    func testIntervalsReachingPastNowAreClippedToNow() {
+        // A clock-skewed or held interval past "now" never counts future time as recorded, and nothing after now is a gap.
+        let now = day0 + 6 * 3600
+        let c = DayCoverage.compute(dayStart: day0, dayEnd: day0 + 86_400, now: now,
+                                    intervals: [(day0, day0 + 9 * 3600)], syncedThrough: day0 + 9 * 3600)
+        XCTAssertEqual(c.recordedSeconds, 6 * 3600)
+        XCTAssertTrue(c.gaps.isEmpty)
+        XCTAssertEqual(c.awaitingSyncSeconds, 0)
+        XCTAssertEqual(c.elapsedSeconds, 6 * 3600)
+        XCTAssertEqual(c.caption(), "6 h recorded so far.")
+    }
+
+    func testJustEndedDayWithDelayedSyncIsNotAGap() {
+        // Yesterday's last hours haven't synced yet: awaiting sync, not missing, and the caption stays neutral.
+        let c = DayCoverage.compute(dayStart: day0, dayEnd: day0 + 86_400, now: day0 + 86_400 + 600,
+                                    intervals: [(day0, day0 + 23 * 3600)], syncedThrough: day0 + 23 * 3600)
+        XCTAssertFalse(c.isToday)
+        XCTAssertTrue(c.gaps.isEmpty)
+        XCTAssertEqual(c.awaitingSyncSeconds, 3600)
+        XCTAssertFalse(c.warrantsWarning)
+        XCTAssertEqual(c.caption(), "23 h recorded of 24 h.")
+    }
 }

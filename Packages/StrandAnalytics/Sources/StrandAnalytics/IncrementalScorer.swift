@@ -163,7 +163,9 @@ public enum IncrementalScorer {
         let pastMains = (try await store.sleepSessions(deviceId: computedId, from: 0, to: Int.max, limit: 4000))
             .filter(\.isMainSleep).map { (start: $0.startTs, end: $0.endTs) }
         let habit = SleepHabit.learn(primaries: SleepCorrections.mergeEpisodes(pastMains))
-        let config = profileConfig
+        // Today is scored only up to `now` (see `observedUntil`), so its key carries an "open" marker: the first run after
+        // the day ends sees a different key and re-scores it once over the whole day, even with no new input.
+        func config(_ day: String) -> String { day >= today ? profileConfig + "|open" : profileConfig }
         func correctionsKey(_ r: (from: Int, to: Int)) -> String {
             let lo = r.from - contextBeforeS, hi = r.to + contextAfterS
             return corrections.filter { $0.end >= lo && $0.start <= hi }.map { "\($0.id):\($0.action.rawValue)" }.joined(separator: ",")
@@ -179,7 +181,7 @@ public enum IncrementalScorer {
         for (day, r) in ranges {
             // An old day beyond `maxDays` is only reconsidered when something reached it; a stale version there waits for
             // the re-score, which widens `maxDays` to cover it.
-            reasons[day] = reason(state: states[day], range: r, algorithmKey: algorithm, configKey: config,
+            reasons[day] = reason(state: states[day], range: r, algorithmKey: algorithm, configKey: config(day),
                                   knownKey: knownSessionsKey(knownSessions(r)) + correctionsKey(r), hasNewInput: touched.contains(day))
         }
         let horizon = ranges.keys.sorted().suffix(q.maxDays).first ?? today
@@ -234,7 +236,7 @@ public enum IncrementalScorer {
                     // Over, and sleep across its end could be checked. A day with nothing after it stays open.
                     let closed = day < today && res?.load?.reasons.contains(LoadReason.dayEndUnclassified) != true
                     let calibration = res?.load?.calibration
-                    return DayScoreRow(day: day, algorithmKey: algorithm, configKey: config, inputRevision: revision,
+                    return DayScoreRow(day: day, algorithmKey: algorithm, configKey: config(day), inputRevision: revision,
                                        calibrationKey: fingerprint(calibration.map { "\($0)" } ?? "-"),
                                        baselineKey: baselineKey(baselines), knownSessionsKey: knownSessionsKey(sessions) + correctionsKey(range),
                                        rangeStart: range.from, rangeEnd: range.to, finalized: closed, hasResult: res != nil)
@@ -260,6 +262,7 @@ public enum IncrementalScorer {
                 let res = AnalyticsEngine.analyzeDay(day: day, hr: hr, rr: rr, resp: resp, gravity: grav, profile: q.profile,
                                                      baselines: baselines, maxHROverride: q.maxHROverride, dayRange: range,
                                                      calibration: frozen[day], knownSessions: sessions, following: following,
+                                                     observedUntil: day >= today ? q.now : nil,
                                                      sleepHabit: habit, sleepCorrections: corrections)
                 newStates.append(state(res))
                 return res

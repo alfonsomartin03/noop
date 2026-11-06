@@ -125,6 +125,8 @@ public enum AnalyticsEngine {
     ///     past day keeps its values; nil resolves one for this run.
     ///   - knownSessions: imported or logged sessions. They only attribute load, they can't change the day's total.
     ///   - following: data after the day; see `FollowingData`. A result without it may be provisional at its end.
+    ///   - observedUntil: the scoring clock ("now"). The load's requested time stops here, so the rest of an unfinished
+    ///     day is neither recorded nor missing. nil = the whole day has passed.
     // Order matters: sleep first (gives resting HR + HRV), then recovery (needs those), then workouts and strain.
     public static func analyzeDay(day: String,
                                   hr rawHR: [HRSample] = [],
@@ -138,6 +140,7 @@ public enum AnalyticsEngine {
                                   calibration frozen: HRCalibration? = nil,
                                   knownSessions: [TimeSpan] = [],
                                   following: FollowingData? = nil,
+                                  observedUntil: Int? = nil,
                                   sleepHabit: SleepHabit = .fallback,
                                   sleepCorrections: [SleepCorrection] = []) -> DayResult {
 
@@ -265,8 +268,10 @@ public enum AnalyticsEngine {
 
         // ── Load: integrated over the day's unique awake supported seconds, then attributed to sessions ──
         // Independent of how episodes were grouped. Time that wasn't observed stays unknown: it is never filled in.
-        let load = span.map {
-            DayLoadRecord.compute(day: day, span: $0, support: daySupport, awake: awake,
+        // Today's requested time ends at the scoring clock: hours that haven't happened yet are not unrecorded time.
+        let load = span.map { full -> DayLoadRecord in
+            let end = observedUntil.map { max(full.start, min(full.end, $0)) } ?? full.end
+            return DayLoadRecord.compute(day: day, span: TimeSpan(full.start, end), support: daySupport, awake: awake,
                                   sessions: workouts.map { TimeSpan($0.start, $0.end) } + knownSessions,
                                   calibration: calibration, quality: hrQuality)
         }

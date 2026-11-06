@@ -192,6 +192,27 @@ final class SleepStrainScenarioTests: XCTestCase {
         XCTAssertEqual(alone.daily, later.daily, "sleep totals, recovery and strain fields are unmoved here")
     }
 
+    func testTodaysRemainingHoursAreNeitherRecordedNorMissing() {
+        // 10 h worn continuously into a day that is 10 h old: the rest of the day hasn't happened yet.
+        let b = build([.moving(min: 600, bpm: 80)])
+        let now = b.t0 + 600 * 60
+        let open = AnalyticsEngine.analyzeDay(day: "d", hr: b.hr, gravity: b.grav, profile: UserProfile(age: 30),
+                                              dayRange: (b.t0, b.t0 + 86_400), observedUntil: now).load!
+        XCTAssertEqual(open.summary!.requestedS, 600 * 60, "requested time stops at now")
+        XCTAssertLessThan(open.summary!.unknownS, 120)
+        XCTAssertEqual(open.status, .complete, "fully worn so far is not a partial day")
+        XCTAssertEqual(open.rangeEnd, now)
+        // The same data judged as a finished day: the other 14 h are genuinely unrecorded.
+        let closed = AnalyticsEngine.analyzeDay(day: "d", hr: b.hr, gravity: b.grav, profile: UserProfile(age: 30),
+                                                dayRange: (b.t0, b.t0 + 86_400)).load!
+        XCTAssertEqual(closed.summary!.requestedS, 86_400)
+        XCTAssertEqual(closed.status, .partial)
+        // A clock past the day's end, or before it starts, is clipped to the day.
+        let late = AnalyticsEngine.analyzeDay(day: "d", hr: b.hr, gravity: b.grav, profile: UserProfile(age: 30),
+                                              dayRange: (b.t0, b.t0 + 86_400), observedUntil: b.t0 + 2 * 86_400).load!
+        XCTAssertEqual(late.summary!.requestedS, 86_400)
+    }
+
     func testIdleTimeBelowZone1AddsNoLoad() {
         // Light HR all day stays below Zone 1 (50 % of HRmax): only measured load counts, so nothing accrues with time.
         let night: [Seg] = [.moving(min: 240, bpm: 85), .sleep(min: 420, bpm: 52)]
