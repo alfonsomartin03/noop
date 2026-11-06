@@ -134,7 +134,7 @@ public enum CardioLoad {
 
     /// Versions stored with every result. Bump the one whose definition changed.
     public static let loadVersion = "cardio-load-awake-2026.10"
-    public static let detectorVersion = "episode-detector-2026.10"
+    public static let detectorVersion = "episode-detector-2026.11-trim"
 
     /// Mean %HRR over supported seconds, clamped per interval to [0, 100]. Nil when reserve is unknown or invalid.
     public static func meanPercentHRR(_ support: SupportedHR, calibration: HRCalibration) -> Double? {

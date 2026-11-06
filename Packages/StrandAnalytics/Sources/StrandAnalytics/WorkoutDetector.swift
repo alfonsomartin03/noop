@@ -18,6 +18,10 @@ import WhoopProtocol
 //      never bridged as if the effort continued.
 //   3. Every second of an episode is then active, paused (observed, HR dropped) or unknown (not observed), and these
 //      partition its elapsed time. Acceptance needs enough ACTIVE time and coverage, never wall-clock span alone.
+//   3b. Boundary trim, once an episode is closed: leading/trailing time the evidence does not support is removed (a
+//      short burst separated from the effort by a longer pause; edge minutes whose median HR is back under the Zone 1
+//      floor, kept only by the exit hysteresis). Only edges move; pauses inside the effort are kept. Acceptance is then
+//      judged on the trimmed span. See `trimmedEdges`.
 //   4. Motion is context. The channel is a ~1 Hz unit gravity vector (≈1 g magnitude), an orientation signal rather than
 //      raw acceleration, so raw-accelerometer activity models do not apply to it. It labels the evidence and never
 //      rejects an episode: arm movement alone once made detection far too eager, and a still wrist is normal on a bike.
@@ -115,6 +119,10 @@ public enum WorkoutDetector {
     public static let maxUnknownBridgeS: Int = 300
     /// Share of an episode's elapsed time that must be observed.
     public static let minEpisodeCoverage: Double = 0.8
+    /// Boundary trim (see `trimmedEdges`): a leading/trailing burst with at most this much active time can be dropped.
+    public static let edgeFragmentMaxS: Int = 300
+    /// Boundary trim: edge time is judged in whole windows of this length, by their median raw HR.
+    public static let edgeWindowS: Int = 60
 
     // MARK: - Activity series (activity.py)
 
@@ -222,9 +230,60 @@ public enum WorkoutDetector {
         return raw
     }
 
+    /// Boundary trim of a closed episode. Repeated until nothing changes:
+    ///  1. Edge fragment: when the first (last) active run inside the span has at most `edgeFragmentMaxS` of active time
+    ///     and the pause separating it from the next run is longer than that active time, the run and the pause go (a
+    ///     warm-up blip, a flight of stairs after the session).
+    ///  2. Edge settling: whole `edgeWindowS` windows at either edge whose median raw HR is at or below `entry` (the Zone 1
+    ///     floor) go, as do edge windows with no samples. The exit hysteresis keeps an effort going through such time;
+    ///     at an edge it is cooldown or settling rather than the session. The new edge then snaps to the nearest raw
+    ///     sample above `entry`, so a boundary never lands inside unobserved time.
+    /// Interior time is never removed. Returns nil when no supported effort remains. Deterministic: same input, same span.
+    static func trimmedEdges(_ span: TimeSpan, hr: [HRSample], runs: [TimeSpan], entry: Double,
+                             support: SupportedHR) -> TimeSpan? {
+        func firstIndex(atOrAfter t: Int) -> Int {   // hr is time-ordered
+            var a = 0, b = hr.count
+            while a < b { let m = (a + b) / 2; if hr[m].ts < t { a = m + 1 } else { b = m } }
+            return a
+        }
+        let lo = firstIndex(atOrAfter: span.start), hi = firstIndex(atOrAfter: span.end)
+        guard lo < hi else { return nil }
+        let samples = hr[lo..<hi]
+        func median(_ a: Int, _ b: Int) -> Double? {
+            let v = samples.filter { $0.ts >= a && $0.ts < b }.map(\.bpm).sorted()
+            return v.isEmpty ? nil : Double(v[v.count / 2])
+        }
+        var start = span.start, end = span.end
+        for _ in 0..<8 {
+            let before = (start, end)
+            // 1. Edge fragments.
+            let inside = runs.compactMap { r -> TimeSpan? in
+                let c = TimeSpan(max(r.start, start), min(r.end, end))
+                return c.end > c.start ? c : nil
+            }
+            if inside.count >= 2 {
+                let first = inside[0], second = inside[1]
+                let active = support.observedSeconds(in: first)
+                if active <= edgeFragmentMaxS, second.start - first.end > active { start = second.start }
+                let last = inside[inside.count - 1], prev = inside[inside.count - 2]
+                let activeLast = support.observedSeconds(in: last)
+                if activeLast <= edgeFragmentMaxS, last.start - prev.end > activeLast, prev.end > start { end = prev.end }
+            }
+            // 2. Edge settling, in whole windows.
+            while end - start > edgeWindowS, (median(start, start + edgeWindowS) ?? 0) <= entry { start += edgeWindowS }
+            while end - start > edgeWindowS, (median(end - edgeWindowS, end) ?? 0) <= entry { end -= edgeWindowS }
+            guard let a = samples.first(where: { $0.ts >= start && $0.ts < end && Double($0.bpm) > entry })?.ts,
+                  let b = samples.last(where: { $0.ts >= start && $0.ts < end && Double($0.bpm) > entry })?.ts else { return nil }
+            start = a; end = b + 1
+            if (start, end) == before { break }
+        }
+        return end > start ? TimeSpan(start, end) : nil
+    }
+
     /// Episodes of sustained elevated HR. Steps: (1) raw active runs, (2) bridge short pauses, (3) trim edges to raw samples,
-    /// (4) join long efforts split by a stop, (5) account every second, (6) require active time and coverage.
-    static func episodes(_ hr: [HRSample], support: SupportedHR, hrMax: Double) -> [Episode] {
+    /// (4) join long efforts split by a stop, (5) trim unsupported boundaries, (6) account every second, (7) require
+    /// active time and coverage. `trimBoundaries: false` reproduces the untrimmed spans, for evaluation only.
+    static func episodes(_ hr: [HRSample], support: SupportedHR, hrMax: Double, trimBoundaries: Bool = true) -> [Episode] {
         guard hr.count > 1 else { return [] }
         let entry = hrMax * zone1Floor
         let exit = entry - exitBelowFloorBPM
@@ -263,7 +322,9 @@ public enum WorkoutDetector {
                 joined[joined.count - 1] = TimeSpan(l.start, r.end)
             } else { joined.append(r) }
         }
-        return joined.compactMap { s in
+        return joined.compactMap { joinedSpan in
+            guard let s = trimBoundaries
+                ? trimmedEdges(joinedSpan, hr: hr, runs: raw, entry: entry, support: support) : joinedSpan else { return nil }
             let observed = support.observedSeconds(in: s)
             let active = activeSeconds(s)
             guard Double(active) >= hrOnlyMinMin * 60.0,

@@ -203,3 +203,91 @@ final class WorkoutDetectorHROnlyTests: XCTestCase {
         XCTAssertEqual(WorkoutDetector.detect(hr: hr, gravity: [], restingHR: 55, maxHR: 190, age: 30).count, 2)
     }
 }
+
+/// Boundary trim after a session closes. Every fixture states the reference activity interval it was built from.
+/// rest 55, HRmax 190 → Zone 1 floor (entry) 95 bpm, exit 90 bpm.
+final class WorkoutBoundaryTrimTests: XCTestCase {
+    private let t0 = 1_700_000_000
+    private struct Case { let name: String; let segs: [(secs: Int, bpm: Int)]; let reference: (Int, Int) }
+
+    private func series(_ segs: [(secs: Int, bpm: Int)], gapAt: Int? = nil, gapS: Int = 0) -> [HRSample] {
+        var t = t0, out: [HRSample] = []
+        for s in segs { for _ in 0..<s.secs { if gapAt.map({ t >= t0 + $0 && t < t0 + $0 + gapS }) != true { out.append(HRSample(ts: t, bpm: s.bpm)) }; t += 1 } }
+        return out
+    }
+    /// Offset of segment `i`'s start from t0.
+    private func at(_ segs: [(secs: Int, bpm: Int)], _ i: Int) -> Int { segs.prefix(i).reduce(0) { $0 + $1.secs } }
+
+    private func detect(_ hr: [HRSample], trim: Bool = true) -> [WorkoutDetector.Episode] {
+        let cleaned = HRQuality.clean(hr)
+        return WorkoutDetector.episodes(cleaned, support: SupportedHR(cleaned: cleaned), hrMax: 190, trimBoundaries: trim)
+    }
+
+    private var cases: [Case] {
+        // Warm-up blip (2 min), 4 min standing, then the 30-min effort: the blip and the pause are not the session.
+        let blip: [(secs: Int, bpm: Int)] = [(1800, 55), (120, 120), (240, 70), (1800, 150), (1800, 55)]
+        // 40-min effort then a 15-min easy walk at 92 bpm, inside the hysteresis band only.
+        let cooldown: [(secs: Int, bpm: Int)] = [(1800, 55), (2400, 150), (900, 92), (1800, 55)]
+        // Settling before: 10 min at 93 bpm, then the effort.
+        let settle: [(secs: Int, bpm: Int)] = [(1800, 55), (600, 93), (1800, 140), (1800, 55)]
+        // Continuous effort: nothing to trim.
+        let steady: [(secs: Int, bpm: Int)] = [(1800, 55), (2400, 150), (1800, 55)]
+        // Intervals with 4-min recoveries at 70: the interior recoveries stay.
+        let intervals: [(secs: Int, bpm: Int)] = [(1800, 55), (600, 160), (240, 70), (600, 160), (240, 70), (600, 160), (1800, 55)]
+        return [
+            Case(name: "warm-up blip", segs: blip, reference: (at(blip, 3), at(blip, 4))),
+            Case(name: "cooldown walk", segs: cooldown, reference: (at(cooldown, 1), at(cooldown, 2))),
+            Case(name: "settling before", segs: settle, reference: (at(settle, 2), at(settle, 3))),
+            Case(name: "steady", segs: steady, reference: (at(steady, 1), at(steady, 2))),
+            Case(name: "intervals", segs: intervals, reference: (at(intervals, 1), at(intervals, 6))),
+        ]
+    }
+
+    func testTrimRemovesUnsupportedEdgesAndKeepsTheRest() {
+        var table = ["case | reference | untrimmed | trimmed | edge error before → after (s)"]
+        for c in cases {
+            let hr = series(c.segs)
+            let before = detect(hr, trim: false), after = detect(hr)
+            XCTAssertEqual(before.count, 1, c.name); XCTAssertEqual(after.count, 1, c.name)
+            guard let b = before.first, let a = after.first else { continue }
+            let ref = (t0 + c.reference.0, t0 + c.reference.1)
+            let errB = abs(b.start - ref.0) + abs(b.end - ref.1), errA = abs(a.start - ref.0) + abs(a.end - ref.1)
+            table.append("\(c.name) | \(c.reference.1 - c.reference.0) s | \(b.end - b.start) s | \(a.end - a.start) s | \(errB) → \(errA)")
+            XCTAssertLessThanOrEqual(errA, errB, "\(c.name): trimming never moves an edge away from the activity")
+            XCTAssertLessThan(errA, 2 * WorkoutDetector.edgeWindowS, "\(c.name): within a window of the reference")
+            XCTAssertLessThan(a.start, a.end, c.name)
+            XCTAssertEqual(a.activeS + a.pausedS + a.unknownS, a.end - a.start, "\(c.name): accounting still partitions the span")
+        }
+        print(table.joined(separator: "\n"))
+    }
+
+    func testUnchangedCasesStayUnchanged() {
+        for name in ["steady", "intervals"] {
+            let c = cases.first { $0.name == name }!
+            let hr = series(c.segs)
+            XCTAssertEqual(detect(hr), detect(hr, trim: false), "\(name): nothing unsupported at the edges")
+        }
+        // Interior recoveries are pauses of the session, not trimmed away.
+        let c = cases.first { $0.name == "intervals" }!
+        let e = detect(series(c.segs)).first!
+        XCTAssertGreaterThanOrEqual(e.pausedS, 2 * 240 - 120)
+    }
+
+    func testTrimIsDeterministicAndRespectsMinimumActiveTime() {
+        let hr = series(cases[0].segs)
+        XCTAssertEqual(detect(hr), detect(hr))
+        // 14 min of effort padded by 4 min of band time: untrimmed it would pass on wall-clock, trimmed it's too short.
+        let short = series([(1800, 55), (240, 93), (840, 140), (240, 93), (1800, 55)])
+        for e in detect(short) { XCTAssertGreaterThanOrEqual(Double(e.activeS), WorkoutDetector.hrOnlyMinMin * 60) }
+    }
+
+    func testRecordingGapAtTheEdgeIsNotCountedAsWorkout() {
+        // The strap stops recording during the cooldown: the session ends at the last supported sample, never inside the gap.
+        let segs: [(secs: Int, bpm: Int)] = [(1800, 55), (2400, 150), (900, 92), (1800, 55)]
+        let hr = series(segs, gapAt: 1800 + 2400 + 60, gapS: 600)
+        let e = detect(hr).first!
+        XCTAssertLessThanOrEqual(e.end, t0 + 1800 + 2400 + 60)
+        XCTAssertTrue(hr.contains { $0.ts == e.end - 1 }, "edges land on real samples")
+    }
+}
+
