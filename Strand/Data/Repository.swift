@@ -320,6 +320,13 @@ final class Repository: ObservableObject {
         return rows.compactMap(DayLoadRecord.init(row:)).first
     }
 
+    /// NOOP's day load records (awake supported time, zone seconds) for every scored day in [from, to].
+    func dayLoads(from: String, to: String) async -> [DayLoadRecord] {
+        guard let store = await ensureStore() else { return [] }
+        let rows = (try? await store.loadRecords(deviceId: deviceId + "-noop", from: from, to: to)) ?? []
+        return rows.compactMap(DayLoadRecord.init(row:))
+    }
+
     /// NOOP's load accounting for a detected session, if the row is one.
     func sessionLoad(_ w: WorkoutRow) async -> SessionLoadRecord? {
         guard let store = await ensureStore() else { return nil }
