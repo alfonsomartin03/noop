@@ -47,7 +47,7 @@ extension AlarmOccurrenceSummary.Status {
         case .strapReportedVibration, .strapAlarmRang, .dismissedOnStrap, .dismissedInApp: return StrandPalette.statusPositive
         case .buzzRequested, .ringingOnMac, .scheduled: return StrandPalette.accent
         case .deliveryUnconfirmed: return StrandPalette.statusWarning
-        case .failed: return StrandPalette.statusCritical
+        case .failed, .missed: return StrandPalette.statusCritical
         }
     }
 }
@@ -148,6 +148,9 @@ struct AlarmOccurrenceDetail: View {
             if let v = summary.vibrationReportedAt { fact("Strap reported", "vibration at \(v.formatted(date: .omitted, time: .standard))") }
             if let n = summary.notificationOutcome { fact("Mac notification", n) }
             if let d = summary.deliveryNote { fact("Delivery", d) }
+            if summary.followUpBuzzes > 0 { fact("Follow-up", "\(summary.followUpBuzzes) extra buzz\(summary.followUpBuzzes == 1 ? "" : "es") (not dismissed yet)") }
+            if let n = summary.liveSamples { fact("Live heart rate", "\(n) readings in the last 5 min of the window") }
+            if !summary.hostNotes.isEmpty { fact("This Mac", summary.hostNotes.map(Self.hostNote).joined(separator: ", ")) }
             if let at = summary.decisionAt { fact("Stage at decision", stageText(at)) }
             if let at = summary.vibrationReportedAt { fact("Stage at vibration", stageText(at)) }
         }
@@ -159,6 +162,11 @@ struct AlarmOccurrenceDetail: View {
         case .estimated(let stage, let source): return "\(stage.capitalized) (estimated · \(source))"
         case .unavailable(let why): return why
         }
+    }
+
+
+    static func hostNote(_ e: String) -> String {
+        switch e { case "macSleep": return "went to sleep"; case "macWake": return "woke"; case "lateDeadline": return "handled the latest time late"; default: return e }
     }
 
     private func fact(_ k: String, _ v: String) -> some View {

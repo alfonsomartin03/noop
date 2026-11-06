@@ -85,7 +85,15 @@ private struct AlarmsContent: View {
                 Text(s).font(.system(size: 12, design: .rounded)).foregroundStyle(StrandPalette.textSecondary)
                     .padding(.top, 10)
             }
-            if alarms.fallbackPending, let n = alarms.next {
+            if alarms.followUpPending {
+                HStack(spacing: 10) {
+                    Text("Your alarm rang and hasn't been dismissed. NOOP will buzz again in a few minutes unless you dismiss it on the strap or here.")
+                        .font(.system(size: 12, design: .rounded)).foregroundStyle(StrandPalette.textSecondary)
+                    Spacer()
+                    Button("I'm awake") { alarms.dismissPendingFallback() }.buttonStyle(.strandPrimary)
+                }
+                .padding(.top, 8)
+            } else if alarms.fallbackPending, let n = alarms.next {
                 HStack(spacing: 10) {
                     Text("Woke early. The latest-time alarm (\(n.deadline.formatted(date: .omitted, time: .shortened))) stays set until you dismiss it.")
                         .font(.system(size: 12, design: .rounded)).foregroundStyle(StrandPalette.textSecondary)
@@ -180,7 +188,9 @@ private struct AlarmsContent: View {
             Text((strap
                   ? "Your strap's firmware can store the next alarm and ring by itself, even with this Mac asleep. "
                   : "This strap's firmware isn't verified to ring by itself, so alarms rely on this Mac being awake with NOOP open. ")
-                 + "Smart wake and sleep-goal alarms need NOOP running and the strap connected to ring early; otherwise they ring at the latest time. A Mac notification always sounds too.")
+                 + "Smart wake and sleep-goal alarms need NOOP running and the strap connected to ring early; otherwise they ring at the latest time. "
+                 + "During the wake window NOOP keeps the Mac from idle-sleeping, streams live heart rate and pauses background syncs, but closing the lid still puts it to sleep. "
+                 + "If the alarm isn't dismissed, NOOP buzzes again a few times over the next 20 minutes while it can reach the strap. A Mac notification always sounds too.")
                 .font(.system(size: 12, design: .rounded)).foregroundStyle(StrandPalette.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
         }

@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Combine
 import UserNotifications
@@ -87,6 +88,12 @@ extension WhoopStore: AlarmHistorySink {}
 /// expires without dismissal re-arms the deadline on the strap's single slot (RUN consumes it) and the Mac notification
 /// sounds again at the deadline. Every step is appended to the alarm history (WhoopStore v16).
 ///
+/// The deadline is followed up: after it rings, NOOP checks back every `followUpInterval` and buzzes again (up to
+/// `maxFollowUps`, within `followUpHorizon`) until the wearer dismisses it on the strap or taps "I'm awake". When the
+/// strap's own stored alarm is expected to ring, a backup buzz goes out if the strap doesn't report ringing. A deadline
+/// noticed more than `maxLateRing` late (Mac asleep, NOOP not running) is recorded as missed rather than rung hours late.
+/// Mac sleep/wake and live-HR evidence around the window are recorded too, as diagnostics (not proof anyone woke).
+///
 /// Host-driven: the Mac must be awake and NOOP running for early wakes. During a wake window NOOP holds an idle-sleep
 /// assertion and owns the realtime HR stream (released on decision, cancellation, deletion and errors).
 @MainActor
@@ -104,6 +111,8 @@ final class AlarmController: ObservableObject {
     @Published private(set) var historyWarning: String?
     /// The early wake for `next` already happened and its deadline fallback is still armed (can be dismissed in-app).
     @Published private(set) var fallbackPending = false
+    /// The deadline rang and NOOP will buzz again unless dismissed (can be dismissed in-app).
+    @Published private(set) var followUpPending = false
 
     let policy: SmartWakePolicy
     private let defaults: UserDefaults
@@ -139,6 +148,23 @@ final class AlarmController: ObservableObject {
     private var pendingRows: [AlarmEventRow] = []
     private var flushing = false
 
+    /// After a deadline: check back, and buzz again unless dismissed. Persisted (`alarm.followUp`) so a relaunch keeps it.
+    private struct FollowUp: Codable, Equatable { let key: String; let deadline: Date; var attempts: Int; var nextCheck: Date }
+    private var followUp: FollowUp? { didSet { followUpPending = followUp != nil } }
+    /// Last tick time, to tell "NOOP wasn't ticking" (Mac asleep / app not running) in missed or late-deadline records.
+    private var lastTickAt: Date?
+    private var lastEvidenceSummaryAt: Date?
+    private var hostObservers: [NSObjectProtocol] = []
+
+    static let followUpInterval: TimeInterval = 180
+    static let maxFollowUps = 3
+    static let followUpHorizon: TimeInterval = 20 * 60
+    /// The strap's stored alarm should report ringing by then; otherwise a backup buzz goes out.
+    static let storedAlarmGrace: TimeInterval = 120
+    /// A deadline first seen later than this is recorded as missed, not rung.
+    static let maxLateRing: TimeInterval = 30 * 60
+    static let evidenceSummaryInterval: TimeInterval = 300
+
     /// Sleeping-HR baseline for smart wake (with provenance), set by AppModel.
     var baseline: () -> WakeBaseline? = { nil }
     /// Tonight's sleep so far (synced, with freshness), set by AppModel.
@@ -146,7 +172,7 @@ final class AlarmController: ObservableObject {
 
     private static let ownsStrapAlarmKey = "alarm.ownsStrapAlarm"
     private static let alarmsKey = "alarm.specs", capsKey = "alarm.capabilities", firedKey = "alarm.fired"
-    private static let earlyKey = "alarm.earlyAttempted", armedTargetsKey = "alarm.armedTargets"
+    private static let earlyKey = "alarm.earlyAttempted", armedTargetsKey = "alarm.armedTargets", followUpKey = "alarm.followUp"
 
     init(defaults: UserDefaults = .standard, now: @escaping () -> Date = Date.init, notifier: AlarmNotifying? = nil,
          policy: SmartWakePolicy = .current, history: @escaping () async -> AlarmHistorySink? = { nil }) {
@@ -162,6 +188,22 @@ final class AlarmController: ObservableObject {
         earlyAttempted = Set(defaults.stringArray(forKey: Self.earlyKey) ?? [])
         armedTargets = (defaults.dictionary(forKey: Self.armedTargetsKey) as? [String: Int] ?? [:]).mapValues { UInt32(clamping: $0) }
         for a in alarms { states[a.id] = a.enabled ? .active : .canceled }
+        followUp = defaults.data(forKey: Self.followUpKey).flatMap { try? JSONDecoder().decode(FollowUp.self, from: $0) }
+        followUpPending = followUp != nil
+        recordMissedFallbacks()
+    }
+
+    /// Early wakes whose deadline passed while NOOP wasn't running: the fallback never rang. Recorded, then finished.
+    private func recordMissedFallbacks() {
+        let t = now()
+        for key in earlyAttempted.sorted() {
+            guard let unix = key.split(separator: "@").last.flatMap({ Double($0) }), t.timeIntervalSince1970 > unix + 60 else { continue }
+            record(AlarmHistoryKind.deliveryOutcome, key, ["outcome": "missed",
+                   "detail": "The latest-time alarm passed while NOOP wasn't running"], dedupe: "missed:\(key)")
+            earlyAttempted.remove(key)
+            completed.insert(key)
+        }
+        persist()
     }
 
     /// Capabilities verified live per firmware (docs/reverse-engineering/ALARM_CAPABILITIES.md). Anything else: unverified.
@@ -191,6 +233,14 @@ final class AlarmController: ObservableObject {
         ble.onAlarmResponse = { [weak self] r in self?.handle(response: r) }
         ble.onRealtimeHR = { [weak self] o in self?.ingest(o) }
         ble.onLinkDropped = { [weak self] in self?.linkDropped() }
+        // Mac sleep/wake around an alarm explains a late or missed ring (history only).
+        let nc = NSWorkspace.shared.notificationCenter
+        hostObservers = [
+            nc.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { [weak self] _ in
+                Task { @MainActor in self?.hostPowerChanged(asleep: true) } },
+            nc.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
+                Task { @MainActor in self?.hostPowerChanged(asleep: false) } },
+        ]
         timer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in
             Task { @MainActor in guard let self else { return }; self.tick(now: self.now()) }
         }
@@ -223,8 +273,15 @@ final class AlarmController: ObservableObject {
         reschedule()
     }
 
-    /// The wearer is up: finish the current occurrence's pending fallback (recorded as an in-app dismissal).
+    /// The wearer is up: finish the current occurrence's pending fallback or deadline follow-up (an in-app dismissal).
     func dismissPendingFallback() {
+        if let f = followUp {
+            record(AlarmHistoryKind.dismissal, f.key, ["source": "app"])
+            if let d = delivery, d.occurrenceId == f.key { var c = d; let a = c.cancel(); delivery = c; apply(a, for: c); delivery = nil }
+            followUp = nil
+            persist()
+            return
+        }
         guard let o = next, fallbackPending else { return }
         let key = Self.key(o)
         record(AlarmHistoryKind.dismissal, key, ["source": "app"])
@@ -249,6 +306,8 @@ final class AlarmController: ObservableObject {
         defaults.set(Array(earlyAttempted.sorted().suffix(80)), forKey: Self.earlyKey)
         defaults.set(Dictionary(armedTargets.sorted { $0.key < $1.key }.suffix(20).map { ($0.key, Int($0.value)) }, uniquingKeysWith: { a, _ in a }),
                      forKey: Self.armedTargetsKey)
+        if let f = followUp, let d = try? JSONEncoder().encode(f) { defaults.set(d, forKey: Self.followUpKey) }
+        else { defaults.removeObject(forKey: Self.followUpKey) }
     }
 
     private func reschedule() {
@@ -384,7 +443,10 @@ final class AlarmController: ObservableObject {
                 if next.map(Self.key) == k || completed.contains(k) { slotHoldUntil = nil }
             } else if case .hapticsTerminated(let reason) = signal, let r = lastStrapRing, t.timeIntervalSince(r.at) < 600, t >= r.at {
                 occurrence = r.key
-                if reason == 2 { record(AlarmHistoryKind.dismissal, r.key, ["source": "strap"], at: t) }
+                if reason == 2 {
+                    record(AlarmHistoryKind.dismissal, r.key, ["source": "strap"], at: t)
+                    if followUp?.key == r.key { followUp = nil; persist() }
+                }
                 lastStrapRing = nil
             } else if signal == .doubleTap, let r = lastStrapRing, t.timeIntervalSince(r.at) < 600, t >= r.at {
                 occurrence = r.key
@@ -431,12 +493,18 @@ final class AlarmController: ObservableObject {
             pendingArm = nil
             states[p.alarmId] = .unknown
         }
+        // Follow-up first: when a stored alarm's hold ends unreported, the backup buzz takes the slot before re-arming.
+        followUpTick(t)
         if let h = slotHoldUntil, t >= h { slotHoldUntil = nil; syncDeviceAlarm() }
+        let previousTick = lastTickAt
+        lastTickAt = t
 
         guard let o = next, let spec = alarms.first(where: { $0.id == o.alarmId }) else { endWindow(); return }
         let key = Self.key(o)
         if completed.contains(key) { reschedule(); return }
-        if t >= o.windowStart.addingTimeInterval(-600) { beginWindow(o, spec: spec) }
+        // First noticed long after the deadline (Mac asleep, NOOP not running): a missed alarm, not a ring hours late.
+        if t.timeIntervalSince(o.deadline) > Self.maxLateRing { missed(o, at: t, previousTick: previousTick); return }
+        if t >= o.windowStart.addingTimeInterval(-600) { beginWindow(o, spec: spec); summarizeEvidence(o, now: t) }
         if decider == nil { decider = SmartWakeDecider(occurrence: o, mode: spec.mode, policy: policy) }
         let windows = buffer.windows(from: o.windowStart.addingTimeInterval(-policy.windowSeconds), endingBy: t,
                                      length: policy.windowSeconds, minSamples: policy.minSamplesPerWindow)
@@ -481,6 +549,7 @@ final class AlarmController: ObservableObject {
 
     private func endWindow() {
         releaseRealtime()
+        lastEvidenceSummaryAt = nil
         if let a = activity { ProcessInfo.processInfo.endActivity(a); activity = nil }
     }
 
@@ -499,18 +568,20 @@ final class AlarmController: ObservableObject {
         let strapRingsItself = !early && armedKey == key
         var requested = false
         if strapRingsItself {
-            slotHoldUntil = now().addingTimeInterval(120)
+            slotHoldUntil = now().addingTimeInterval(Self.storedAlarmGrace)
             record(AlarmHistoryKind.deliveryOutcome, key, ["outcome": "strapStoredAlarm", "detail": "Stored alarm expected to ring at the deadline"])
-        } else if capabilities.immediateVibration == .confirmed, let link, link.alarmLinkReady, let c = link.alarmClock {
-            _ = delivery?.cancel()
-            let strapNow = c.deviceTime(fromHost: now().timeIntervalSince1970)
-            let target = UInt32(clamping: Int(strapNow.rounded()) + 60)
-            if let seq = link.sendAlarmCommand(.set(strapSeconds: target)) {
-                delivery = AlarmDeliveryTransaction(occurrenceId: key, early: early, setSeq: seq, setSentAt: now())
-                armedKey = nil
-                record(AlarmHistoryKind.commandRequested, key, ["command": "set", "purpose": "ring-now", "seq": Int(seq), "strapTime": Int(target)])
-                requested = true
-            }
+        } else {
+            requested = ringNow(key: key, early: early)
+        }
+        let late = now().timeIntervalSince(o.deadline)
+        if !early, late > 60 {
+            record(AlarmHistoryKind.host, key, ["event": "lateDeadline", "lateSeconds": Int(late),
+                   "lastTickAt": lastTickAt?.timeIntervalSince1970 ?? 0])
+        }
+        if !early {
+            // Keep after it until dismissed: a stored alarm that doesn't report ringing gets a backup buzz sooner.
+            followUp = FollowUp(key: key, deadline: o.deadline, attempts: 0,
+                                nextCheck: now().addingTimeInterval(strapRingsItself ? Self.storedAlarmGrace : Self.followUpInterval))
         }
         if !strapRingsItself, !requested {
             record(AlarmHistoryKind.deliveryOutcome, key, ["outcome": "macOnly", "detail": "Strap not reachable for a buzz"])
@@ -536,6 +607,90 @@ final class AlarmController: ObservableObject {
         }
     }
 
+    /// Start a ring-now delivery (SET now+60 → RUN) where immediate vibration is verified. False when it couldn't go out.
+    @discardableResult
+    private func ringNow(key: String, early: Bool, purpose: String = "ring-now") -> Bool {
+        guard capabilities.immediateVibration == .confirmed, let link, link.alarmLinkReady, let c = link.alarmClock else { return false }
+        if var d = delivery { _ = d.cancel(); delivery = nil }
+        let strapNow = c.deviceTime(fromHost: now().timeIntervalSince1970)
+        let target = UInt32(clamping: Int(strapNow.rounded()) + 60)
+        guard let seq = link.sendAlarmCommand(.set(strapSeconds: target)) else { return false }
+        delivery = AlarmDeliveryTransaction(occurrenceId: key, early: early, setSeq: seq, setSentAt: now())
+        armedKey = nil
+        record(AlarmHistoryKind.commandRequested, key, ["command": "set", "purpose": purpose, "seq": Int(seq), "strapTime": Int(target)])
+        return true
+    }
+
+    /// Deadline follow-up: re-buzz until dismissed, within limits. Waits while something is still ringing.
+    private func followUpTick(_ t: Date) {
+        guard var f = followUp, t >= f.nextCheck else { return }
+        if f.attempts >= Self.maxFollowUps || t.timeIntervalSince(f.deadline) > Self.followUpHorizon {
+            record(AlarmHistoryKind.followUp, f.key, ["action": "stopped", "attempts": f.attempts,
+                   "detail": "No dismissal after \(f.attempts) extra buzz(es)"])
+            followUp = nil; persist(); return
+        }
+        if let d = delivery, d.isOpen,
+           d.outcome == nil || (d.step == .strapReported && t.timeIntervalSince(d.hapticsAt ?? d.runSentAt ?? d.setSentAt) < Self.followUpInterval) {
+            f.nextCheck = t.addingTimeInterval(30); followUp = f; return   // still delivering or ringing
+        }
+        if pendingArm != nil { f.nextCheck = t.addingTimeInterval(15); followUp = f; return }   // let the slot arm settle
+        if let r = lastStrapRing, r.key == f.key, t.timeIntervalSince(r.at) < Self.followUpInterval {
+            f.nextCheck = r.at.addingTimeInterval(Self.followUpInterval); followUp = f; return   // strap's own alarm is ringing
+        }
+        f.attempts += 1
+        f.nextCheck = t.addingTimeInterval(Self.followUpInterval)
+        followUp = f
+        persist()
+        let storedRang = lastStrapRing?.key == f.key || history.contains {
+            $0.occurrenceId == f.key && $0.kind == AlarmHistoryKind.strapEvent
+                && AlarmHistory.fields($0.payload)["event"] as? String == "STRAP_DRIVEN_ALARM_EXECUTED"
+        }
+        let requested = ringNow(key: f.key, early: false, purpose: "follow-up")
+        record(AlarmHistoryKind.followUp, f.key, ["action": "buzz", "attempt": f.attempts, "requested": requested,
+               "detail": requested ? "Not dismissed yet: buzzing again" : "Not dismissed yet; strap not reachable",
+               "storedAlarmReported": storedRang])
+        let key = f.key
+        Task { @MainActor in
+            let outcome = await self.notifier.postWake(title: "Time to wake up", body: "Your alarm hasn't been dismissed yet.")
+            self.record(AlarmHistoryKind.notification, key, ["outcome": outcome.historyValue, "followUp": f.attempts])
+        }
+    }
+
+    /// The deadline passed unseen: record it as missed (with what NOOP knows about why) and finish the occurrence.
+    private func missed(_ o: AlarmOccurrence, at t: Date, previousTick: Date?) {
+        let key = Self.key(o)
+        let gap = previousTick.map { Int(t.timeIntervalSince($0)) }
+        let strapHeld = armedKey == key || armedTargets[key] != nil && states[o.alarmId] == .confirmedOnDevice
+        record(AlarmHistoryKind.deliveryOutcome, key, [
+            "outcome": "missed",
+            "detail": "NOOP first saw this alarm \(Int(t.timeIntervalSince(o.deadline) / 60)) min after its latest time"
+                + (gap.map { $0 > 120 ? " (no activity for \($0 / 60) min: Mac asleep or NOOP not running)" : "" } ?? " (NOOP had just started)"),
+            "strapAlarmStored": strapHeld], dedupe: "missed:\(key)")
+        status = "Missed the \(o.deadline.formatted(date: .omitted, time: .shortened)) alarm"
+            + (strapHeld ? " on this Mac — the strap's own alarm was set" : " — this Mac wasn't running NOOP at the time")
+        complete(o, key: key)
+    }
+
+    /// Mac sleep/wake, recorded against the next alarm when it is within 12 h (diagnostics only).
+    func hostPowerChanged(asleep: Bool) {
+        guard let o = next, abs(o.deadline.timeIntervalSince(now())) < 12 * 3600 else { return }
+        record(AlarmHistoryKind.host, Self.key(o), ["event": asleep ? "macSleep" : "macWake"])
+        if !asleep { tick(now: now()) }
+    }
+
+    /// Every few minutes around the window: how much live HR actually arrived (sync history is never live evidence).
+    private func summarizeEvidence(_ o: AlarmOccurrence, now t: Date) {
+        if let last = lastEvidenceSummaryAt, t.timeIntervalSince(last) < Self.evidenceSummaryInterval { return }
+        lastEvidenceSummaryAt = t
+        let recent = buffer.samples.filter { t.timeIntervalSince($0.at) <= Self.evidenceSummaryInterval }
+        record(AlarmHistoryKind.evidence, Self.key(o), [
+            "liveSamples": recent.count,
+            "newestAgeSeconds": recent.last.map { Int(t.timeIntervalSince($0.at)) } ?? -1,
+            "linkReady": link?.alarmLinkReady ?? false,
+            "streamHeld": holdsRealtime,
+            "rejected": buffer.rejections.values.reduce(0, +)])
+    }
+
     /// Act on delivery transaction actions: history rows, RUN after SET, and slot reconciliation once settled.
     private func apply(_ actions: [AlarmDeliveryTransaction.Action], for d: AlarmDeliveryTransaction) {
         let key = d.occurrenceId
@@ -558,6 +713,7 @@ final class AlarmController: ObservableObject {
                 break   // the strap event row itself is recorded by handle(event:)
             case .dismissed(let source, let at):
                 record(AlarmHistoryKind.dismissal, key, ["source": source], at: at)
+                if followUp?.key == key { followUp = nil; persist() }
                 if let o = next, Self.key(o) == key, !completed.contains(key) { complete(o, key: key) }
             case .terminated(let reason, let at):
                 record(AlarmHistoryKind.deliveryOutcome, key, ["outcome": "terminated", "detail": "Haptics ended (reason \(reason.map(String.init) ?? "?")) without a dismissal"], at: at)

@@ -17,13 +17,19 @@ public enum AlarmHistoryKind {
     public static let dismissal = "dismissal"
     public static let deliveryOutcome = "deliveryOutcome"
     public static let slot = "slot"
+    /// Deadline follow-up: an extra buzz because the alarm wasn't dismissed, or the follow-up stopping.
+    public static let followUp = "followUp"
+    /// The Mac's own state around an alarm: sleep / wake, a deadline handled late.
+    public static let host = "host"
+    /// Periodic summary of live HR evidence during the wake window (diagnostic; not proof of a stage or of waking).
+    public static let evidence = "evidence"
 }
 
 /// One occurrence as the history tells it.
 public struct AlarmOccurrenceSummary: Equatable, Sendable, Identifiable {
     public enum Status: String, Equatable, Sendable {
         case scheduled, ringingOnMac, buzzRequested, strapReportedVibration, strapAlarmRang, dismissedOnStrap,
-             dismissedInApp, deliveryUnconfirmed, failed
+             dismissedInApp, deliveryUnconfirmed, failed, missed
         public var label: String {
             switch self {
             case .scheduled: return "Scheduled"
@@ -35,6 +41,7 @@ public struct AlarmOccurrenceSummary: Equatable, Sendable, Identifiable {
             case .dismissedInApp: return "Dismissed in NOOP"
             case .deliveryUnconfirmed: return "Delivery unconfirmed"
             case .failed: return "Delivery failed"
+            case .missed: return "Missed (NOOP not running)"
             }
         }
     }
@@ -56,6 +63,12 @@ public struct AlarmOccurrenceSummary: Equatable, Sendable, Identifiable {
     public var dismissalSource: String?
     public var notificationOutcome: String?
     public var deliveryNote: String?
+    /// Extra buzzes after the deadline because it wasn't dismissed.
+    public var followUpBuzzes = 0
+    /// Mac sleep/wake and late-deadline notes, in order.
+    public var hostNotes: [String] = []
+    /// Newest live-HR summary in the window: samples in the last 5 min (nil = none recorded).
+    public var liveSamples: Int?
     public var status: Status = .scheduled
     /// The time the summary is sorted and shown by.
     public var anchor: Date { decisionAt ?? deadline ?? .distantPast }
@@ -119,11 +132,19 @@ public enum AlarmHistory {
             case AlarmHistoryKind.deliveryOutcome:
                 outcome = f["outcome"] as? String
                 s.deliveryNote = f["detail"] as? String ?? s.deliveryNote
+            case AlarmHistoryKind.followUp:
+                if f["action"] as? String == "buzz" { s.followUpBuzzes += 1 }
+            case AlarmHistoryKind.host:
+                if let e = f["event"] as? String { s.hostNotes.append(e) }
+            case AlarmHistoryKind.evidence:
+                s.liveSamples = (f["liveSamples"] as? NSNumber)?.intValue
             default: break
             }
         }
         if s.dismissedAt != nil {
             s.status = s.dismissalSource == "strap" ? .dismissedOnStrap : .dismissedInApp
+        } else if outcome == "missed" {
+            s.status = .missed
         } else if strapRang {
             s.status = .strapAlarmRang
         } else if s.vibrationReportedAt != nil {

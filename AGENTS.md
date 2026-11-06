@@ -14,7 +14,7 @@ This is a convention, not CI: reconcile with the working tree before trusting it
 
 ## 1 · Snapshot
 
-- Refreshed **2026-11-05** (America/New_York). Branch `issue/1-battery-charging-state` off `main` HEAD `0237cbc`. Working tree (uncommitted, for review): GitHub #1 — charging evidence + three-fact battery UI (see §9).
+- Refreshed **2026-11-05** (America/New_York). Branch `issue/2-alarm-deadline-delivery` off `main` HEAD `0237cbc`. Working tree (uncommitted, for review): GitHub #2 — deadline follow-up + alarm diagnostics (see §9).
 - **NOOP**: local-only macOS companion for WHOOP 4.0/5.0 straps. Internal target/scheme/package prefix **Strand**; bundle `com.noopapp.noop`, product `NOOP.app`, v0.1.0 (1).
 - 318 first-party files indexed in §7 (tracked + non-ignored untracked, excluding this file). Source size hotspots: `BLEManager.swift` ~2.0k lines, `SleepStager.swift` ~1.3k, `OnboardingWizard.swift` ~1.1k, `TrendSections.swift` ~0.9k — search, don't read whole.
 - Test inventory (methods in files, not pass results): StrandAnalytics 388, WhoopProtocol 139, WhoopStore 111, StrandImport 61, StrandDesign 27 (2 snapshot tests skip without env), hosted StrandTests 31, Python 22.
@@ -105,6 +105,7 @@ Packages (all Swift tools 5.9, platforms macOS 13 / iOS 16; **only a macOS app t
 - Deadline arm is SET → (answer) → GET read-back, bound to one occurrence; never while a delivery is unsettled or within 2 min after a stored deadline should ring (`slotHoldUntil`), so the next arm can't overwrite a ringing alarm. STRAP_DRIVEN_ALARM_EXECUTED is attributed only to an exactly stored strap time (±2 s, `alarm.armedTargets`). Capabilities follow `live.deviceInfo.firmware` changes.
 - On-device alarm, vibration and read-back confirmed **only for fw 50.43.1.0** (H04 2026-11-02). Events carry a live flag (within 120 s of strap time): only live events touch delivery; history replays are recorded at their original time, unmatched ones stay unmatched. Notifications check authorization, use critical sound only if the system enables it, and record the submission outcome.
 - History: `alarmEvent` (append-only; dedupe key `strap:<n>:<unix>:<subsec>` for strap events) + `alarmAnnotation` (user notes). Rows show immediately, persist in the background, failures surface as a warning and retry on tick; delivery never waits on persistence. Stage lookup (`AlarmStageLookup`) uses raw NOOP episodes only (`Repository.noopSleepEpisodes`), never imported totals, recombined gap labels, `unknown`/`asleep`.
+- Deadline follow-up (`AlarmController.FollowUp`, persisted `alarm.followUp`): after the deadline NOOP re-buzzes every 3 min (≤3, within 20 min) until a strap dismissal (reason 2), in-app "I'm awake" or the limit; a stored strap alarm with no live STRAP_DRIVEN_ALARM_EXECUTED within 120 s gets a backup buzz. A deadline first seen >30 min late is recorded `missed` (not rung); an early-woken occurrence whose deadline passed while NOOP was closed is recorded missed at launch. History adds `followUp`, `host` (Mac sleep/wake, late deadline) and `evidence` (live-HR count every 5 min) rows; status `.missed`. Periodic history sync is deferred while the alarm owns realtime.
 - Smart/goal early wake needs the Mac awake, NOOP running and connected. Lid-closed sleep is not prevented. Never promise unconditional delivery or describe an HR rise as confirmed light sleep.
 
 ## 4 · Known issues and documentation drift
@@ -145,7 +146,7 @@ Run the affected checks per change; docs-only changes need path/claim consistenc
 | `noop.bluetoothChoice` | `undecided`/`allowed`/`declined` |
 | `noop.keepDataOnStrap`, `enableRawCapture`, `listenToHRBroadcast` | No trim ack; research raw capture (off); standard HR subscription (off) |
 | `noop.deviceInfo`, `lastSyncedAt`, `backfillLastAt`, `hrBroadcastLastSet` | Cached DIS info; sync/backfill timestamps; last broadcast set |
-| `alarm.specs`, `alarm.capabilities`, `alarm.fired`, `alarm.earlyAttempted`, `alarm.armedTargets`, `alarm.ownsStrapAlarm` | Alarm definitions, capabilities, completed occurrences, early wakes attempted, stored strap times, strap ownership |
+| `alarm.specs`, `alarm.capabilities`, `alarm.fired`, `alarm.earlyAttempted`, `alarm.armedTargets`, `alarm.ownsStrapAlarm`, `alarm.followUp` | Alarm definitions, capabilities, completed occurrences, early wakes attempted, stored strap times, strap ownership |
 | `profile.age/sex/heightCm/weightKg/hrMaxOverride` | `ProfileStore` |
 | `notify.batteryLow/batteryFull/batteryAlertState` | `BatteryMonitor` alerts |
 | `noop.trends.segment`, `noop.settings.segment`, `noop.live.detailsOpen` | Hub selection / UI state |
@@ -208,7 +209,7 @@ Format: `file` — purpose. Tests list `Suite(methods)`. Fixtures/resources are 
 - `Info.plist`, `Strand.entitlements`; `Assets.xcassets/` (`Contents.json`, `AppIcon.appiconset/Contents.json` + 10 `icon_*.png`).
 
 ### `StrandTests` (hosted)
-- `AlarmControllerTests`(9), `BluetoothChoiceTests`(4), `CollectorBatteryTests`(2), `LivePresentationTests` = LiveHeartRateTests + BatteryPresentationTests (15), `RawHistoryArchiveTests`(2), `StrandSmokeTests`(1).
+- `AlarmControllerTests`(18), `BluetoothChoiceTests`(4), `CollectorBatteryTests`(2), `LivePresentationTests` = LiveHeartRateTests + BatteryPresentationTests (13), `RawHistoryArchiveTests`(2), `StrandSmokeTests`(1).
 
 ### `Packages/WhoopProtocol/Sources/WhoopProtocol`
 - `DeviceFamily.swift` — 4.0/5.0 GATT, header CRC kind, packet types. `Framing.swift` — CRC8/16/32, `Reassembler`, frame verification.
@@ -264,6 +265,7 @@ Index check (run after file changes; expects no output):
 git ls-files --cached --others --exclude-standard | grep -v -e '^AGENTS.md$' -e 'AppIcon.appiconset/icon_' | while read f; do b=$(basename "$f"); b=${b%.*}; grep -qF "$b" AGENTS.md || echo "unindexed: $f"; done
 ```
 
+- 2026-11-06 #2 alarm follow-up/diagnostics: PASS hosted 40 (9 new controller tests), StrandAnalytics alarm suites 31, app build. Not hardware-tested: follow-up buzzes, backup buzz timing, Mac sleep notifications, sync deferral on a real strap.
 - 2026-11-06 #1 battery/charging: PASS WhoopProtocol 145, hosted 33, app build. Not hardware-tested (attach/detach/charging/full on a strap) and not visually checked.
 - 2026-11-05 smart wake / delivery / history / coverage / charging: PASS WhoopProtocol 139, WhoopStore 111, StrandAnalytics 388, StrandImport 61, StrandDesign 27 (2 skips), hosted 31, app build. Visually checked (fixture copy, screenshots): Alarms History list (4 statuses), occurrence detail with genuine stage timeline + markers, Settings battery cycle (detached/attached/charging/full/disconnected). Not visually checked: Overview coverage caption, Sleep hero bar note. Not hardware-tested: any alarm delivery path, charging events, pack reply while attached, wake effectiveness.
 - 2026-11-03 alarm fixes + Alarms tab: PASS app build; PASS hosted tests (23 incl. new `AlarmControllerTests`). Not run: strap ring/buzz on hardware, visual check of the Alarms tab.
@@ -277,6 +279,7 @@ git ls-files --cached --others --exclude-standard | grep -v -e '^AGENTS.md$' -e 
 
 | Date | Change | Checks / remaining |
 | --- | --- | --- |
+| 2026-11-06 | #2: deadline follow-up re-buzz until dismissed, backup buzz for unreported stored alarm, missed/late records, Mac sleep/wake + live-HR evidence rows, sync deferred in wake window, Alarms copy. | Hosted tests + build; no hardware. |
 | 2026-11-06 | #1: held pre-clock charging events, conflict-aware "likely", three-fact battery rows (strap / pack / charging), onboarding wording. | Protocol + hosted tests + build; no hardware/visual check. |
 | 2026-11-05 | Smart wake v2 (timestamped windows, duration-based, versioned records); serialized SET→RUN delivery transaction with deadline fallback + slot reconciliation; stream ownership; v16 alarm history + History UI/detail; removed fabricated hypnograms; `DayCoverage` captions; `ChargingModel` (attachment vs charging, freshness, ordering, strict 151 parsing, "likely"). | Tests + build + fixture screenshots; no hardware. |
 | 2026-11-03 | Fixed strap double-buzz, same-deadline re-arm after early wake, repeating one-offs; new Alarms tab (`AlarmsView`, renamed from `AlarmCard.swift`) + `NextAlarmLink` on Overview/Sleep. | Build + hosted tests; no hardware/visual check. |

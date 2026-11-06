@@ -847,6 +847,12 @@ public final class BLEManager: NSObject, ObservableObject {
         guard BLEManager.shouldRunPeriodicBackfill(
             connected: state.connected, bonded: state.bonded || (family == .whoop5 && didBond),
             backfilling: backfilling || whoop5HistoryActive) else { return }
+        // A wake window owns the live stream: an automatic offload now would only interrupt the evidence smart wake
+        // reads (history is never live evidence). The data stays on the strap and syncs after the window.
+        if trigger == .periodic, realtimeOwners.contains(AlarmController.realtimeOwner) {
+            log("Backfill: periodic sync deferred during the alarm's wake window")
+            return
+        }
         let now = Date().timeIntervalSince1970
         let last = UserDefaults.standard.object(forKey: BLEManager.backfillLastAtKey) as? Double
         guard BackfillPolicy.shouldRun(trigger: trigger, now: now, lastBackfillAt: last) else {

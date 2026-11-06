@@ -250,4 +250,133 @@ final class AlarmControllerTests: XCTestCase {
         let saved = await sink.rows
         XCTAssertTrue(saved.contains { $0.kind == AlarmHistoryKind.decision })
     }
+
+    // MARK: deadline follow-up, backup buzz, missed
+
+    /// An exact alarm 5 min ahead, the deadline stored on the strap and read back.
+    private func exactSetup(linkReady: Bool = true) -> (AlarmController, FakeLink, Clock, AlarmOccurrence) {
+        verifiedCapabilities()
+        let start = Calendar.current.date(bySetting: .second, value: 0, of: Date())!
+        let clock = Clock(start)
+        let link = FakeLink()
+        link.alarmLinkReady = linkReady
+        let a = AlarmController(defaults: defaults, now: { clock.now }, notifier: FakeNotifier())
+        a.attach(link: link)
+        a.save(alarm(weekdays: Set(1...7), from: start, minutesAhead: 5))
+        let o = a.next!
+        if linkReady, case .set(let target)? = link.last?.cmd {
+            respond(a, 66, seq: link.last!.seq)
+            respond(a, 67, seq: link.last!.seq, body: readBack(target))
+            XCTAssertEqual(a.states[o.alarmId], .confirmedOnDevice)
+        }
+        return (a, link, clock, o)
+    }
+    /// Ring-now SETs sent for the occurrence with this deadline (not the next day's deadline arm).
+    private func ringNowSets(_ link: FakeLink, after deadline: Date) -> Int {
+        link.sent.filter {
+            if case .set(let t) = $0.cmd { let d = Double(t) - deadline.timeIntervalSince1970; return d > 30 && d < 2 * 3600 }
+            return false
+        }.count
+    }
+    private func at(_ a: AlarmController, _ clock: Clock, _ d: Date) { clock.now = d; a.tick(now: d) }
+
+    func testStoredAlarmThatDoesNotReportRingingGetsABackupBuzz() {
+        let (a, link, clock, o) = exactSetup()
+        at(a, clock, o.deadline.addingTimeInterval(1))
+        XCTAssertEqual(link.runs, 0, "the strap's own alarm is expected to ring first")
+        XCTAssertTrue(a.followUpPending)
+        at(a, clock, o.deadline.addingTimeInterval(60))
+        XCTAssertEqual(ringNowSets(link, after: o.deadline), 0, "no buzz on top of a possibly ringing strap")
+        at(a, clock, o.deadline.addingTimeInterval(AlarmController.storedAlarmGrace + 2))
+        XCTAssertEqual(ringNowSets(link, after: o.deadline), 1, "nothing reported: backup buzz")
+        XCTAssertTrue(a.history.contains { $0.kind == AlarmHistoryKind.followUp })
+    }
+
+    func testStrapDismissalOfTheStoredAlarmEndsTheFollowUp() {
+        let (a, link, clock, o) = exactSetup()
+        at(a, clock, o.deadline.addingTimeInterval(1))
+        a.handle(event: event(57, at: o.deadline), live: true)                                  // STRAP_DRIVEN_ALARM_EXECUTED
+        a.handle(event: event(100, at: o.deadline.addingTimeInterval(20), body: [0, 2]), live: true)   // dismissed
+        XCTAssertFalse(a.followUpPending)
+        for k in 1...10 { at(a, clock, o.deadline.addingTimeInterval(Double(k) * 120)) }
+        XCTAssertEqual(ringNowSets(link, after: o.deadline), 0)
+        XCTAssertEqual(AlarmHistory.summarize(a.history).first { $0.id == AlarmController.key(o) }?.status, .dismissedOnStrap)
+    }
+
+    func testUndismissedDeadlineBuzzesAgainThenStops() {
+        let (a, link, clock, o) = exactSetup()
+        at(a, clock, o.deadline.addingTimeInterval(1))
+        a.handle(event: event(57, at: o.deadline), live: true)                                  // it rang…
+        a.handle(event: event(100, at: o.deadline.addingTimeInterval(30), body: [0, 0]), live: true)   // …and expired
+        for k in 1...40 {
+            at(a, clock, o.deadline.addingTimeInterval(Double(k) * 30))
+            // Answer each ring-now SET/RUN so the delivery can settle and the next follow-up can go out.
+            if case .set? = link.last?.cmd, ringNowSets(link, after: o.deadline) > 0 { respond(a, 66, seq: link.last!.seq) }
+            if link.last?.cmd == .run { respond(a, 68, seq: link.last!.seq) }
+        }
+        XCTAssertEqual(ringNowSets(link, after: o.deadline), AlarmController.maxFollowUps)
+        XCTAssertFalse(a.followUpPending, "stops after its limit")
+        XCTAssertEqual(AlarmHistory.summarize(a.history).first { $0.id == AlarmController.key(o) }?.followUpBuzzes, AlarmController.maxFollowUps)
+    }
+
+    func testHistoryReplayDismissalDoesNotEndTheFollowUp() {
+        let (a, _, clock, o) = exactSetup()
+        at(a, clock, o.deadline.addingTimeInterval(1))
+        a.handle(event: event(57, at: o.deadline), live: false)
+        a.handle(event: event(100, at: o.deadline.addingTimeInterval(20), body: [0, 2]), live: false)
+        XCTAssertTrue(a.followUpPending)
+    }
+
+    func testInAppDismissalEndsTheFollowUp() {
+        let (a, link, clock, o) = exactSetup()
+        at(a, clock, o.deadline.addingTimeInterval(1))
+        a.dismissPendingFallback()
+        XCTAssertFalse(a.followUpPending)
+        for k in 1...10 { at(a, clock, o.deadline.addingTimeInterval(Double(k) * 120)) }
+        XCTAssertEqual(ringNowSets(link, after: o.deadline), 0)
+        XCTAssertEqual(AlarmHistory.summarize(a.history).first { $0.id == AlarmController.key(o) }?.status, .dismissedInApp)
+    }
+
+    func testUnreachableStrapRecordsFollowUpsWithoutClaimingDelivery() {
+        let (a, link, clock, o) = exactSetup(linkReady: false)
+        for k in 0...12 { at(a, clock, o.deadline.addingTimeInterval(1 + Double(k) * 120)) }
+        XCTAssertEqual(link.runs, 0)
+        let s = AlarmHistory.summarize(a.history).first { $0.id == AlarmController.key(o) }
+        XCTAssertEqual(s?.status, .ringingOnMac)
+        XCTAssertNil(s?.vibrationReportedAt)
+        XCTAssertFalse(a.followUpPending)
+    }
+
+    func testDeadlineSeenLongAfterIsMissedNotRung() {
+        let (a, link, clock, o) = exactSetup()
+        at(a, clock, o.deadline.addingTimeInterval(-60))
+        a.hostPowerChanged(asleep: true)
+        clock.now = o.deadline.addingTimeInterval(AlarmController.maxLateRing + 600)        // the Mac slept through it
+        a.hostPowerChanged(asleep: false)                                                   // waking ticks at once
+        XCTAssertEqual(link.runs, 0)
+        XCTAssertEqual(ringNowSets(link, after: o.deadline), 0)
+        XCTAssertNotEqual(a.next, o)
+        let s = AlarmHistory.summarize(a.history).first { $0.id == AlarmController.key(o) }
+        XCTAssertEqual(s?.status, .missed)
+        XCTAssertEqual(s?.hostNotes, ["macSleep", "macWake"])
+    }
+
+    func testRelaunchAfterAPassedFallbackRecordsItMissed() {
+        let (a, _, clock, o) = smartSetup()
+        feedHighHR(a, clock, from: o.windowStart.addingTimeInterval(60))
+        XCTAssertTrue(a.fallbackPending)
+        clock.now = o.deadline.addingTimeInterval(3600)
+        let b = AlarmController(defaults: defaults, now: { clock.now }, notifier: FakeNotifier())
+        XCTAssertFalse(b.fallbackPending)
+        XCTAssertEqual(AlarmHistory.summarize(b.history).first { $0.id == AlarmController.key(o) }?.status, .missed)
+    }
+
+    func testWindowRecordsLiveEvidenceSummaries() {
+        let (a, _, clock, o) = smartSetup()
+        at(a, clock, o.windowStart.addingTimeInterval(-300))
+        XCTAssertEqual(a.history.filter { $0.kind == AlarmHistoryKind.evidence }.count, 1)
+        let f = AlarmHistory.fields(a.history.first { $0.kind == AlarmHistoryKind.evidence }!.payload)
+        XCTAssertEqual((f["liveSamples"] as? NSNumber)?.intValue, 0, "no live HR yet is recorded as zero, not assumed")
+    }
 }
+
