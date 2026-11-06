@@ -99,6 +99,8 @@ public final class BLEManager: NSObject, ObservableObject {
     private var lastBatteryPollAt = Date.distantPast
     /// Pack-info requests by app sequence number: when sent and on which connection (a reply describes that moment).
     private var packInfoRequests: [UInt8: (at: Date, connection: UUID)] = [:]
+    /// Charging events that arrived before the strap clock was known; judged once it is (see `PendingChargingEvents`).
+    private var pendingChargingEvents = PendingChargingEvents()
     /// Last-offload-attempt time (unix seconds), persisted so the rate limiter survives relaunch
     /// (matches WHOOP's DATA_SYNC_WORKER_LAST_WORK_TIME watermark).
     static let backfillLastAtKey = "backfillLastAt"
@@ -1394,15 +1396,26 @@ extension BLEManager {
         switch clockEstimator.add(sample) {
         case .accepted(let est):
             state.clock = est
+            applyPendingChargingEvents(est)
             log(String(format: "Clock: strap is %.1f s %@ this Mac (±%.1f s)", abs(est.offset), est.offset >= 0 ? "behind" : "ahead of", est.uncertainty))
             persistClock(est)
         case .jumped(let from, let to):
             state.clock = to
+            applyPendingChargingEvents(to)
             log(String(format: "Clock: strap clock jumped (offset %.1f s → %.1f s); new estimate in use", from.offset, to.offset))
             persistClock(to)
         case .rejected(let why):
             log("Clock: sample rejected (\(why)); keeping the previous estimate")
         }
+    }
+
+    /// Held charging events, judged against the strap time at their receipt now that a clock exists.
+    private func applyPendingChargingEvents(_ clock: ClockEstimate) {
+        guard !pendingChargingEvents.items.isEmpty else { return }
+        let held = pendingChargingEvents.items.count
+        let live = pendingChargingEvents.drain(now: Date(), deviceTime: clock.deviceTime(fromHost:), hostTime: clock.hostTime(fromDevice:))
+        for e in live { state.applyChargingEvent(e.kind, eventAt: e.eventAt, receivedAt: e.receivedAt) }
+        log("Battery: \(held) held charging event(s) judged with the clock — \(live.count) live")
     }
 
     private func persistClock(_ e: ClockEstimate) {
@@ -1421,11 +1434,17 @@ extension BLEManager {
         state.lastEvent = e.kind.name
         // LIVE = stamped within two minutes of the strap's current time. A replayed (history) copy only enriches alarm
         // history at its original time; it never changes current state.
-        let live = state.clock.map { abs($0.deviceTime(fromHost: Date().timeIntervalSince1970) - Double(e.unix)) < 120 } ?? false
+        let live = state.clock.map { Whoop5Charging.isLive(eventUnix: e.unix, strapNow: $0.deviceTime(fromHost: Date().timeIntervalSince1970)) } ?? false
         switch e.kind {
         case .alarmSet, .strapAlarmExecuted, .appAlarmExecuted, .alarmDisabled, .hapticsFired, .hapticsTerminated, .doubleTap:
             onAlarmEvent?(e, live)
         default: break
+        }
+        if state.clock == nil, Whoop5Charging.isChargingEvent(e.kind) {
+            // No clock yet (just connected): hold it until one arrives rather than dropping a pack/charging change.
+            pendingChargingEvents.hold(e, receivedAt: Date())
+            log("Battery: \(e.kind.name) received before the strap clock — held until it is known")
+            return
         }
         guard live, let clock = state.clock else { return }
         log("RX 5.0 live event \(e.kind.name)")
@@ -1524,6 +1543,7 @@ extension BLEManager: CBCentralManagerDelegate {
         lastRealtimeSecond = nil
         lastRealtimeAt = nil
         packInfoRequests.removeAll()
+        pendingChargingEvents.clear()
         onLinkDropped?()
         clockRequestSentAt.removeAll()
         heartRateCharacteristic = nil

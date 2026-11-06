@@ -155,6 +155,44 @@ final class BatteryPresentationTests: XCTestCase {
         XCTAssertEqual(b.statusText, "Battery increasing — charging likely")
     }
 
+    /// Strap battery, charging pack and charging are always three separate rows with consistent words.
+    func testFactsStayDistinctAcrossScenarios() {
+        func values(_ b: BatteryPresentation) -> [String] { b.facts.map(\.value) }
+        let l = live(62, charging: nil)
+        XCTAssertEqual(values(BatteryPresentation(live: l, now: now)), ["62%", "Unknown", "Unknown"])
+        l.applyChargingEvent(.batteryPackConnected, eventAt: now, receivedAt: now)
+        XCTAssertEqual(values(BatteryPresentation(live: l, now: now)), ["62%", "Attached", "Unknown"], "attached is not charging")
+        l.applyChargingEvent(.chargingOn, eventAt: now, receivedAt: now)
+        XCTAssertEqual(values(BatteryPresentation(live: l, now: now)), ["62%", "Attached", "Yes"])
+        let full = live(100, charging: true)
+        full.applyChargingEvent(.batteryPackConnected, eventAt: now, receivedAt: now)
+        XCTAssertEqual(values(BatteryPresentation(live: full, now: now)), ["100%", "Attached", "Full"])
+        l.applyChargingEvent(.batteryPackRemoved, eventAt: now.addingTimeInterval(5), receivedAt: now.addingTimeInterval(5))
+        XCTAssertEqual(values(BatteryPresentation(live: l, now: now.addingTimeInterval(6))), ["62%", "Not attached", "No"])
+        // Disconnected or stale: no confident claims.
+        let gone = BatteryPresentation(live: live(62, charging: true, connected: false), now: now)
+        XCTAssertEqual(values(gone), ["62%", "Unknown", "Unknown"])
+        XCTAssertFalse(gone.facts[0].known)
+        let old = BatteryPresentation(live: live(62, charging: nil, age: BatteryAlertPolicy().staleAfter + 1), now: now)
+        XCTAssertFalse(old.facts[0].known)
+        XCTAssertTrue(old.facts[0].detail?.hasPrefix("Last reading") == true)
+    }
+
+    /// A rise that began after an older "not charging" report shows as likely, says so, and never confirms charging.
+    func testConflictingEvidenceIsShownAsLikelyWithTheConflict() {
+        let l = LiveState(); l.connected = true
+        l.applyChargingEvent(.chargingOff, eventAt: now, receivedAt: now)
+        for (i, p) in [60, 61, 62, 64].enumerated() {
+            l.updateBattery(BatteryReading(percent: p, charging: nil, at: now.timeIntervalSince1970 + 600 + Double(i) * 300, source: .standardLevel))
+        }
+        let b = BatteryPresentation(live: l, now: now.addingTimeInterval(600 + 901))
+        XCTAssertEqual(b.charge, .likely)
+        XCTAssertFalse(b.isCharging)
+        XCTAssertNotNil(b.contradictedReportAt)
+        XCTAssertTrue(b.facts[2].detail?.contains("reported otherwise") == true)
+        XCTAssertEqual(l.battery?.charging, false, "the alert still sees only the strap's own report")
+    }
+
     func testMissingReadingIsNotZero() {
         let l = LiveState()
         let b = BatteryPresentation(live: l, now: now)
