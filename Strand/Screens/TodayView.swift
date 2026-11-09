@@ -56,6 +56,7 @@ struct TodayView: View {
                         )
                     }
                     dashboard.transition(.opacity)
+                    CheckInCard()
                 }
             }
             .animation(.easeInOut(duration: 0.2), value: detail)
@@ -331,7 +332,7 @@ private struct WeekStrip: View {
 
 /// Shown only when the strap is not connected: a single quiet line with a Connect action.
 // The live views below are separate structs so the ~1 Hz heart-rate stream only re-renders these small pieces.
-private struct ConnectionStrip: View {
+struct ConnectionStrip: View {
     @EnvironmentObject var live: LiveState
     @EnvironmentObject var model: AppModel
     var body: some View {

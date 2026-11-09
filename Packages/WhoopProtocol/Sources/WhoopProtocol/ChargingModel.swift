@@ -28,6 +28,8 @@ public struct ChargingEvidence: Equatable, Sendable {
         case packInfo
         /// WHOOP 4.0 BATTERY_LEVEL event's charging flag.
         case batteryEvent4
+        /// WHOOP 5.0 BATTERY_LEVEL event (3) charging flag (byte 9), sent ~every 30 s while charging.
+        case batteryEvent5
     }
     public let value: Bool
     public let source: Source
@@ -35,12 +37,22 @@ public struct ChargingEvidence: Equatable, Sendable {
     public let eventAt: Date
     public let receivedAt: Date
     public let connection: UUID
+    /// Set on a fact carried over from an earlier connection: shown as the last known state until this time, unless a
+    /// fresh report replaces it first. nil = reported on the current connection.
+    public let heldUntil: Date?
+
+    public init(value: Bool, source: Source, eventAt: Date, receivedAt: Date, connection: UUID, heldUntil: Date? = nil) {
+        self.value = value; self.source = source; self.eventAt = eventAt; self.receivedAt = receivedAt
+        self.connection = connection; self.heldUntil = heldUntil
+    }
+
+    public var isHeld: Bool { heldUntil != nil }
 }
 
 /// GET_BATTERY_PACK_INFO reply, parsed only into shapes seen in captures.
 public enum PackInfoReply: Equatable, Sendable {
-    /// E02 (no pack attached): result FAILURE, body = 01 followed by 30 zero bytes (31 bytes).
-    case detached
+    /// E02 failure shape. Observed without a pack, but not proof of removal.
+    case unavailable
     /// SUCCESS: a pack answered, but the attached layout has never been captured; attachment stays unknown.
     case answeredUndecoded
     /// Any other shape: not evidence of anything.
@@ -55,13 +67,28 @@ public struct ChargingModel: Equatable, Sendable {
     public private(set) var percents: [(at: Date, pct: Int)] = []
 
     /// A confirmed fact older than this (by receipt) is no longer shown as current. Events are edge-triggered, so this is
-    /// generous; the periodic pack-info poll refreshes the detached state every minute.
+    /// generous. Failed pack-info polls do not refresh or contradict these event-based facts.
     public static let factMaxAge: TimeInterval = 3 * 3600
     /// Rising-percentage inference: at least this rise, over at least this span, with no drop, from ≥ 3 readings…
     public static let likelyRise = 3
     public static let likelySpan: TimeInterval = 10 * 60
     /// …and it lapses this long after the last rising reading.
     public static let likelyExpiry: TimeInterval = 20 * 60
+
+    /// While charging, a 5.0 strap pushes BATTERY_LEVEL with its charging flag every ~30 s (observed fw 50.43.1.0); while
+    /// discharging it pushes one only per ~1 % step (hours apart). A held "charging" fact that sees no report for this
+    /// long after a reconnect (≈3 missed reports) is dropped to unknown: the strap probably left the pack meanwhile.
+    public static let chargingReportWindow: TimeInterval = 90
+
+    /// How facts carried over from an earlier connection are held.
+    public enum Hold: Equatable, Sendable {
+        /// Disconnected: kept as they were (surfaces show unknown while disconnected).
+        case untilReconnect
+        /// Reconnected: shown as the last known state until the strap's next report replaces them. "Charging" (and the
+        /// attachment that came with it) lapses after `chargingReportWindow` without a report; "not charging" holds
+        /// until the next report or `factMaxAge`.
+        case untilNextReport
+    }
 
     public init(connection: UUID = UUID()) { self.connection = connection }
 
@@ -70,8 +97,24 @@ public struct ChargingModel: Equatable, Sendable {
             && a.percents.map(\.pct) == b.percents.map(\.pct) && a.percents.map(\.at) == b.percents.map(\.at)
     }
 
-    /// New connection: nothing carries over.
-    public mutating func reset(connection: UUID) { self = ChargingModel(connection: connection) }
+    /// New connection. With `hold`, the current (still fresh) attachment/charging facts carry over, marked held (see
+    /// `Hold`); without it nothing carries over. The percentage history never carries over.
+    public mutating func reset(connection: UUID, hold: Hold? = nil, now: Date = Date()) {
+        var next = ChargingModel(connection: connection)
+        if let hold {
+            let wasCharging = fresh(activity, now: now)?.value == true
+            let holdUntil: Date = hold == .untilNextReport && wasCharging
+                ? now.addingTimeInterval(Self.chargingReportWindow) : .distantFuture
+            func carry(_ e: ChargingEvidence?) -> ChargingEvidence? {
+                guard let e = fresh(e, now: now) else { return nil }
+                return ChargingEvidence(value: e.value, source: e.source, eventAt: e.eventAt, receivedAt: e.receivedAt,
+                                        connection: e.connection, heldUntil: holdUntil)
+            }
+            next.attachment = carry(attachment)
+            next.activity = carry(activity)
+        }
+        self = next
+    }
 
     // MARK: inputs
 
@@ -98,14 +141,19 @@ public struct ChargingModel: Equatable, Sendable {
         set(\.activity, charging, .batteryEvent4, eventAt, receivedAt)
     }
 
+    /// WHOOP 5.0 BATTERY_LEVEL event's charging flag. Repeats while charging, so it re-establishes charging after a
+    /// reconnect (CHARGING_ON is sent only once, at the transition). It says nothing about pack attachment.
+    public mutating func applyBattery5Flag(_ charging: Bool, eventAt: Date, receivedAt: Date, connection: UUID) {
+        guard connection == self.connection else { return }
+        set(\.activity, charging, .batteryEvent5, eventAt, receivedAt)
+    }
+
     /// A pack-info reply to a request sent at `requestedAt`.
     public mutating func applyPackInfo(_ r: PackInfoReply, requestedAt: Date, receivedAt: Date, connection: UUID) {
         guard connection == self.connection else { return }
         switch r {
-        case .detached:
-            set(\.attachment, false, .packInfo, requestedAt, receivedAt)
-            set(\.activity, false, .packInfo, requestedAt, receivedAt)
-        case .answeredUndecoded, .unrecognized:
+        case .unavailable, .answeredUndecoded, .unrecognized:
+            // A failed request is not a removal event; neither captured reply layout establishes attachment.
             break
         }
     }
@@ -128,11 +176,17 @@ public struct ChargingModel: Equatable, Sendable {
 
     private func fresh(_ e: ChargingEvidence?, now: Date) -> ChargingEvidence? {
         guard let e, now.timeIntervalSince(e.receivedAt) <= Self.factMaxAge else { return nil }
+        if let h = e.heldUntil, now > h { return nil }
         return e
     }
 
     public func attached(now: Date) -> ChargingFact { fresh(attachment, now: now).map { $0.value ? .yes : .no } ?? .unknown }
     public func charging(now: Date) -> ChargingFact { fresh(activity, now: now).map { $0.value ? .yes : .no } ?? .unknown }
+    /// Charging as reported on THIS connection (held facts excluded): what readings are stamped with, so alerts never
+    /// act on a carried-over state.
+    public func confirmedCharging(now: Date) -> ChargingFact {
+        fresh(activity, now: now).flatMap { $0.isHeld ? nil : ($0.value ? ChargingFact.yes : .no) } ?? .unknown
+    }
     /// The fresh charging fact itself (for "reported 14:02" captions).
     public func chargingEvidence(now: Date) -> ChargingEvidence? { fresh(activity, now: now) }
     public func attachmentEvidence(now: Date) -> ChargingEvidence? { fresh(attachment, now: now) }

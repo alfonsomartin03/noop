@@ -580,37 +580,25 @@ struct StrainDetailView: View {
     }
 
     private var zoneCard: some View {
-        // The same seconds the score was computed from. Zone 0 is shown for context and carries no load.
-        let awake = load?.summary?.zoneSeconds.map(Double.init)
-        let top = max(awake?.max() ?? 0, 1)
-        return VStack(alignment: .leading, spacing: 12) {
+        // The same seconds the score was computed from, as a zone spectrum (shared with Activity Trends). Zone 0 is shown
+        // for context and carries no load; awake time with no supported reading is its own hatched slice, never a zone.
+        let summary = load?.summary
+        return VStack(alignment: .leading, spacing: 14) {
             HStack {
                 Text("Awake-time heart-rate zones").font(.system(size: 17, weight: .semibold)).foregroundStyle(StrandPalette.textPrimary)
                 Spacer()
-                Text(awake == nil ? "Shown once this day is scored" : "Max HR \(Int(zones.maxHR.rounded())) bpm")
+                Text(summary == nil ? "Shown once this day is scored" : "Max HR \(Int(zones.maxHR.rounded())) bpm")
                     .font(.system(size: 12)).foregroundStyle(StrandPalette.textTertiary)
             }
-            // Zone 0 is everything below Zone 1 (resting and light movement), so it needs no footnote.
-            ForEach((0...5).reversed(), id: \.self) { z in
-                let secs = awake?[z] ?? 0
-                let color = z == 0 ? StrandPalette.textTertiary : StrandPalette.hrZoneColor(z)
-                let range = z == 0 ? "<\(Int(zones.zones[0].lower.rounded()))"
-                                   : "\(Int(zones.zones[z - 1].lower.rounded()))–\(Int(zones.zones[z - 1].upper.rounded()))"
-                HStack(spacing: 12) {
-                    Text("Zone \(z)").font(.system(size: 12, weight: .bold)).foregroundStyle(color).frame(width: 52, alignment: .leading)
-                    Text(range).font(.system(size: 11).monospacedDigit()).foregroundStyle(StrandPalette.textTertiary).frame(width: 58, alignment: .leading)
-                    GeometryReader { g in
-                        ZStack(alignment: .leading) {
-                            Capsule().fill(StrandPalette.surfaceInset)
-                            Capsule().fill(color)
-                                .frame(width: secs > 0 ? max(8, g.size.width * secs / top) : 0)
-                                .shadow(color: color.opacity(z == 0 ? 0 : 0.6), radius: 5)
-                        }
-                    }
-                    .frame(height: 12)
-                    Text(DayMath.hm(secs / 60)).font(.system(size: 13, weight: .semibold).monospacedDigit())
-                        .foregroundStyle(StrandPalette.textPrimary).frame(width: 64, alignment: .trailing)
-                }
+            if let summary, summary.zoneSeconds.count >= 6 {
+                ZoneSpectrum((0...5).map { z in
+                    ZoneSpectrumSegment(zone: z, seconds: summary.zoneSeconds[z],
+                                        range: z == 0 ? "<\(Int(zones.zones[0].lower.rounded())) bpm"
+                                                      : "\(Int(zones.zones[z - 1].lower.rounded()))–\(Int(zones.zones[z - 1].upper.rounded())) bpm")
+                }, gapSeconds: summary.unknownS, gapLabel: "Not recorded")
+            } else {
+                Text("Zone time appears after NOOP scores this day from the strap's heart rate.")
+                    .font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
             }
         }
         .padding(NoopMetrics.cardPadding)

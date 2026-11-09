@@ -378,6 +378,29 @@ extension WhoopStore {
                 t.column("createdAt", .double).notNull()
             }
         }
+        migrator.registerMigration("v17") { db in
+            // Morning / evening check-ins (CheckInStore.swift). User-entered context: never read by scoring. One entry per
+            // local date and session; each answer keeps the prompt id + version it was given under.
+            try db.create(table: "checkInEntry") { t in
+                t.column("localDate", .text).notNull()
+                t.column("session", .text).notNull()
+                t.column("status", .text).notNull()
+                t.column("note", .text)
+                t.column("timeZone", .text).notNull()
+                t.column("createdAt", .double).notNull()
+                t.column("updatedAt", .double).notNull()
+                t.primaryKey(["localDate", "session"])
+            }
+            try db.create(table: "checkInAnswer") { t in
+                t.column("localDate", .text).notNull()
+                t.column("session", .text).notNull()
+                t.column("promptId", .text).notNull()
+                t.column("promptVersion", .integer).notNull()
+                t.column("answer", .text).notNull()
+                t.column("position", .integer).notNull()
+                t.primaryKey(["localDate", "session", "promptId"])
+            }
+        }
         return migrator
     }
 }

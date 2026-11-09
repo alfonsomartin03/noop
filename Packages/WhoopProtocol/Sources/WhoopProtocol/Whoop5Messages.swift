@@ -256,14 +256,15 @@ public struct Whoop5Event: Equatable, Sendable {
                                     body: Array(p[12..<(12 + len)])))
     }
 
-    /// BATTERY_LEVEL body (layout from ryanbr/noop): soc u16/10 @1 and mV u16 @5 CONFIRMED on one sample (20.0 % =
-    /// 0x2A19, 3706 mV); the charging bit @10 read 0 while not charging and is unproven until seen while charging,
-    /// so nothing user-facing uses it.
+    /// BATTERY_LEVEL body: soc u16/10 @1 and mV u16 @5 CONFIRMED (20.0 % = 0x2A19, 3706 mV). Charging flag = byte 9
+    /// bit 0, CONFIRMED on fw 50.43.1.0 / WG50_r52 (2026-11-09): over 500 stored events across two charge sessions it
+    /// was 1 on every rising and 0 on every falling step, and turned on right after CHARGING_ON + pack connected.
+    /// (Byte 10, from an earlier layout guess, was always 0.) While charging the strap sends this event every ~30 s.
     public var batteryCandidate: (socPercent: Double, millivolts: Int, charging: Bool)? {
-        guard kind == .batteryLevel, body.count >= 11 else { return nil }
+        guard kind == .batteryLevel, body.count >= 10 else { return nil }
         let soc = Double(le16(body, 1)) / 10, mv = le16(body, 5)
         guard (0...100).contains(soc), (2500...5000).contains(mv) else { return nil }
-        return (soc, mv, body[10] & 1 == 1)
+        return (soc, mv, body[9] & 1 == 1)
     }
 }
 
@@ -286,13 +287,13 @@ public enum Whoop5Charging {
     public static let liveWindow: Double = 120
     public static func isLive(eventUnix: Int, strapNow: Double) -> Bool { abs(strapNow - Double(eventUnix)) < liveWindow }
 
-    /// GET_BATTERY_PACK_INFO (151) reply, parsed only into captured shapes. Detached (E02): result FAILURE with a 31-byte
-    /// body `01` + 30 zero bytes. SUCCESS has never been captured, so its layout is not decoded and it is NOT read as
+    /// GET_BATTERY_PACK_INFO (151) reply, parsed only into captured shapes. Unavailable (E02): FAILURE with a 31-byte
+    /// body `01` + 30 zero bytes is not proof of detachment. SUCCESS has no decoded layout and is NOT read as
     /// "attached". PENDING (non-final) and every other shape are unrecognized.
     public static func packInfo(command: UInt8, result: Whoop5Result, body: [UInt8]) -> PackInfoReply? {
         guard command == packInfoCommand else { return nil }
         switch result {
-        case .failure where body.count == 31 && body.first == 1 && body.dropFirst().allSatisfy({ $0 == 0 }): return .detached
+        case .failure where body.count == 31 && body.first == 1 && body.dropFirst().allSatisfy({ $0 == 0 }): return .unavailable
         case .success: return .answeredUndecoded
         default: return .unrecognized
         }

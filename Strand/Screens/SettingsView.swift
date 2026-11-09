@@ -17,6 +17,7 @@ struct SettingsView: View {
             profileCard
             strapCard
             keepDataCard
+            checkInCard
             aboutCard
         }
     }
@@ -265,6 +266,18 @@ struct SettingsView: View {
         if live.connected { return "Connected. Finishing the secure pairing handshake…" }
         if live.bonded { return "Previously paired but not currently connected. Re-scan to reconnect." }
         return "No strap connected. Put your WHOOP nearby and tap Re-scan to pair."
+    }
+
+    // MARK: - Check-ins
+
+    private var checkInCard: some View {
+        SettingsSection(
+            icon: "checklist",
+            title: "Check-ins",
+            blurb: "Optional morning and evening questions about things the strap can't see. Answers never change your scores."
+        ) {
+            CheckInSettingsForm()
+        }
     }
 
     // MARK: - About

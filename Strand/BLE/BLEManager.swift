@@ -83,7 +83,9 @@ public final class BLEManager: NSObject, ObservableObject {
     /// never silently dies. Started on bond, cancelled on disconnect.
     private var keepAliveTimer: DispatchSourceTimer?
     static let keepAliveIntervalSeconds = 30
-    private var keepAliveTick = 0
+    /// GET_BATTERY_LEVEL / pack info are asked on connect and then at most once per history-pull interval (15 min). The
+    /// strap pushes BATTERY_LEVEL itself (every ~30 s while charging, per ~1 % step otherwise), so nothing polls faster.
+    static let batteryPollIntervalSeconds = TimeInterval(backfillIntervalSeconds)
     /// Reconnect watchdog: while the app is open and the strap link is lost (not a user Disconnect), restart the
     /// scan every `BluetoothChoice.reconnectIntervalSeconds`. Runs for the life of the central, not just a connection.
     private var reconnectTimer: DispatchSourceTimer?
@@ -782,7 +784,7 @@ public final class BLEManager: NSObject, ObservableObject {
         keepAliveTimer = t
     }
 
-    // Runs every 30 s: bounces a silent link, re-arms realtime, and polls battery every other tick.
+    // Runs every 30 s: bounces a silent link, re-arms realtime, and checks whether the 15-minute battery poll is due.
     private func keepAliveFire() {
         guard state.connected, didBond else { return }
         // Liveness watchdog: if NOTHING has arrived for a while, the stream/link stalled.
@@ -804,8 +806,7 @@ public final class BLEManager: NSObject, ObservableObject {
         // The strap can't report its broadcast state and the official app re-sends "on" periodically, so keep it armed
         // while the user has it switched on (only ever the user's own choice).
         if state.hrBroadcast == true { send(.toggleGenericHRProfile, payload: [0x01], writeType: .withResponse) }
-        keepAliveTick += 1
-        if keepAliveTick % 2 == 0 || Date().timeIntervalSince(lastBatteryPollAt) > 60 { pollBattery() }   // ~every 60s
+        pollBatteryIfOverdue()
     }
 
     /// Battery level + pack info. Read-only; never sent mid-offload (callers check).
@@ -824,7 +825,7 @@ public final class BLEManager: NSObject, ObservableObject {
     /// After a history download (when polling was paused), catch up an overdue battery / pack poll at once.
     private func pollBatteryIfOverdue() {
         guard state.connected, didBond, !backfilling, !whoop5HistoryActive, !whoop5AwaitingRange,
-              Date().timeIntervalSince(lastBatteryPollAt) > 60 else { return }
+              Date().timeIntervalSince(lastBatteryPollAt) >= Self.batteryPollIntervalSeconds else { return }
         log("Battery: poll was paused for the download — refreshing now")
         pollBattery()
     }
@@ -1382,10 +1383,8 @@ extension BLEManager {
             guard r.isFinal else { return }
             let req = packInfoRequests.removeValue(forKey: r.appSeq)
             guard let req, let reply = Whoop5Charging.packInfo(r) else { return }   // not our request: no time to bind it to
-            let before = state.charging.attached(now: Date())
             state.applyPackInfo(reply, requestedAt: req.at, connection: req.connection)
-            if reply != .detached { log("Battery pack: reply \(reply) — attachment left unknown") }
-            else if before != .no { log("Battery pack: not attached (verified reply shape)") }
+            log("Battery pack: reply \(reply) — attachment and charging reports unchanged")
         case 3:
             if r.result != .success { state.realtimeStreaming = false }
         case 14:
@@ -1454,9 +1453,15 @@ extension BLEManager {
         }
         guard live, let clock = state.clock else { return }
         log("RX 5.0 live event \(e.kind.name)")
+        let eventAt = min(Date(timeIntervalSince1970: clock.hostTime(fromDevice: Double(e.unix) + Double(e.subseconds) / 32768)), Date())
         if Whoop5Charging.isChargingEvent(e.kind) {
-            let eventAt = Date(timeIntervalSince1970: clock.hostTime(fromDevice: Double(e.unix) + Double(e.subseconds) / 32768))
-            state.applyChargingEvent(e.kind, eventAt: min(eventAt, Date()))
+            state.applyChargingEvent(e.kind, eventAt: eventAt)
+        } else if e.kind == .batteryLevel, let b = e.batteryCandidate {
+            // Pushed by the strap every ~30 s while charging and per ~1 % step otherwise: the charging flag (re-established
+            // after a reconnect, since CHARGING_ON is sent only once) and the percentage, stamped with that flag.
+            state.applyCharging5(b.charging, eventAt: eventAt)
+            state.updateBattery(BatteryReading(percent: Int(b.socPercent.rounded(.down)), charging: nil,
+                                               at: eventAt.timeIntervalSince1970, source: .event))
         }
         switch e.kind {
         case .hrProfileEnabled: state.hrBroadcast = true

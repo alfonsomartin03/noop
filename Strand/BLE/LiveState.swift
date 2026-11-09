@@ -101,7 +101,7 @@ public final class LiveState: ObservableObject {
         // the badge and the charging-complete alert agree; the reading never refreshes that fact, and "likely" never counts.
         let at = Date(timeIntervalSince1970: r.at)
         charging.applyPercent(r.percent, at: at, connection: charging.connection)
-        let confirmed: Bool? = switch charging.charging(now: at) { case .yes: true; case .no: false; case .unknown: nil }
+        let confirmed: Bool? = switch charging.confirmedCharging(now: at) { case .yes: true; case .no: false; case .unknown: nil }
         let r = BatteryReading(percent: r.percent, charging: confirmed, at: r.at, source: r.source)
         battery = BatteryStatus(reading: r)
         setBattery(Double(r.percent))
@@ -120,18 +120,27 @@ public final class LiveState: ObservableObject {
         charging.applyBattery4Flag(on, eventAt: at, receivedAt: at, connection: charging.connection)
         restampBattery(now: at)
     }
+    /// WHOOP 5.0 BATTERY_LEVEL event (3) charging flag, at the event's own time.
+    /// Each report (every ~30 s while charging) replaces the fact; it holds until the next one.
+    public func applyCharging5(_ on: Bool, eventAt: Date, receivedAt: Date = Date()) {
+        charging.applyBattery5Flag(on, eventAt: eventAt, receivedAt: receivedAt, connection: charging.connection)
+        restampBattery(now: receivedAt)
+    }
     /// A GET_BATTERY_PACK_INFO reply to a request sent at `requestedAt` on `connection`.
     public func applyPackInfo(_ r: PackInfoReply, requestedAt: Date, connection: UUID, receivedAt: Date = Date()) {
         charging.applyPackInfo(r, requestedAt: requestedAt, receivedAt: receivedAt, connection: connection)
         restampBattery(now: receivedAt)
     }
-    /// A new connection: no charging fact carries over from the previous one.
-    public func beginConnection() { charging.reset(connection: UUID()) }
+    /// A new connection: the last known charging/attachment facts are held until the strap reports again
+    /// (`ChargingModel.Hold.untilNextReport`).
+    public func beginConnection(now: Date = Date()) {
+        charging.reset(connection: UUID(), hold: .untilNextReport, now: now)
+    }
 
     /// Keep the shown reading's charging flag in step with the confirmed fact (the reading's own time is kept).
     private func restampBattery(now: Date) {
         guard let b = battery else { return }
-        let c: Bool? = switch charging.charging(now: now) { case .yes: true; case .no: false; case .unknown: nil }
+        let c: Bool? = switch charging.confirmedCharging(now: now) { case .yes: true; case .no: false; case .unknown: nil }
         if b.charging != c {
             battery = BatteryStatus(reading: BatteryReading(percent: b.percent, charging: c, at: b.at.timeIntervalSince1970, source: b.source))
         }
@@ -151,8 +160,8 @@ public final class LiveState: ObservableObject {
     }
 
     /// Clear per-connection telemetry (called on disconnect).
-    public func resetTelemetry() {
-        family = nil; historyBusy = false; realtimeStreaming = false; clock = nil; charging.reset(connection: UUID()); hrSubscribed = false; hrBroadcast = nil; hrPackets = 0; strapFrames = 0; lastDataAt = nil
+    public func resetTelemetry(now: Date = Date()) {
+        family = nil; historyBusy = false; realtimeStreaming = false; clock = nil; charging.reset(connection: UUID(), hold: .untilReconnect, now: now); hrSubscribed = false; hrBroadcast = nil; hrPackets = 0; strapFrames = 0; lastDataAt = nil
     }
 
     // Capped at 200 lines so the debug log can't grow without bound.

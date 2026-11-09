@@ -789,12 +789,12 @@ struct ActivityTrendsContent: View {
     }
 }
 
-/// Time in Zones 1–5 over the window, from NOOP's scored awake heart-rate seconds. Zone 0 is left out on purpose, and
-/// unrecorded time and sleep are in no zone, so the bars never add up to the whole window.
+/// Time in Zones 1–5 over the window, from NOOP's scored awake heart-rate seconds, as one zone spectrum (the same design
+/// as the Strain detail, compact). Zone 0 is left out on purpose, and unrecorded time and sleep are in no zone, so the
+/// slices are shares of Zones 1–5 time, never of the whole window.
 struct ZoneTotalsCard: View {
     let totals: ZoneTotals
     let range: TrendRange
-    private static let colors = [StrandPalette.zone1, StrandPalette.zone2, StrandPalette.zone3, StrandPalette.zone4, StrandPalette.zone5]
 
     var body: some View {
         TrendCard(title: "Time in heart-rate zones", caption: "Zones 1–5 · \(range.subtitle.lowercased()) · \(totals.days) scored day\(totals.days == 1 ? "" : "s")",
@@ -804,28 +804,10 @@ struct ZoneTotalsCard: View {
                 TrendEmptyChart(count: 0, none: "No scored days in this window",
                                 needs: "Zone time comes from days NOOP scored from the strap's heart rate.")
             } else {
-                let top = max(totals.seconds.max() ?? 0, 1)
-                VStack(alignment: .leading, spacing: 8) {
-                    ForEach(0..<5, id: \.self) { i in
-                        HStack(spacing: 10) {
-                            Text("Z\(i + 1)").font(.system(size: 12, weight: .semibold, design: .rounded))
-                                .foregroundStyle(StrandPalette.textSecondary).frame(width: 24, alignment: .leading)
-                            GeometryReader { g in
-                                Capsule(style: .continuous).fill(Self.colors[i])
-                                    .frame(width: max(4, g.size.width * CGFloat(totals.seconds[i]) / CGFloat(top)))
-                            }
-                            .frame(height: 12)
-                            Text(DayMath.hm(Double(totals.seconds[i]) / 60))
-                                .font(.system(size: 12, weight: .semibold, design: .rounded).monospacedDigit())
-                                .foregroundStyle(StrandPalette.textPrimary).frame(width: 64, alignment: .trailing)
-                        }
-                        .accessibilityElement(children: .ignore)
-                        .accessibilityLabel("Zone \(i + 1): \(DayMath.hm(Double(totals.seconds[i]) / 60))")
-                    }
-                }
+                ZoneSpectrum((1...5).map { ZoneSpectrumSegment(zone: $0, seconds: totals.seconds[$0 - 1]) }, size: .compact)
             }
         } footer: {
-            Text("Awake heart-rate time NOOP scored, in hours and minutes. Unrecorded time and sleep are in no zone; Zone 0 isn't shown.")
+            Text("Awake heart-rate time NOOP scored; shares are of Zones 1–5 time. Unrecorded time and sleep are in no zone; Zone 0 isn't shown.")
                 .font(StrandFont.footnote).foregroundStyle(StrandPalette.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
         }

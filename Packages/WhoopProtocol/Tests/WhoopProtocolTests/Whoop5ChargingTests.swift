@@ -10,19 +10,19 @@ final class Whoop5ChargingTests: XCTestCase {
         XCTAssertEqual(Whoop5EventKind(21).name, "BATTERY_PACK_CONNECTED")
     }
 
-    /// The real E02 reply frame (captures/E02-readonly-matrix.jsonl, seq 210) parses as detached.
-    func testCapturedDetachedReply() throws {
+    /// The real E02 reply frame (captures/E02-readonly-matrix.jsonl, seq 210) does not prove detachment.
+    func testCapturedUnavailableReply() throws {
         let hex = "aa01280001002de1245697d200010000000000000000000000000000000000000000000000000000000000008caeb213"
         var bytes: [UInt8] = []; var i = hex.startIndex
         while i < hex.endIndex { let j = hex.index(i, offsetBy: 2); bytes.append(UInt8(hex[i..<j], radix: 16)!); i = j }
         let r = try XCTUnwrap(Whoop5CommandResponse.decode(bytes))
         XCTAssertEqual(r.command, 151)
         XCTAssertEqual(r.body.count, 31)
-        XCTAssertEqual(Whoop5Charging.packInfo(r), .detached)
+        XCTAssertEqual(Whoop5Charging.packInfo(r), .unavailable)
     }
 
     func testPackInfoShapes() {
-        XCTAssertEqual(Whoop5Charging.packInfo(command: 151, result: .failure, body: [1] + Array(repeating: 0, count: 30)), .detached)
+        XCTAssertEqual(Whoop5Charging.packInfo(command: 151, result: .failure, body: [1] + Array(repeating: 0, count: 30)), .unavailable)
         // SUCCESS is not proof of attachment: its layout was never captured.
         XCTAssertEqual(Whoop5Charging.packInfo(command: 151, result: .success, body: [1, 42, 0, 7]), .answeredUndecoded)
         // Malformed / other shapes are unrecognized, never "detached".
@@ -68,12 +68,12 @@ final class ChargingModelTests: XCTestCase {
         XCTAssertEqual(m.charging(now: at(15)), .no)
     }
 
-    /// A missed removal: the pack-info poll (detached shape) corrects a stale "attached".
-    func testMissedRemovalCorrectedByPoll() {
+    /// Explicit removal changes state; failed polls must not impersonate this event.
+    func testRemovalEventAndReattachment() {
         var m = ChargingModel(connection: c)
         m.applyEvent(kind: .batteryPackConnected, eventAt: at(0), receivedAt: at(0), connection: c)
         m.applyEvent(kind: .chargingOn, eventAt: at(0), receivedAt: at(0), connection: c)
-        m.applyPackInfo(.detached, requestedAt: at(60), receivedAt: at(60.1), connection: c)
+        m.applyEvent(kind: .batteryPackRemoved, eventAt: at(60), receivedAt: at(60.1), connection: c)
         XCTAssertEqual(m.attached(now: at(61)), .no)
         XCTAssertEqual(m.charging(now: at(61)), .no)
         m.applyPackInfo(.unrecognized, requestedAt: at(120), receivedAt: at(120), connection: c)
@@ -86,6 +86,38 @@ final class ChargingModelTests: XCTestCase {
         XCTAssertEqual(m.charging(now: at(221)), .no)
     }
 
+    func testFailedPollsPreserveChargingWhileBatteryRises() throws {
+        var m = ChargingModel(connection: c)
+        m.applyEvent(kind: .batteryPackConnected, eventAt: at(0), receivedAt: at(0), connection: c)
+        m.applyEvent(kind: .chargingOn, eventAt: at(0), receivedAt: at(0), connection: c)
+        let reply = try XCTUnwrap(Whoop5Charging.packInfo(command: 151, result: .failure,
+                                                       body: [1] + Array(repeating: 0, count: 30)))
+        for minute in 1...30 {
+            let time = at(Double(minute) * 60)
+            m.applyPackInfo(reply, requestedAt: time, receivedAt: time, connection: c)
+            m.applyPercent(40 + minute, at: time, connection: c)
+            XCTAssertEqual(m.attached(now: time), .yes)
+            XCTAssertEqual(m.charging(now: time), .yes)
+        }
+        XCTAssertEqual(m.attachmentEvidence(now: at(1800))?.receivedAt, at(0))
+        XCTAssertEqual(m.chargingEvidence(now: at(1800))?.receivedAt, at(0))
+        m.applyEvent(kind: .batteryPackRemoved, eventAt: at(1801), receivedAt: at(1801), connection: c)
+        XCTAssertEqual(m.attached(now: at(1802)), .no)
+        XCTAssertEqual(m.charging(now: at(1802)), .no)
+    }
+
+    func testFailedPollWithoutEventsLeavesStateUnknownAndAllowsLikely() {
+        var m = ChargingModel(connection: c)
+        for (k, pct) in [40, 41, 42, 43].enumerated() {
+            let time = at(Double(k) * 240)
+            m.applyPackInfo(.unavailable, requestedAt: time, receivedAt: time, connection: c)
+            m.applyPercent(pct, at: time, connection: c)
+        }
+        XCTAssertEqual(m.attached(now: at(721)), .unknown)
+        XCTAssertEqual(m.charging(now: at(721)), .unknown)
+        XCTAssertTrue(m.chargingLikely(now: at(721)))
+    }
+
     func testReconnectDoesNotResurrectState() {
         var m = ChargingModel(connection: c)
         m.applyEvent(kind: .chargingOn, eventAt: at(0), receivedAt: at(0), connection: c)
@@ -94,6 +126,68 @@ final class ChargingModelTests: XCTestCase {
         XCTAssertEqual(m.charging(now: at(1)), .unknown)
         m.applyEvent(kind: .chargingOn, eventAt: at(2), receivedAt: at(2), connection: c)   // a late callback from the old link
         XCTAssertEqual(m.charging(now: at(3)), .unknown)
+    }
+
+    /// The 5.0 battery event's flag re-establishes charging on a new connection (CHARGING_ON is sent only once),
+    /// a later flag of 0 ends it, and it never claims pack attachment.
+    func testBatteryEventFlagRestoresChargingAfterReconnect() {
+        var m = ChargingModel(connection: c)
+        m.applyEvent(kind: .chargingOn, eventAt: at(0), receivedAt: at(0), connection: c)
+        let c2 = UUID()
+        m.reset(connection: c2)
+        XCTAssertEqual(m.charging(now: at(10)), .unknown)
+        m.applyBattery5Flag(true, eventAt: at(30), receivedAt: at(30), connection: c2)
+        XCTAssertEqual(m.charging(now: at(31)), .yes)
+        XCTAssertEqual(m.chargingEvidence(now: at(31))?.source, .batteryEvent5)
+        XCTAssertEqual(m.attached(now: at(31)), .unknown)
+        m.applyBattery5Flag(true, eventAt: at(20), receivedAt: at(40), connection: c2)   // older event: ignored, not newer
+        m.applyBattery5Flag(false, eventAt: at(60), receivedAt: at(60), connection: c2)
+        XCTAssertEqual(m.charging(now: at(61)), .no)
+        m.applyBattery5Flag(true, eventAt: at(90), receivedAt: at(90), connection: c)       // old link: ignored
+        XCTAssertEqual(m.charging(now: at(91)), .no)
+    }
+
+    /// Every report replaces the fact (each one holds until the next).
+    func testEveryBatteryFlagReportIsApplied() {
+        var m = ChargingModel(connection: c)
+        m.applyBattery5Flag(true, eventAt: at(0), receivedAt: at(0), connection: c)
+        m.applyBattery5Flag(true, eventAt: at(30), receivedAt: at(30), connection: c)
+        XCTAssertEqual(m.chargingEvidence(now: at(31))?.eventAt, at(30))
+        m.applyBattery5Flag(false, eventAt: at(60), receivedAt: at(60), connection: c)
+        XCTAssertEqual(m.charging(now: at(61)), .no)
+    }
+
+    /// Across a reconnect the last known facts are held until the next report. Held "charging" lapses if the strap's
+    /// ~30 s reports don't resume; held "not charging" holds until a report; held facts never count as confirmed.
+    func testReconnectHoldsLastKnownStateUntilNextReport() {
+        var m = ChargingModel(connection: c)
+        m.applyEvent(kind: .batteryPackConnected, eventAt: at(0), receivedAt: at(0), connection: c)
+        m.applyEvent(kind: .chargingOn, eventAt: at(0), receivedAt: at(0), connection: c)
+        let c1 = UUID(), c2 = UUID()
+        m.reset(connection: c1, hold: .untilReconnect, now: at(50))                       // disconnected
+        XCTAssertEqual(m.charging(now: at(99)), .yes)
+        m.reset(connection: c2, hold: .untilNextReport, now: at(100))                     // reconnected
+        XCTAssertEqual(m.charging(now: at(101)), .yes)
+        XCTAssertEqual(m.attached(now: at(101)), .yes)
+        XCTAssertTrue(m.chargingEvidence(now: at(101))?.isHeld ?? false)
+        XCTAssertEqual(m.confirmedCharging(now: at(101)), .unknown)
+        let lapse = at(101 + ChargingModel.chargingReportWindow)
+        XCTAssertEqual(m.charging(now: lapse), .unknown)                                  // no report resumed
+        XCTAssertEqual(m.attached(now: lapse), .unknown)
+        // A report replaces the held fact.
+        m.applyBattery5Flag(true, eventAt: at(130), receivedAt: at(130), connection: c2)
+        XCTAssertFalse(m.chargingEvidence(now: at(131))?.isHeld ?? true)
+        XCTAssertEqual(m.confirmedCharging(now: at(131)), .yes)
+        // Held "not charging" waits for the next report, however long (within the fact age limit).
+        var off = ChargingModel(connection: c)
+        off.applyBattery5Flag(false, eventAt: at(0), receivedAt: at(0), connection: c)
+        off.reset(connection: c2, hold: .untilNextReport, now: at(100))
+        XCTAssertEqual(off.charging(now: at(3600)), .no)
+        // Facts already past their age limit are not carried.
+        var old = ChargingModel(connection: c)
+        old.applyEvent(kind: .chargingOn, eventAt: at(0), receivedAt: at(0), connection: c)
+        old.reset(connection: c2, hold: .untilNextReport, now: at(ChargingModel.factMaxAge + 1))
+        XCTAssertNil(old.activity)
     }
 
     func testRisingPercentageIsOnlyLikelyAndNeedsASustainedRise() {
@@ -111,7 +205,7 @@ final class ChargingModelTests: XCTestCase {
         // A confirmed contrary fact wins.
         var n = m
         n.applyPercent(42, at: at(800), connection: c)
-        n.applyPackInfo(.detached, requestedAt: at(801), receivedAt: at(801), connection: c)
+        n.applyEvent(kind: .batteryPackRemoved, eventAt: at(801), receivedAt: at(801), connection: c)
         XCTAssertFalse(n.chargingLikely(now: at(802)))
     }
 

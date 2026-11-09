@@ -5,8 +5,9 @@ import StrandDesign
 private struct SegmentedHub<Seg: Hashable & CaseIterable & RawRepresentable, Body: View>: View where Seg.RawValue == String, Seg.AllCases: RandomAccessCollection {
     let title: String
     @Binding var selection: Seg
-    /// Trends uses the app's own pill control (as its range pills do); Settings keeps the system segmented picker.
-    var pills = false
+    /// Trends uses the app's section tabs (icon + name, one level above its sub-view and range pills); Settings keeps the
+    /// system segmented picker.
+    var symbol: ((Seg) -> String)? = nil
     @ViewBuilder var content: (Seg) -> Body
 
     var body: some View {
@@ -17,8 +18,8 @@ private struct SegmentedHub<Seg: Hashable & CaseIterable & RawRepresentable, Bod
             }
             .padding(.horizontal, NoopMetrics.screenPadding).padding(.top, 20)
             Group {
-                if pills {
-                    SegmentedPillControl(Array(Seg.allCases), selection: $selection, title: "\(title) sections") { $0.rawValue }
+                if let symbol {
+                    SectionTabBar(Array(Seg.allCases), selection: $selection, title: "\(title) sections", symbol: symbol) { $0.rawValue }
                 } else {
                     Picker(title, selection: $selection) {
                         ForEach(Seg.allCases, id: \.self) { Text($0.rawValue).tag($0) }
@@ -36,12 +37,23 @@ private struct SegmentedHub<Seg: Hashable & CaseIterable & RawRepresentable, Bod
 
 /// Trends: all history in one place. Scores, then Sleep, Vitals and Activity, each with its trends and its detail screen.
 struct TrendsHub: View {
-    enum Seg: String, CaseIterable { case scores = "Scores", sleep = "Sleep", vitals = "Vitals", activity = "Activity" }
+    enum Seg: String, CaseIterable {
+        case scores = "Scores", sleep = "Sleep", vitals = "Vitals", activity = "Activity", highlights = "Highlights"
+        var symbol: String {
+            switch self {
+            case .scores: return "circle.hexagongrid.fill"
+            case .sleep: return "moon.zzz.fill"
+            case .vitals: return "waveform.path.ecg"
+            case .activity: return "flame.fill"
+            case .highlights: return "trophy.fill"
+            }
+        }
+    }
     @AppStorage("noop.trends.segment") private var raw = Seg.scores.rawValue
     private var sel: Binding<Seg> { Binding(get: { Seg(rawValue: raw) ?? .scores }, set: { raw = $0.rawValue }) }
 
     var body: some View {
-        SegmentedHub(title: "Trends", selection: sel, pills: true) { seg in
+        SegmentedHub(title: "Trends", selection: sel, symbol: { $0.symbol }) { seg in
             switch seg {
             case .scores: TrendsView()
             case .sleep:
@@ -56,6 +68,7 @@ struct TrendsHub: View {
                 TrendTabSwitcher(storageKey: "noop.trends.activity.detail", detailTitle: "Sessions") {
                     ActivityTrendsView()
                 } detail: { WorkoutsView() }
+            case .highlights: HighlightsView()
             }
         }
     }

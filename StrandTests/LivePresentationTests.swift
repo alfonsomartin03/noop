@@ -92,6 +92,19 @@ final class BatteryPresentationTests: XCTestCase {
         XCTAssertNotEqual(BatteryPresentation(live: live(threshold, charging: nil), now: now).level, .low)
     }
 
+    func testNeedsChargeOnlyForFreshLowReadingOffCharger() {
+        let low = BatteryAlertPolicy().lowPercent - 1
+        XCTAssertTrue(BatteryPresentation(live: live(low, charging: nil), now: now).needsCharge)
+        XCTAssertTrue(BatteryPresentation(live: live(low, charging: false), now: now).needsCharge)
+        XCTAssertFalse(BatteryPresentation(live: live(low + 1, charging: nil), now: now).needsCharge)
+        XCTAssertFalse(BatteryPresentation(live: live(low, charging: true), now: now).needsCharge)
+        XCTAssertFalse(BatteryPresentation(live: live(low, charging: nil, age: BatteryAlertPolicy().staleAfter + 1), now: now).needsCharge)
+        XCTAssertFalse(BatteryPresentation(live: live(low, charging: nil, connected: false), now: now).needsCharge)
+        let attached = live(low, charging: nil)
+        attached.applyChargingEvent(.batteryPackConnected, eventAt: now, receivedAt: now)
+        XCTAssertFalse(BatteryPresentation(live: attached, now: now).needsCharge)
+    }
+
     func testChargingOnlyFromAVerifiedFreshReading() {
         XCTAssertTrue(BatteryPresentation(live: live(48, charging: true), now: now).isCharging)
         // Unknown is not charging, whatever the level does.
@@ -106,6 +119,21 @@ final class BatteryPresentationTests: XCTestCase {
         let gone = BatteryPresentation(live: live(48, charging: true, connected: false), now: now)
         XCTAssertFalse(gone.isCharging)
         XCTAssertTrue(gone.statusText.hasPrefix("Not connected"))
+    }
+
+    func testFailedPackPollPreservesChargingPresentation() throws {
+        let l = live(48, charging: true)
+        l.applyChargingEvent(.batteryPackConnected, eventAt: now, receivedAt: now)
+        let later = now.addingTimeInterval(60)
+        let reply = try XCTUnwrap(Whoop5Charging.packInfo(command: 151, result: .failure,
+                                                       body: [1] + Array(repeating: 0, count: 30)))
+        l.applyPackInfo(reply, requestedAt: later, connection: l.connectionId, receivedAt: later)
+        l.updateBattery(BatteryReading(percent: 49, charging: nil, at: later.timeIntervalSince1970, source: .standardLevel))
+        let b = BatteryPresentation(live: l, now: later)
+        XCTAssertEqual(b.attachment, .attached)
+        XCTAssertEqual(b.charge, .charging)
+        XCTAssertEqual(b.illustration, .charging)
+        XCTAssertEqual(l.battery?.charging, true)
     }
 
     func testFullNeedsChargingAndOneHundredPercent() {
@@ -136,10 +164,29 @@ final class BatteryPresentationTests: XCTestCase {
         XCTAssertEqual(b.charge, .notCharging)
         XCTAssertEqual(b.illustration, .detached)
         XCTAssertEqual(l.battery?.charging, false)
-        // Disconnect forgets it: the next connection has to report again.
+        // Disconnect: shown as unknown while disconnected; after reconnecting the last known state is held (labelled)
+        // until the strap reports again or the hold ends, and it never stamps readings for alerts.
         l.applyChargingEvent(.chargingOn, eventAt: now.addingTimeInterval(20), receivedAt: now.addingTimeInterval(20))
-        l.resetTelemetry()
-        XCTAssertEqual(l.charging.charging(now: now.addingTimeInterval(21)), .unknown)
+        l.connected = false
+        l.resetTelemetry(now: now.addingTimeInterval(21))
+        XCTAssertEqual(BatteryPresentation(live: l, now: now.addingTimeInterval(21)).charge, .unknown)
+        let back = now.addingTimeInterval(60)
+        l.beginConnection(now: back)
+        l.connected = true
+        b = BatteryPresentation(live: l, now: back.addingTimeInterval(1))
+        XCTAssertTrue(b.isCharging)
+        XCTAssertTrue(b.chargeHeld)
+        XCTAssertTrue(b.statusText.hasPrefix("Charging · last reported"))
+        l.updateBattery(BatteryReading(percent: 50, charging: nil, at: back.timeIntervalSince1970 + 2, source: .standardLevel))
+        XCTAssertNil(l.battery?.charging)
+        let lapsed = back.addingTimeInterval(ChargingModel.chargingReportWindow + 1)
+        XCTAssertEqual(BatteryPresentation(live: l, now: lapsed).charge, .unknown)
+        // The battery event's flag confirms it again on this connection.
+        l.applyCharging5(true, eventAt: back.addingTimeInterval(30), receivedAt: back.addingTimeInterval(30))
+        b = BatteryPresentation(live: l, now: back.addingTimeInterval(31))
+        XCTAssertTrue(b.isCharging)
+        XCTAssertFalse(b.chargeHeld)
+        XCTAssertEqual(b.statusText, "Charging")
     }
 
     /// A rising percentage shows "charging likely", never confirmed charging, and never counts toward the full alert.

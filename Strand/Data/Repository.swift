@@ -27,6 +27,8 @@ final class Repository: ObservableObject {
     @Published var loaded = false
     /// Bumped whenever new strap data lands in the store; screens key their loads on it.
     @Published var dataVersion = 0
+    /// Bumped when a check-in is saved or cleared (kept apart from `dataVersion`: check-ins never trigger scoring).
+    @Published var checkInVersion = 0
     /// Days whose merged row is an official WHOOP value (imported). Every other day is a NOOP estimate.
     @Published var officialDays: Set<String> = []
     /// NOOP's own estimates keyed by day, kept even where an official value hides them in `days`.
@@ -249,6 +251,90 @@ final class Repository: ObservableObject {
         let to = Self.dayString(now.addingTimeInterval(86_400))
         let pts = (try? await store.metricSeries(deviceId: source, key: key, from: from, to: to)) ?? []
         return pts.map { ($0.day, $0.value) }
+    }
+
+    /// Every stored day for Data Highlights, per source, read straight from the store (all history, not the UI cache).
+    /// Imported WHOOP rows and NOOP's computed rows stay apart; NOOP has no sleep-performance score, so its series is empty.
+    func highlightInputs() async -> [HighlightSource: HighlightInputs] {
+        guard let store = await ensureStore() else { return [:] }
+        let lo = "0000-01-01", hi = "9999-12-31"
+        let imported = (try? await store.dailyMetrics(deviceId: deviceId, from: lo, to: hi)) ?? []
+        let computed = (try? await store.dailyMetrics(deviceId: computedDeviceId, from: lo, to: hi)) ?? []
+        let perf = ((try? await store.metricSeries(deviceId: deviceId, key: "sleep_performance", from: lo, to: hi)) ?? [])
+            .map { (day: $0.day, value: $0.value) }
+        func inputs(_ rows: [DailyMetric], sleep: [(day: String, value: Double)]) -> HighlightInputs {
+            func pick(_ f: (DailyMetric) -> Double?) -> [(day: String, value: Double)] { rows.compactMap { r in f(r).map { (r.day, $0) } } }
+            return HighlightInputs(sleepPerformance: sleep, recovery: pick(\.recovery), strain: pick(\.strain),
+                                   restingHR: pick { $0.restingHr.map(Double.init) }, hrv: pick(\.avgHrv))
+        }
+        return [.whoop: inputs(imported, sleep: perf), .noop: inputs(computed, sleep: [])]
+    }
+
+    /// One stored day's row from one source, for a highlight's supporting-day sheet.
+    func dailyMetric(_ day: String, source: HighlightSource) async -> DailyMetric? {
+        guard let store = await ensureStore() else { return nil }
+        let id = source == .whoop ? deviceId : computedDeviceId
+        return ((try? await store.dailyMetrics(deviceId: id, from: day, to: day)) ?? []).first
+    }
+
+    // MARK: - Health page
+
+    /// Nightly vitals per source for the Health Monitor. Imported WHOOP skin temperature is absolute °C while NOOP stores a
+    /// deviation from baseline, so imported skin temperature is left out rather than compared with a different quantity.
+    func healthInputs() async -> (noop: [HealthMetric: [HealthPoint]], imported: [HealthMetric: [HealthPoint]]) {
+        guard let store = await ensureStore() else { return ([:], [:]) }
+        let lo = "0000-01-01", hi = "9999-12-31"
+        let imported = (try? await store.dailyMetrics(deviceId: deviceId, from: lo, to: hi)) ?? []
+        let computed = (try? await store.dailyMetrics(deviceId: computedDeviceId, from: lo, to: hi)) ?? []
+        func points(_ rows: [DailyMetric], skin: Bool) -> [HealthMetric: [HealthPoint]] {
+            func pick(_ f: (DailyMetric) -> Double?) -> [HealthPoint] { rows.compactMap { r in f(r).map { HealthPoint(day: r.day, value: $0) } } }
+            var out: [HealthMetric: [HealthPoint]] = [
+                .respiratoryRate: pick(\.respRateBpm), .spo2: pick(\.spo2Pct),
+                .restingHR: pick { $0.restingHr.map(Double.init) }, .hrv: pick(\.avgHrv),
+            ]
+            if skin { out[.skinTemp] = pick(\.skinTempDevC) }
+            return out
+        }
+        return (points(computed, skin: true), points(imported, skin: false))
+    }
+
+    // MARK: - Check-ins (user-entered context; never read by scoring)
+
+    func checkIns(from: String = "0000-01-01", to: String = "9999-12-31") async -> [CheckInEntryRow] {
+        guard let store = await ensureStore() else { return [] }
+        return (try? await store.checkIns(from: from, to: to)) ?? []
+    }
+
+    @discardableResult
+    func saveCheckIn(_ entry: CheckInEntryRow) async -> Bool {
+        guard let store = await ensureStore() else { return false }
+        do { try await store.saveCheckIn(entry); checkInVersion += 1; return true } catch { return false }
+    }
+
+    @discardableResult
+    func deleteCheckIn(localDate: String, session: CheckInSession) async -> Bool {
+        guard let store = await ensureStore() else { return false }
+        do { try await store.deleteCheckIn(localDate: localDate, session: session.rawValue); checkInVersion += 1; return true } catch { return false }
+    }
+
+    /// Outcome values per day for check-in comparisons, one source at a time (NOOP's own rows, or imported WHOOP rows).
+    func checkInOutcomes(source: HighlightSource) async -> [String: CheckInOutcomeDay] {
+        guard let store = await ensureStore() else { return [:] }
+        let id = source == .whoop ? deviceId : computedDeviceId
+        let rows = (try? await store.dailyMetrics(deviceId: id, from: "0000-01-01", to: "9999-12-31")) ?? []
+        var out: [String: CheckInOutcomeDay] = [:]
+        for r in rows {
+            var v: [CheckInMeasure: Double] = [:]
+            v[.sleepDuration] = r.totalSleepMin
+            v[.disturbances] = r.disturbances.map(Double.init)
+            v[.recovery] = r.recovery
+            v[.hrv] = r.avgHrv
+            v[.restingHR] = r.restingHr.map(Double.init)
+            v[.respiratoryRate] = r.respRateBpm
+            v[.dayStrain] = r.strain
+            out[r.day] = CheckInOutcomeDay(day: r.day, values: v)
+        }
+        return out
     }
 
     func availableKeys(source: String) async -> [String] {

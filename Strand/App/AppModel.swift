@@ -27,6 +27,8 @@ final class AppModel: ObservableObject {
     let batteryMonitor = BatteryMonitor()
     /// Wake alarms (host-driven; see AlarmController). History persists in the local store.
     let alarms: AlarmController
+    /// Morning / evening check-in preferences (entries live in the store).
+    let checkIns = CheckInSettings()
 
     /// Import status surfaced to Settings → Data.
     @Published var importing = false
@@ -43,6 +45,7 @@ final class AppModel: ObservableObject {
     init() {
         // Log the system time zone (it follows the device's location) so each night resolves on the clock it was slept on.
         ZoneTimeline.shared.startTracking()
+        CheckInReminders.shared.install()
         let live = LiveState()
         self.live = live
         self.heart = LiveHeartRate(following: live)
@@ -234,14 +237,14 @@ final class AppModel: ObservableObject {
 
     /// Synthetic battery states for visual checks of a fixture launch (see `LaunchMode.fixtureBattery`): 8 s each.
     private func playFixtureBattery(_ mode: String) {
-        // Each step: connection, percent, then the strap events / pack reply that state would come from.
-        typealias Step = (connected: Bool, pct: Int, events: [Whoop5EventKind], detachedReply: Bool)
-        let steps: [Step] = mode == "charging" ? [(true, 62, [.batteryPackConnected, .chargingOn], false)]
-            : [(true, 62, [], true),                                   // detached (verified reply shape)
-               (true, 62, [.batteryPackConnected], false),             // attached, charging unknown
-               (true, 63, [.chargingOn], false),                       // confirmed charging
-               (true, 100, [], false),                                 // full
-               (false, 100, [], false)]                                // disconnected: stale, unknown
+        // Each step: connection, percent, then the strap events that state would come from.
+        typealias Step = (connected: Bool, pct: Int, events: [Whoop5EventKind])
+        let steps: [Step] = mode == "charging" ? [(true, 62, [.batteryPackConnected, .chargingOn])]
+            : [(true, 62, [.batteryPackRemoved]),                       // detached (explicit event)
+               (true, 62, [.batteryPackConnected]),             // attached, charging unknown
+               (true, 63, [.chargingOn]),                       // confirmed charging
+               (true, 100, []),                                 // full
+               (false, 100, [])]                                // disconnected: stale, unknown
         Task { @MainActor [weak self] in
             for (i, s) in steps.enumerated() {
                 guard let self else { return }
@@ -249,7 +252,6 @@ final class AppModel: ObservableObject {
                 self.live.connected = s.connected
                 if !s.connected { self.live.resetTelemetry() }
                 if s.connected {
-                    if s.detachedReply { self.live.applyPackInfo(.detached, requestedAt: Date(), connection: self.live.connectionId) }
                     for e in s.events { self.live.applyChargingEvent(e, eventAt: Date()) }
                     self.live.updateBattery(BatteryReading(percent: s.pct, charging: nil, at: Date().timeIntervalSince1970, source: .vendorCommand))
                 }

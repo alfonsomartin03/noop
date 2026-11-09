@@ -15,10 +15,10 @@ This is a convention, not CI: reconcile with the working tree before trusting it
 
 ## 1 · Snapshot
 
-- Refreshed **2026-11-06** (America/New_York). Local `main` includes #1–#5 integration through `10e1c80`.
+- Refreshed **2026-11-09** (America/New_York). Local `main` includes #1–#5 merges and the 2026-11-09 commit of issues #4 (nav + zone spectrum), #12 (check-ins), #13 (Highlights), #14 (Health page) and charging fixes.
 - **NOOP**: local-only macOS companion for WHOOP 4.0/5.0 straps. Internal target/scheme/package prefix **Strand**; bundle `com.noopapp.noop`, product `NOOP.app`, v0.1.0 (1).
-- 318 first-party files indexed in §7 (tracked + non-ignored untracked, excluding this file). Source size hotspots: `BLEManager.swift` ~2.0k lines, `SleepStager.swift` ~1.3k, `OnboardingWizard.swift` ~1.1k, `TrendSections.swift` ~0.9k — search, don't read whole.
-- Test inventory (methods in files, not pass results): StrandAnalytics 388, WhoopProtocol 139, WhoopStore 111, StrandImport 61, StrandDesign 27 (2 snapshot tests skip without env), hosted StrandTests 31, Python 22.
+- 335 first-party files indexed in §7 (tracked + non-ignored untracked, excluding this file). Source size hotspots: `BLEManager.swift` ~2.0k lines, `SleepStager.swift` ~1.3k, `OnboardingWizard.swift` ~1.1k, `TrendSections.swift` ~0.9k — search, don't read whole.
+- Test inventory (methods in files, not pass results): StrandAnalytics 430, WhoopProtocol 150, WhoopStore 115, StrandImport 61, StrandDesign 33 (2 snapshot tests skip without env), hosted StrandTests 44, Python 22.
 
 ## 2 · Architecture and routing
 
@@ -39,6 +39,9 @@ AppEntry (NOOP_TEST_HOST? bare host) -> StrandApp -> AppModel (one instance; win
 | --- | --- | --- |
 | Lifecycle, scheduling, ownership | `Strand/App/AppModel.swift`, `StrandApp.swift` | hosted `StrandTests` |
 | Navigation / screens | `Strand/App/RootView.swift`, `Strand/Screens/Hubs.swift` | app build + visual check |
+| Health page (age gate, monitor, activation) | `Strand/Screens/HealthPageView.swift`, analytics `HealthMonitor.swift`, `docs/HEALTH_MODELS.md` | `HealthMonitorTests` (logic only, not clinical) |
+| Data Highlights | `Strand/Screens/HighlightsView.swift`, analytics `DataHighlights.swift` | `DataHighlightsTests` |
+| Check-ins | `Strand/Screens/CheckInViews.swift`, `Strand/Data/CheckInSettings.swift`, analytics `CheckIns.swift`, store `CheckInStore.swift` | `CheckInInsightsTests`, `CheckInStoreTests` |
 | Connect, pair, sync, wire commands | `Strand/BLE/BLEManager.swift`, `Commands.swift` | WhoopProtocol tests, reverse-engineering docs |
 | Frame decode / checksums / 5.0 messages | `Packages/WhoopProtocol/Sources/WhoopProtocol/` | Swift fixtures + Python decoder tests |
 | Durable collection / safe acknowledgement | `Strand/Collect/`, history path in `BLEManager.swift` | collector, raw archive, protocol tests |
@@ -58,7 +61,11 @@ Packages (all Swift tools 5.9, platforms macOS 13 / iOS 16; **only a macOS app t
 
 - `AppEntry` checks `NOOP_TEST_HOST` before startup (tests get no BLE/store). Single strap identity `my-whoop`. `AppModel` owns BLE/live state, `Repository`, profile, scoring, imports, battery notifications, alarms.
 - New stored chunks: raw-data refresh throttled ~2 s; scoring debounced until ~8 s quiet; post-download processing triggered. Launch: refresh cache, wait ~6 s, apply version rescoring, then analyze every ~15 min. Scoring runs in a detached utility task, never in views.
-- Destinations (floating pill, Cmd-1…4): **Overview** (`TodayView`), **Trends** (`TrendsHub`: Scores, Sleep, Vitals, Activity), **Alarms** (`AlarmsView`), **Settings** (`SettingsHub`: General = strap/Bluetooth/profile/battery; Data = WHOOP import, comparison, backups; Advanced = diagnostics, metric explorer, live strap). First-launch onboarding overlays the shell.
+- Destinations (floating pill, Cmd-1…5): **Overview** (`TodayView`), **Trends** (`TrendsHub`: Scores, Sleep, Vitals, Activity, Highlights), **Health** (`HealthPageView`), **Alarms** (`AlarmsView`), **Settings** (`SettingsHub`: General = strap/Bluetooth/profile/battery/check-ins; Data = WHOOP import, comparison, backups; Advanced = diagnostics, metric explorer, live strap). First-launch onboarding overlays the shell. Trends sections use `SectionTabBar` (icon + name, accent wash); sub-view (`TrendTabSwitcher`) and range use `SegmentedPillControl`. Both draw their own offset focus ring (`strandFocusRing`, macOS 14+; system ring on 13) and hover/disabled states.
+- Zone distribution: `ZoneSpectrum` (StrandDesign) — proportional Z-ribbon in intensity order, hatched "Not recorded" slice for unsupported time, legend with label, bpm band, exact duration and share. Strain detail: Z0–Z5 + awake unknown time (regular). Activity Trends: Z1–Z5 shares of zone time (compact). Zone calculations unchanged.
+- **Highlights** (`HighlightsView` + `DataHighlights`): 1M/3M/All Time over completed local days (today excluded; calendar-month ranges with month-end clamping), one source at a time (WHOOP import or NOOP; never mixed), Best sleep (WHOOP sleep performance only; NOOP has none → unavailable state), Peak recovery, Max strain, longest streaks (sleep ≥70 %, green recovery ≥67 % per source label, strain ≥10; gaps end streaks, clipped to range), lowest/highest RHR and HRV. Ties → most recent day + tie count. "View day" sheet shows that source's stored row. All-time reads the store directly; computed off-main.
+- **Check-ins** (`CheckInCard` on Overview, `CheckInSheet` entries/insights/settings, Settings ▸ General card): optional morning/evening sessions, user-chosen/ordered prompts from `CheckInLibrary` (17 prompts, stable id + version), answers Yes/No/Not sure/Skip, untouched = unanswered, "Skip today" = skipped session. One entry per local date + session; edits keep date, creation time and time zone. Insights: Yes vs No group means per measure, ≥5 per group, |d| < 0.2 SD = no clear difference, association wording, one outcome source (NOOP or import, whichever covers more answered days). Morning → same day's row; evening → next day's row (training prompts also same-day strain). Optional reminders: one-off notifications for the next 7 days, withdrawn once done/skipped, "Remind me in 30 minutes" action; `CheckInReminders` is the notification delegate (presents only check-in banners in the foreground; others keep the system default). Never read by scoring.
+- **Health** (`HealthPageView`): biological-age hero is an honest unavailable state (`BiologicalAgeModel.version = nil`; chronological age from profile; missing inputs listed; research in `docs/HEALTH_MODELS.md`). Health Monitor: RR, SpO₂, RHR, HRV, skin temp (NOOP deviation; imported absolute °C excluded) vs causal personal ranges (30-day lookback, ≥14 prior nights, MAD outlier trim, per-metric min half-width, stale >2 days), one source per metric, summary never all-clear with missing/stale; tile → detail with chart + band + coverage. Stress Monitor = heart-rate activation timeline (15-min bins, %HRR <20/20–40/≥40, sleep/workout/no-data bins) labelled "not a stress score"; no numerical stress score.
 - Alarms tab: next-alarm hero (time, countdown, smart window, delivery pill, "I'm awake" while an early wake's deadline fallback is pending), warnings (incl. history-save failures), alarm rows, `AlarmEditor`, **History** (`AlarmHistorySection`: one row per occurrence with evidence-based status; detail sheet = facts, genuine NOOP stage timeline ±90/30 min with separate decision/vibration markers, event trail, user notes). `NextAlarmLink` (Overview; Sleep) navigates there.
 - Overview HR card coverage: `DayCoverage` (StrandAnalytics) — supported intervals clipped/unioned to the day's real length (DST) up to now; captions "X recorded so far" / "X recorded of 24 h"; details line "Data through …", gap stretches, unsynced time; warning only for ≥1 h and ≥10 % gaps or >2 h unsynced. Never claims the strap was off. Today's load request ends at the scoring clock; the first run after midnight re-scores the full day.
 - Trends period comparisons use only completed days; missing comparison days are not zero. Summary direction is neutral, accessible, and includes compared date ranges. Activity includes HR time totals for Zones 1–5 (Zone 0 excluded).
@@ -68,16 +75,16 @@ Packages (all Swift tools 5.9, platforms macOS 13 / iOS 16; **only a macOS app t
 - Realtime stream ownership: `BLEManager.realtimeOwners` (`live-sheet`, `menu`, `alarm`, default `ui`); the stream stops and the live value clears only when the last owner releases. The alarm releases on decision, edit/delete, completion and errors.
 - `LiveHeartRate`: median over ~10 s (≤40 readings), plausible 30–220 bpm, reported HR preferred, RR fallback, shared `HRZones`; publishes only changed values.
 - Battery surfaces show three separate facts (`BatteryPresentation.facts`: Strap battery / Charging pack / Charging), each known vs unknown with its source; Settings + live sheet list them, onboarding uses the shared status words.
-- `BatteryPresentation`: low <20% (from `BatteryAlertPolicy.lowPercent`), medium <35%; percentage stale when disconnected or >10 min old. Charge (`charging`/`likely`/`notCharging`/`unknown`) and attachment come from `LiveState.charging` (`ChargingModel`) with their own freshness; disconnected → unknown. `illustration` maps to detached/attached/charging/full/unknown. All surfaces (badge, menu bar, Settings, live sheet, onboarding) use it; `BatteryMonitor` alerts see only the confirmed flag stamped on readings.
+- `BatteryPresentation`: low <20% (from `BatteryAlertPolicy.lowPercent`), medium <35%; percentage stale when disconnected or >20 min old (`BatteryAlertPolicy.staleAfter`). Charge (`charging`/`likely`/`notCharging`/`unknown`) and attachment come from `LiveState.charging` (`ChargingModel`) with their own freshness; disconnected → unknown. `illustration` maps to detached/attached/charging/full/unknown. All surfaces (badge, menu bar, Settings, live sheet, onboarding) use it; `needsCharge` (fresh low reading, connected, not charging/likely, pack not attached) adds a small "Charge" capsule beside the top-right badge; `BatteryMonitor` alerts see only the confirmed flag stamped on readings.
 - `ChargingIllustration` phases: `idle` (detached, pack beside), `attached` (seated, unlit), `charging` (flow), `full`, `unknown` (faint pack). Spring dock + ring on detached→charging, 5 flow cycles, reminder every 30 s and on hover; none under Reduce Motion, inactive app or dimmed.
-- Not present: Apple Health import UI, mobile app, cloud/account service, coaching, standalone stress/insights/compare screens. Library code (e.g. Apple Health parsing, `ComparisonEngine`, `BehaviorInsights`) is not proof of exposed UI.
+- Not present: Apple Health import UI, mobile app, cloud/account service, coaching, numerical stress or biological-age estimates, standalone compare screens. Library code (e.g. Apple Health parsing, `ComparisonEngine`, `BehaviorInsights`) is not proof of exposed UI.
 
 ### BLE, charging and collection
 
 - `BLEManager`: scan → connect → discover → bond → subscribe → per-characteristic reassembly → decode/route/store/sync; `DeviceFamily` selects 4.0 vs 5.0 GATT and header framing.
 - `BluetoothChoice` (`noop.bluetoothChoice`): records the system answer; Settings ▸ Strap toggle. While declined, no `CBCentralManager` at launch unless macOS reports allowedAlways. Ad-hoc rebuilds still re-prompt; only stable signing (`Local.xcconfig`) fixes that.
 - Reconnect: 3 s rescan after unintended disconnect, plus a 15-min watchdog (`BluetoothChoice.reconnectIntervalSeconds`) that cancels a stalled connect and rescans while open and disconnected; skipped after user Disconnect. `LiveState.nextReconnectAt` drives the Settings caption. Not hardware-tested.
-- Charging (`ChargingModel`, WhoopProtocol): attachment and activity are separate facts with source, event time, receipt time and connection UUID (`LiveState.beginConnection` per connect; reset on disconnect). Events 7/8 → activity; 21 → attached (and clears a "not charging" that was only inferred from detachment); 22 → detached + not charging. `Whoop5Charging.packInfo` (151): only the E02 shape (FAILURE, 31-byte body `01`+zeros) = detached; SUCCESS = `answeredUndecoded` (attachment stays unknown); anything else unrecognized. Replies are bound to request seq/time/connection; older evidence never overrides newer (late reply vs newer removal). Facts expire after 3 h; percentages never refresh them. Charging events that arrive before a strap clock exists are held (`PendingChargingEvents`, ≤8, ≤60 s) and judged live against strap time at receipt once a clock arrives. A contrary fact older than the start of a rise no longer blocks "likely"; the conflict is reported (`likelyContradicts`) and shown. "Charging likely" = ≥3 readings, ≥3 pt non-decreasing rise over ≥10 min, expires 20 min; never confirmed, never alerts. 4.0 BATTERY_LEVEL flag → activity. Battery/pack poll ~60 s, paused during downloads, caught up immediately after (`pollBatteryIfOverdue`). Live charging on hardware not yet observed.
+- Charging (`ChargingModel`, WhoopProtocol): attachment and activity are separate facts with source, event time, receipt time and connection UUID (`LiveState.beginConnection` per connect). On disconnect/reconnect the last known facts carry over marked held (`ChargingModel.Hold`, `ChargingEvidence.heldUntil`): hidden while disconnected; after reconnecting shown "last reported …" until the next report — held "charging" (and its attachment) lapses after `chargingReportWindow` 90 s without one, held "not charging" waits for the next report (≤ `factMaxAge`). Held facts never stamp readings (`confirmedCharging`), so alerts ignore them. Observed cadence (fw 50.43.1.0 unified log): event 3 pushed live every ~30 s while charging, per ~1 % step (hours apart) while discharging. Events 7/8 → activity; 5.0 event 3 (BATTERY_LEVEL, ~every 30 s while charging) byte 9 bit 0 → activity (`batteryEvent5`; confirmed fw 50.43.1.0 on 500 stored events; restores charging after a reconnect, since 7 is sent only once; never implies attachment; every report applies and holds until the next; the event's soc also feeds `updateBattery` as source `.event`); 21 → attached (and clears a "not charging" that was only inferred from detachment); 22 → detached + not charging. `Whoop5Charging.packInfo` (151): E02 shape (FAILURE, 31-byte body `01`+zeros) = `unavailable`, not proof of detachment; SUCCESS = `answeredUndecoded`; neither changes attachment/activity. Explicit removal events clear both; failed minute polls cannot erase a live charging report or suppress rising-percentage inference. Replies are bound to request seq/time/connection; older evidence never overrides newer (late reply vs newer removal). Facts expire after 3 h; percentages never refresh them. Charging events that arrive before a strap clock exists are held (`PendingChargingEvents`, ≤8, ≤60 s) and judged live against strap time at receipt once a clock arrives. A contrary fact older than the start of a rise no longer blocks "likely"; the conflict is reported (`likelyContradicts`) and shown. "Charging likely" = ≥3 readings, ≥3 pt non-decreasing rise over ≥10 min, expires 20 min; never confirmed, never alerts. 4.0 BATTERY_LEVEL flag → activity. Battery/pack poll on connect, then at most every 15 min (= `backfillIntervalSeconds`; elapsed time, checked every 30 s), paused during downloads, caught up immediately after (`pollBatteryIfOverdue`). Charging on the pack observed on hardware 2026-11-09 (7 + 21 at attach, then the event-3 flag); the app display after the event-3 fix is not yet re-checked on the strap.
 - `Commands` is a restricted app command set; research never licenses destructive/firmware ops in normal flows. `FrameRouter` mutates `LiveState`; standard HR broadcast listening is opt-in (`listenToHRBroadcast`, default off).
 - `Collector`: flush at 64 frames / 30 s, pre-clock cap 4096; decode/persist before optional raw outbox. Raw capture off by default; capture window ≤5 min.
 - `Backfiller` persists decoded history, optional raw and cursor **before** chunk ack. Keep-data-on-strap suppresses ack/cursor advance. Repeated ENDs belong to one offload; never close after the first END.
@@ -90,8 +97,8 @@ Packages (all Swift tools 5.9, platforms macOS 13 / iOS 16; **only a macOS app t
 
 - `StorePaths`: Application Support `OpenWhoop/whoop.sqlite` (sandbox container in the app); never hard-code a home path. WAL/SHM accompany it; raw archive and UserDefaults are separate.
 - `WhoopStore` is an actor over GRDB; `Repository` and BLE hold separate handles (WAL + busy handling).
-- Schema **v16** (`Database.swift`, migrations v1–v16; v16 alarm history). Add migrations; never edit applied ones. v10 RR sequence, v11 provenance, v12 load, v13 training logs, v14 workout labels + incremental state, v15 classified sleep sessions + corrections.
-- Tables: `device`, `hrSample`, `rrInterval`, `event`, `battery`, `spo2Sample`, `skinTempSample`, `respSample`, `gravitySample`, `rawBatch`, `cursors`, `dailyMetric`, `sleepSession`, `journal`, `workout`, `appleDaily`, `metricSeries`, `metricProvenance`, `loadRecord`, `sessionEffort`, `strengthSet`, `workoutLabel`, `dayScoreState`, `sleepCorrection`, `alarmEvent`, `alarmAnnotation`.
+- Schema **v17** (`Database.swift`, migrations v1–v17; v16 alarm history; v17 `checkInEntry` + `checkInAnswer`). Older backups restore by replacement and migrate to v17 with no check-ins. Add migrations; never edit applied ones. v10 RR sequence, v11 provenance, v12 load, v13 training logs, v14 workout labels + incremental state, v15 classified sleep sessions + corrections.
+- Tables: `device`, `hrSample`, `rrInterval`, `event`, `battery`, `spo2Sample`, `skinTempSample`, `respSample`, `gravitySample`, `rawBatch`, `cursors`, `dailyMetric`, `sleepSession`, `journal`, `workout`, `appleDaily`, `metricSeries`, `metricProvenance`, `loadRecord`, `sessionEffort`, `strengthSet`, `workoutLabel`, `dayScoreState`, `sleepCorrection`, `alarmEvent`, `alarmAnnotation`, `checkInEntry`, `checkInAnswer`.
 - Raw/import identity and `<device>-noop` computed identity stay distinct. `Repository` merges for display with imported-field precedence; imported values never enter NOOP causal baselines.
 - `WhoopImporter` → idempotent upserts of cycles, sleeps, workouts, journal, metric series. `DataBackup` exports the DB and restores by replacement (relaunch); not a merge, not preferences or raw archive.
 - `IntelligenceEngine.scoringVersion = 5`; `IncrementalScorer` reuses unchanged days, tracks algorithm/config/source changes, scores in causal order; upgrades archive old derived rows and replace per-day results atomically.
@@ -119,6 +126,8 @@ Packages (all Swift tools 5.9, platforms macOS 13 / iOS 16; **only a macOS app t
 - `docs/FEATURES.md`, `DATA_MODEL.md`, `ANALYTICS.md`, `docs/README.md` and `SLEEP_RECOVERY_RESEARCH_2026-10-27.md` still label sleep/alarm/v15 work as uncommitted/in progress; it is committed.
 - Legacy comments mention server/phone/Kotlin or removed screens (`MetricsCache`, `Cursors`, design umbrella, some views). No backend or mobile app ships.
 - Not universal WHOOP compatibility: alarm confirmation is firmware-specific; attached battery-pack reply layout and live charging events are unobserved; unknown history must be archived, not guessed.
+- Issues #4, #12, #13, #14 (2026-11-09) are implemented and unit-tested but **not visually checked** (no fixture screenshots, light/dark, narrow/wide, VoiceOver or Reduce Motion pass). Check-in reminders and the snooze action were not exercised against real notifications. Health thresholds and check-in insight rules are untested on real data.
+- Charging poll correction (2026-11-09): reproduced in synthetic tests; exact reply during the reported physical charging session is unknown. Missed removal events can leave an old report until the 3 h expiry or disconnect; pack polls cannot currently confirm removal.
 - No CI workflow exists. No release/test-health conclusion is implied by this file.
 
 ## 5 · Build, configuration, runtime switches
@@ -126,6 +135,7 @@ Packages (all Swift tools 5.9, platforms macOS 13 / iOS 16; **only a macOS app t
 - `project.yml` (XcodeGen) is canonical; `Strand.xcodeproj` is generated and ignored — regenerate after adding app files or changing settings. macOS 13+, Swift 5.0 language mode, minimal strict concurrency.
 - Entitlements: sandbox, Bluetooth, user-selected read/write. `Signing.xcconfig` optionally includes ignored `Local.xcconfig` (template `Local.xcconfig.example`).
 - BLEManager emits existing main-actor/nonisolated delegate warnings at build; not errors.
+- Charging poll correction adds no settings; fixture detached state uses a synthetic removal event. `BLEManager.batteryPollIntervalSeconds` = 900; connection refresh remains immediate, post-download refresh only when overdue.
 
 ```sh
 xcodegen generate
@@ -142,7 +152,7 @@ Run the affected checks per change; docs-only changes need path/claim consistenc
 | --- | --- |
 | env `NOOP_TEST_HOST` | Isolated test host (set by scheme) |
 | env `NOOP_FIXTURE_STORE` | DB **copy** path; disables CoreBluetooth; copy may still migrate/rescore; logs launch timing |
-| `-noop.fixture.tab trends\|alarms\|settings`, `-noop.fixture.live YES`, `-noop.fixture.battery cycle\|charging` | Fixture-only launch tab, open live sheet, synthetic battery states via the charging model (cycle: detached, attached, charging, full, disconnected; 8 s/state) |
+| `-noop.fixture.tab trends\|health\|alarms\|settings`, `-noop.fixture.live YES`, `-noop.fixture.battery cycle\|charging` | Fixture-only launch tab, open live sheet, synthetic battery states via the charging model (cycle: detached, attached, charging, full, disconnected; 8 s/state) |
 | `-noop.fixture.alarmHistory YES`, `-noop.fixture.alarmDetail YES` | Fixture-only: seed synthetic alarm history (one occurrence per status) into the COPY; open the newest detail sheet |
 | `noop.onboarded`, `scoringVersionApplied` (target 5) | First-run done; applied scoring migration |
 | `noop.bluetoothChoice` | `undecided`/`allowed`/`declined` |
@@ -151,7 +161,9 @@ Run the affected checks per change; docs-only changes need path/claim consistenc
 | `alarm.specs`, `alarm.capabilities`, `alarm.fired`, `alarm.earlyAttempted`, `alarm.armedTargets`, `alarm.ownsStrapAlarm`, `alarm.followUp` | Alarm definitions, capabilities, completed occurrences, early wakes attempted, stored strap times, strap ownership |
 | `profile.age/sex/heightCm/weightKg/hrMaxOverride` | `ProfileStore` |
 | `notify.batteryLow/batteryFull/batteryAlertState` | `BatteryMonitor` alerts |
-| `noop.trends.segment`, `noop.settings.segment`, `noop.live.detailsOpen` | Hub selection / UI state |
+| `noop.trends.segment`, `noop.settings.segment`, `noop.live.detailsOpen` | Hub selection / UI state (`noop.trends.segment` also takes `Highlights`) |
+| `noop.highlights.range`, `noop.highlights.source` | Highlights range (`1M`/`3M`/`All Time`) and chosen source (`whoop`/`noop`) |
+| `checkin.morning.enabled/prompts/reminder`, `checkin.evening.*`, `checkin.inviteDismissed` | Check-in sessions, ordered prompt ids, reminder JSON (enabled/hour/minute), Overview invite hidden |
 
 ## 6 · Folder boundaries
 
@@ -174,11 +186,11 @@ Format: `file` — purpose. Tests list `Suite(methods)`. Fixtures/resources are 
 ### `Strand/App`
 - `StrandApp.swift` — `AppEntry` test-host gate; `StrandApp` window + menu-bar scenes sharing `AppModel`.
 - `AppModel.swift` — owns BLE, repository, scoring schedule, imports, battery monitor, alarms.
-- `RootView.swift` — shell: `NavItem` (4 tabs)/`FloatingNav`, `NavTarget`, `LiveSheet`, `BatteryBadge`.
+- `RootView.swift` — shell: `NavItem` (5 tabs)/`FloatingNav`, `NavTarget`, `LiveSheet`, `BatteryBadge`.
 - `ContentView.swift` — thin wrapper view.
 
 ### `Strand/BLE`
-- `BLEManager.swift` — CoreBluetooth central: scan/connect/bond/subscribe, reassembly, 4.0/5.0 decode, history offload + ack, charging/battery/alarm command handling, reconnect watchdog.
+- `BLEManager.swift` — CoreBluetooth central: scan/connect/bond/subscribe, reassembly, 4.0/5.0 decode, history offload + ack, charging/battery/alarm command handling, reconnect watchdog, 15-minute battery polling.
 - `Commands.swift` — `WhoopCommand` allowed command set + payloads. `FrameRouter.swift` — realtime frames → `LiveState`.
 - `LiveState.swift` — published live status, `BatteryStatus`, `ChargingReport`, `DeviceInfo` cache. `LiveHeartRate.swift` — smoothed display HR.
 - `StandardHeartRate.swift` — 0x2A37 parser. `BackfillPolicy.swift` — sync trigger rate limit. `StuckStrapDetector.swift` — data-vs-frontier stall check. `BluetoothChoice.swift` — remembered access choice, launch gate, reconnect interval.
@@ -189,6 +201,7 @@ Format: `file` — purpose. Tests list `Suite(methods)`. Fixtures/resources are 
 
 ### `Strand/Data`
 - `Repository.swift` — UI data source; loads/merges days, sleep, workouts, imports. `IntelligenceEngine.swift` — scoring orchestration, `scoringVersion`.
+- `CheckInSettings.swift` — `CheckInSettings` (sessions, prompts, reminders in UserDefaults) + `CheckInReminders` (one-off notifications, snooze, notification delegate).
 - `WhoopImporter.swift` — parsed export → store upserts. `DataBackup.swift` — export/restore. `MetricCatalog.swift` — explorer metric descriptors. `Profile.swift` — `ProfileStore` defaults.
 
 ### `Strand/Device`, `Strand/Alarm`, `Strand/MenuBar`, `Strand/Onboarding`
@@ -198,9 +211,12 @@ Format: `file` — purpose. Tests list `Suite(methods)`. Fixtures/resources are 
 - `Onboarding/OnboardingWizard.swift` — first-run steps: welcome, Bluetooth, wear, scan, bond, profile, import, done.
 
 ### `Strand/Screens`
-- `TodayView.swift` — Overview: week strip, connection/sync strips, HR day card. `TodayDetailViews.swift` — recovery/sleep/strain detail, `DayMath` formatting.
+- `TodayView.swift` — Overview: week strip, connection/sync strips (`ConnectionStrip` shared with Health), HR day card, check-in card. `TodayDetailViews.swift` — recovery/sleep/strain detail, `DayMath` formatting.
 - `TrendsView.swift` — Trends ▸ Scores (summary, recovery hero, daily signals, year strip). `TrendSections.swift` — shared trend range/series, `TrendStat`/`TrendCard`/`TrendFooter`/`TrendLineCard`, Sleep/Vitals/Activity trends, `SoftAxis`, `EqualRowLayout`, `TrendTabSwitcher`.
-- `Hubs.swift` — `TrendsHub`, `SettingsHub`, `AdvancedSettings`. `ScreenScaffold.swift` — page scaffold + `ComingSoon` empty state.
+- `Hubs.swift` — `TrendsHub` (section tabs incl. Highlights), `SettingsHub`, `AdvancedSettings`.
+- `HighlightsView.swift` — Trends ▸ Highlights: range/source controls, record orbs, streak badges, notable stats, supporting-day sheet.
+- `HealthPageView.swift` — Health tab: age hero (unavailable state, orb), Health Monitor tiles + detail chart, Stress Monitor activation timeline.
+- `CheckInViews.swift` — `CheckInCard` (Overview), `CheckInForm`, `CheckInSheet` (entries, insights, settings), `CheckInSettingsForm`. `ScreenScaffold.swift` — page scaffold + `ComingSoon` empty state.
 - `SleepView.swift` — sleep detail tiles/hypnogram. `SleepSessionsCard.swift` — sessions + `AdjustSleepSheet` corrections. `SleepNeedCard.swift` — sleep need.
 - `HealthView.swift` — HR and vitals detail. `WorkoutsView.swift` — workout list/summary. `WorkoutDetailView.swift` — workout detail, labels, effort, sets.
 - `SettingsView.swift` — General settings (strap, Bluetooth toggle, profile, battery). `AlarmsView.swift` — Alarms tab, `AlarmEditor`, `NextAlarmLink`. `AlarmHistoryView.swift` — History section, occurrence detail (stage timeline, trail, notes). `DataSourcesView.swift` — imports, comparison, backups.
@@ -211,39 +227,40 @@ Format: `file` — purpose. Tests list `Suite(methods)`. Fixtures/resources are 
 - `Info.plist`, `Strand.entitlements`; `Assets.xcassets/` (`Contents.json`, `AppIcon.appiconset/Contents.json` + 10 `icon_*.png`).
 
 ### `StrandTests` (hosted)
-- `AlarmControllerTests`(18), `BluetoothChoiceTests`(4), `CollectorBatteryTests`(2), `LivePresentationTests` = LiveHeartRateTests + BatteryPresentationTests (13), `RawHistoryArchiveTests`(2), `StrandSmokeTests`(1).
+- `AlarmControllerTests`(18), `BluetoothChoiceTests`(4), `CollectorBatteryTests`(2), `LivePresentationTests` = LiveHeartRateTests + BatteryPresentationTests (15), `RawHistoryArchiveTests`(2), `StrandSmokeTests`(1).
 
 ### `Packages/WhoopProtocol/Sources/WhoopProtocol`
 - `DeviceFamily.swift` — 4.0/5.0 GATT, header CRC kind, packet types. `Framing.swift` — CRC8/16/32, `Reassembler`, frame verification.
 - `Interpreter.swift` — schema-driven `parseFrame`/`parseFrameWhoop5`. `Schema.swift` — schema model/loader (`Resources/whoop_protocol.json`). `Values.swift` — `ParsedValue`. `PostHooks.swift` — per-packet decode hooks.
 - `Streams.swift` — HR/RR/event/battery/SpO2/temp/resp/gravity extraction, 5.0 realtime + historical records. `HistoricalStreams.swift` — history → streams. `HistoricalMeta.swift` — history metadata classification.
-- `Whoop5Messages.swift` — 5.0 command responses, clock, data range, events, `Whoop5Charging` (`packInfo`), `Whoop5Alarm`. `ChargingModel.swift` — attachment/charging facts, freshness, ordering, "likely" inference. `BatteryPolicy.swift` — readings + alert policy. `DeviceClock.swift` — clock estimator. `SyncCoverage.swift` — sync spans/sessions. `Redaction.swift` — capture redaction. `WhoopProtocol.swift` — module info.
+- `Whoop5Messages.swift` — 5.0 command responses, clock, data range, events, `Whoop5Charging` (`packInfo`; failure ≠ removal), `Whoop5Alarm`. `ChargingModel.swift` — attachment/charging facts, freshness, ordering, "likely" inference. `BatteryPolicy.swift` — readings + alert policy. `DeviceClock.swift` — clock estimator. `SyncCoverage.swift` — sync spans/sessions. `Redaction.swift` — capture redaction. `WhoopProtocol.swift` — module info.
 
 ### `Packages/WhoopProtocol/Tests/WhoopProtocolTests`
-- BiometricStreamsParityTests(1), DeviceFamilyFramingTests(14), DeviceLogicTests = clock/redaction/sync/battery-alert (27), FramingTests(10), HistoricalMetaTests(9), HistoricalStreamsParityTests(1), HistoricalV24Tests(5), InterpreterEnvelopeTests(4), ParityTests(2), PostHooksTests(8), ReassemblerTests incl. 5.0 command/realtime/historical (15), SchemaTests(5), SmokeTests(1), StreamsParityTests(1), StreamsTests(5), ValuesTests(4), Whoop5ChargingTests(3) + ChargingModelTests(12), Whoop5MessagesTests(18).
+- BiometricStreamsParityTests(1), DeviceFamilyFramingTests(14), DeviceLogicTests = clock/redaction/sync/battery-alert (27), FramingTests(10), HistoricalMetaTests(9), HistoricalStreamsParityTests(1), HistoricalV24Tests(5), InterpreterEnvelopeTests(4), ParityTests(2), PostHooksTests(8), ReassemblerTests incl. 5.0 command/realtime/historical (15), SchemaTests(5), SmokeTests(1), StreamsParityTests(1), StreamsTests(5), ValuesTests(4), Whoop5ChargingTests(3) + ChargingModelTests(17), Whoop5MessagesTests(18).
 - `Resources/`: `frames.json`, `golden.json`, `historical_frames.json`, `historical_golden.json`, `streams_golden.json`, `biometric_streams_golden.json`, `whoop5_frames.json` — captured/golden fixtures.
 
 ### `Packages/WhoopStore/Sources/WhoopStore`
-- `WhoopStore.swift` — actor + open/config. `Database.swift` — migrations v1–v16. `StreamStore.swift` — device upsert + stream inserts. `Reads.swift` — stream reads. `Cursors.swift` — cursor/highwater keys.
+- `WhoopStore.swift` — actor + open/config. `Database.swift` — migrations v1–v17. `StreamStore.swift` — device upsert + stream inserts. `Reads.swift` — stream reads. `Cursors.swift` — cursor/highwater keys.
 - `RawOutbox.swift` — raw batch outbox. `MetricsCache.swift` — `DailyMetric`, cached sleep sessions, corrections. `MetricSeriesStore.swift` — imported metric series. `DerivedStore.swift` — provenance, load, day score state, atomic derived batches.
-- `JournalWorkoutAppleCache.swift` — journal, workouts, Apple daily. `TrainingLogStore.swift` — effort, strength sets, workout labels. `AlarmHistoryStore.swift` — append-only alarm events (dedupe) + annotations.
-- Tests: AlarmHistoryStoreTests(3), BiometricStreamTests(8), CursorTests(5), DerivedWriteTests(7), InsertTests(4), JournalWorkoutAppleCacheTests(13), LatestSampleTests(1), MetricSeriesStoreTests(11), MetricsCacheTests(10), MigrationTests(5), PruneTests(5), RRSequenceTests + DerivedIsolation(10), RawOutboxTests(6), ReadTests(5), ScaffoldTests(2), SleepCorrectionTests(3), TrainingLogStoreTests(13). `Package.swift`, `Package.resolved`.
+- `JournalWorkoutAppleCache.swift` — journal, workouts, Apple daily. `TrainingLogStore.swift` — effort, strength sets, workout labels. `AlarmHistoryStore.swift` — append-only alarm events (dedupe) + annotations. `CheckInStore.swift` — check-in entries + answers (v17).
+- Tests: AlarmHistoryStoreTests(3), CheckInStoreTests(4), BiometricStreamTests(8), CursorTests(5), DerivedWriteTests(7), InsertTests(4), JournalWorkoutAppleCacheTests(13), LatestSampleTests(1), MetricSeriesStoreTests(11), MetricsCacheTests(10), MigrationTests(5), PruneTests(5), RRSequenceTests + DerivedIsolation(10), RawOutboxTests(6), ReadTests(5), ScaffoldTests(2), SleepCorrectionTests(3), TrainingLogStoreTests(13). `Package.swift`, `Package.resolved`.
 
 ### `Packages/StrandAnalytics/Sources/StrandAnalytics`
 - Orchestration: `AnalyticsEngine` (per-day results), `IncrementalScorer` (reuse/invalidation), `TrendPeriodComparison` (completed-period comparisons), `CausalReplay`, `CausalReference` (causal baselines), `Baselines`, `MetricProvenance` (metric identities/sources).
 - HR & load: `HRQuality`, `SupportedHR`, `HRCalibration`, `HRZones`, `ZoneTimeline`, `CardioLoad` (load methods, day/session records), `StrainScorer`, `WorkoutDetector` (episodes, calories, post-close boundary trim), `WorkoutLabels`, `TrainingLog` (RPE, strength volume).
 - Sleep & recovery: `SleepStager` (minute grid → stages/episodes), `SleepSessions` (classifier, corrections), `SleepAccounting` (totals, SRI, shortfall), `SleepNeed`, `SleepState`, `SleepVitals`, `HRVAnalyzer`, `RespiratoryRate`, `RecoveryAssessment`, `RecoveryScorer`.
 - Alarms: `AlarmEngine` (planning, states), `SmartWake` (evidence buffer, policy, decider, decision record), `AlarmDelivery` (SET→RUN transaction), `AlarmHistory` (summaries, `AlarmStageLookup`). `DayCoverage` (Overview coverage captions).
+- Health, highlights, check-ins: `HealthMonitor` (personal ranges, `BiologicalAgeModel` gate, `HRActivation` timeline), `DataHighlights` (records/streaks/ranges, `HighlightCalendar`), `CheckIns` (`CheckInLibrary`, `CheckInInsights`).
 - Other: `TrendPeriodComparison`, `ComparisonEngine`, `CorrelationEngine`, `BehaviorInsights`, `EstimateAccuracy`, `StagingEvaluation`, `DetectionEvaluation`, `StrandAnalytics` (module info).
-- Tests: AlarmDeliveryTests(6), AlarmEngineTests(9), AlarmHistoryTests(5), DayCoverageTests(7), SmartWakeTests(11), AnalyticsEngineTests(7), BaselinesTests(11), BehaviorInsightsTests(11), CardioLoadTests = supported HR, load, calibration, day load, episodes, reconciliation, detection eval, awake load (79), ComparisonEngineTests(14), CorrelationEngineTests(11), EstimateAccuracyTests(3), HRVAnalyzerTests(9), HRZonesTests(8), IncrementalScorerTests + WorkoutLabel(23), MeasurementValidityTests(35), RecoveryScorerTests(8), ReplayRegressionTests(11), RespiratoryRateTests(6), SleepNeedTests(4), SleepSessionClassifierTests(25), SleepStagerTests(16), SleepStrainScenarioTests(21), SleepVitalsTests(18), StrainScorerTests(8), TrendPeriodComparisonTests, WorkoutDetectorTests + HROnly(18), ZoneTimelineTests(4). `Package.swift`, `Package.resolved`.
+- Tests: AlarmDeliveryTests(6), AlarmEngineTests(9), AlarmHistoryTests(5), CheckInInsightsTests(7), DataHighlightsTests(11), DayCoverageTests(7), HealthMonitorTests(11), SmartWakeTests(11), AnalyticsEngineTests(7), BaselinesTests(11), BehaviorInsightsTests(11), CardioLoadTests = supported HR, load, calibration, day load, episodes, reconciliation, detection eval, awake load (79), ComparisonEngineTests(14), CorrelationEngineTests(11), EstimateAccuracyTests(3), HRVAnalyzerTests(9), HRZonesTests(8), IncrementalScorerTests + WorkoutLabel(23), MeasurementValidityTests(35), RecoveryScorerTests(8), ReplayRegressionTests(11), RespiratoryRateTests(6), SleepNeedTests(4), SleepSessionClassifierTests(25), SleepStagerTests(16), SleepStrainScenarioTests(21), SleepVitalsTests(18), StrainScorerTests(8), TrendPeriodComparisonTests, WorkoutDetectorTests + HROnly(18), ZoneTimelineTests(4). `Package.swift`, `Package.resolved`.
 
 ### `Packages/StrandImport`
 - Sources: `ImportCoordinator` (detect ZIP/folder kind), `WhoopExportImporter` (CSV → rows), `CSVParsing` (BOM, headers, WHOOP time), `ImportModels`, `AppleHealthImporter` (XML SAX), `AppleHealthAggregator` (daily aggregates), `StrandImport` (module info).
 - Tests: AppleHealthAggregatorTests(28), AppleHealthImporterTests(12), ImportCoordinatorTests(8), WhoopExportImporterTests(12), PlaceholderTests(1), `Helpers.swift`; `Resources/` synthetic `export.xml`, `journal_entries.csv`, `physiological_cycles.csv`, `sleeps.csv`, `workouts.csv`. `Package.swift`, `Package.resolved`.
 
 ### `Packages/StrandDesign`
-- Sources: `Palette` (tokens, score/zone/stage colors, `ink`/`scoreInk`), `Typography` (`StrandFont`), `Motion` (`StrandMotion`, Reduce Motion), `Components` (`NoopMetrics`, `NoopCard`/`strandSurface`, `StatTile`, `ChartCard`, `ChartFooter`, `SegmentedPillControl`, buttons), `StrandCard`, `StatePill`, `Widgets` (widget grid, progress ring, stage bar), `TrendChart` (`.standard`/`.soft`), `ChartHover` (tooltip/crosshair), `Sparkline`, `Hypnogram`, `RecoveryRing`, `YearHeatStrip`, `ChargingIllustration`, `StrandDesign` (module info).
-- Tests: `PlaceholderTests` = StrandDesignTests(25), `WidgetSnapshotTests`(2, need `STRAND_SNAPSHOT_DIR`). `Package.swift`.
+- Sources: `Palette` (tokens, score/zone/stage colors, `ink`/`scoreInk`), `Typography` (`StrandFont`), `Motion` (`StrandMotion`, Reduce Motion), `Components` (`NoopMetrics`, `NoopCard`/`strandSurface`, `StatTile`, `ChartCard`, `ChartFooter`, `SegmentedPillControl`, buttons), `StrandCard`, `StatePill`, `Widgets` (widget grid, progress ring, stage bar), `TrendChart` (`.standard`/`.soft`), `ChartHover` (tooltip/crosshair), `Sparkline`, `Hypnogram`, `RecoveryRing`, `YearHeatStrip`, `ChargingIllustration`, `ZoneSpectrum` (zone ribbon + `ZoneSpectrumLayout`), `StrandDesign` (module info). `Components` also holds `SectionTabBar` and `strandFocusRing`.
+- Tests: `PlaceholderTests` = StrandDesignTests(25), `ZoneSpectrumTests`(5), `WidgetSnapshotTests`(2, need `STRAND_SNAPSHOT_DIR`). `Package.swift`.
 
 ### `Tools`
 - `ble_probe/` — `Sources/ble_probe/main.swift` scripted BLE research probe; `make_app.sh` wraps it as an app; `bundle/Info.plist`; `Package.swift`.
@@ -254,6 +271,7 @@ Format: `file` — purpose. Tests list `Suite(methods)`. Fixtures/resources are 
 ### `docs`
 - Guides: `README.md` (index), `ARCHITECTURE.md`, `BUILD.md`, `CONTRIBUTING.md`, `DATA_MODEL.md`, `FEATURES.md`, `LIBRARY.md`, `PRIVACY_SECURITY.md`, `SCREEN_INVENTORY.md`, `ANALYTICS.md`.
 - Protocol: `PROTOCOL.md`, `BLE_REVERSE_ENGINEERING.md`, `HR_BROADCAST_RESEARCH.md`, `WHOOP_REVERSE_ENGINEERING.md` (export scoring analysis).
+- `HEALTH_MODELS.md` — Health page inputs, biological-age/stress model review, personal-range and activation methods.
 - Measurement reports: `MEASUREMENT_VALIDITY.md`, `SLEEP_SESSIONS.md`, `SLEEP_STRAIN_AUDIT.md`, `SLEEP_RECOVERY_RESEARCH_2026-10-27.md`, `WORKOUT_STRAIN_REPORT.md`, `WORKOUT_STRAIN_RESEARCH_2026-10-30.md`.
 - `assets/` — `banner.svg`, `logo.svg`.
 - `reverse-engineering/` — `README.md`, `AUDIT.md`, `SAFETY_MATRIX.md`, `COMMAND_REGISTRY.md` + `whoop5_commands.json`, `GATT_MAP.md`, `PROTOCOL_SPEC.md`, `PACKET_TYPES.md`, `SENSOR_STREAMS.md`, `STATE_MACHINE.md`, `ALARM_CAPABILITIES.md`, `EXPERIMENT_LOG.md`, `TEST_RESULTS.md`, `UNKNOWN_CAPABILITIES.md`.
@@ -261,12 +279,21 @@ Format: `file` — purpose. Tests list `Suite(methods)`. Fixtures/resources are 
 
 ## 8 · Verification record
 
+- 2026-11-09 commit/cleanup: diff whitespace and file-index checks pass; clean issue/1 branch confirmed merged by GitHub PR #7 and local ancestry. Origin has only main. No program edits or test reruns in this commit-only task; prior test results below are historical.
+
 Index check (run after file changes; expects no output):
 
 ```sh
 git ls-files --cached --others --exclude-standard | grep -v -e '^AGENTS.md$' -e 'AppIcon.appiconset/icon_' | while read f; do b=$(basename "$f"); b=${b%.*}; grep -qF "$b" AGENTS.md || echo "unindexed: $f"; done
 ```
 
+- 2026-11-09 30 s reports + 15-min poll: PASS WhoopProtocol 150 (`testEveryBatteryFlagReportIsApplied`, reworked `testReconnectHoldsLastKnownStateUntilNextReport`), hosted 44 incl. app build. Cadence evidence from the app's unified log. Not run on the strap.
+- 2026-11-09 charging recheck/hold (superseded by the row above): PASS WhoopProtocol 150 (`testBatteryFlagRepeatsAreThrottled`, `testReconnectHoldsLastKnownStateUntilNextReport`), hosted 44 (reconnect-hold presentation in `testChargingModelDrivesEverySurface`) incl. app build. Not run on the strap; held-state wording not visually checked.
+- 2026-11-09 5.0 charging flag: PASS WhoopProtocol 148 (charging capture in `testBatteryEventLayout`, `testBatteryEventFlagRestoresChargingAfterReconnect`), hosted 44 incl. app build. Evidence: read-only backup copy of the live DB (500 BATTERY_LEVEL events, two charge sessions). Not re-run on the strap.
+- 2026-11-09 battery polling interval: PASS app build, diff whitespace check and index check. Shared 300 s gate inspected for timer + post-download paths; no new tests for this constant/scheduling simplification, no hardware drain measurement.
+- 2026-11-09 charging poll correction: PASS WhoopProtocol 147, hosted 44 (includes app build); repeated failed polls + rising percentage regression and presentation regression. Index check clean. No physical strap or visual check.
+- 2026-11-09 battery "Charge" capsule: PASS hosted 43 (new `testNeedsChargeOnlyForFreshLowReadingOffCharger`) incl. app build. Not visually checked.
+- 2026-11-09 issues #4/#12/#13/#14: PASS WhoopProtocol 145, WhoopStore 115 (new CheckInStoreTests 4, v17), StrandAnalytics 430 (new DataHighlights 11, CheckInInsights 7, HealthMonitor 11), StrandImport 61, StrandDesign 33 (ZoneSpectrum 5; 2 snapshot skips), hosted 42; XcodeGen + app build. Index check clean. Not done: any visual check (light/dark, narrow/wide, keyboard focus ring, VoiceOver, Reduce Motion), real notification reminders/snooze, real-data review of health ranges or check-in insights. Python tests not re-run (no Python changes).
 - 2026-11-06 integration #2–#5 on local `main`: PASS StrandAnalytics and StrandDesign package tests; PASS XcodeGen + macOS app build. Design snapshots skipped without snapshot env. #3–#5 were not visually/hardware checked; hardware alarm follow-up remains unverified.
 - 2026-11-06 #5 workout boundary trim: synthetic edge-error regression cases; no real labelled-session evaluation.
 - 2026-11-06 #4 Trends comparisons + Zone 1–5 totals: added completed-period comparisons and accessible pill navigation; no visual check recorded.
@@ -285,11 +312,11 @@ git ls-files --cached --others --exclude-standard | grep -v -e '^AGENTS.md$' -e 
 
 | Date | Change | Checks / remaining |
 | --- | --- | --- |
-| 2026-11-06 | #3–#5 merged locally: current-day scoring window, Trends period comparisons + HR zones, workout boundary trim. Added post-merge branch cleanup rule. | Analytics + Design tests and app build pass; snapshots skipped; no visual/hardware check. |
-| 2026-11-06 | #2: deadline follow-up re-buzz until dismissed, backup buzz for unreported stored alarm, missed/late records, Mac sleep/wake + live-HR evidence rows, sync deferred in wake window, Alarms copy. | Hosted tests + build; no hardware. |
-| 2026-11-06 | #1: held pre-clock charging events, conflict-aware "likely", three-fact battery rows (strap / pack / charging), onboarding wording. | Protocol + hosted tests + build; no hardware/visual check. |
-| 2026-11-05 | Smart wake v2 (timestamped windows, duration-based, versioned records); serialized SET→RUN delivery transaction with deadline fallback + slot reconciliation; stream ownership; v16 alarm history + History UI/detail; removed fabricated hypnograms; `DayCoverage` captions; `ChargingModel` (attachment vs charging, freshness, ordering, strict 151 parsing, "likely"). | Tests + build + fixture screenshots; no hardware. |
-| 2026-11-03 | Fixed strap double-buzz, same-deadline re-arm after early wake, repeating one-offs; new Alarms tab (`AlarmsView`, renamed from `AlarmCard.swift`) + `NextAlarmLink` on Overview/Sleep. | Build + hosted tests; no hardware/visual check. |
-| 2026-11-03 | Rewrote `AGENTS.md`: compact index by purpose, verified state, added charging pipeline, settings keys, known bug, index-check command; dropped stale baseline section. | Path/claim checks only. |
-| 2026-11-03 | Soft Trends chart contents (`TrendChart.Style.soft`, `TrendCard` accent, `TrendFooter`, `SoftAxis`, rounded bars). | Tests + build; no visual check. |
-| 2026-11-02 | Bubbly `TrendStat` (`symbol`, `accent`, rounded type, hover lift). | Build; no visual check. |
+| 2026-11-09 | Commit pending feature/charging work; remove clean merged issue/1 worktree and local branch. Origin feature branches already deleted. | Diff/index checks; GitHub merge + local ancestry verified; tests not rerun. |
+| 2026-11-09 | Charging: every 30 s strap report applied again and held until the next (5-min recheck removed); held "charging" after reconnect lapses after 90 s without a report. Battery percentage from strap-pushed event 3; poll 15 min (with history pull); percentage stale after 20 min (was 10). | Protocol 150 + hosted 44 + build pass; not run on the strap. |
+| 2026-11-09 | Charging checked less often: repeated event-3 flags applied ≤ every 5 min (changes at once); last known charging/pack state held across reconnects (labelled, 5 min hold, excluded from alert stamps). | Protocol 150 + hosted 44 + build pass; not run on the strap. |
+| 2026-11-09 | Fix: 5.0 charging lost after reconnect. BATTERY_LEVEL charging flag is byte 9 (was read at 10); live event-3 flag now feeds `ChargingModel` (`applyBattery5Flag`). | Protocol 148 + hosted 44 + build pass; not re-checked on the strap. |
+| 2026-11-09 | Battery polling reduced from ~1 min to ~5 min; shared elapsed-time gate for keep-alive and post-download catch-up. | PASS app build + index check; battery savings not measured. |
+| 2026-11-09 | Failed pack-info polls preserve explicit attachment/charging events; fixture removal uses an event; regression coverage for repeated polls and rising battery. | PASS protocol 147 + hosted 44 (includes app build); no hardware confirmation. |
+| 2026-11-09 | Battery badge "Charge" capsule when `BatteryPresentation.needsCharge`. | Hosted 43 + build pass; not visually checked. |
+| 2026-11-09 | #4 `SectionTabBar` + own focus ring/hover/disabled on pills, shared `ZoneSpectrum` (Strain detail + Activity Trends). #13 Trends ▸ Highlights (`DataHighlights`). #12 check-ins (v17 tables, prompt library, Overview card, sheet, reminders, Yes/No insights). #14 Health tab (age gate unavailable, Health Monitor personal ranges, HR-activation timeline; `docs/HEALTH_MODELS.md`). Nav now 5 tabs (Alarms Cmd-4, Settings Cmd-5). | All package + hosted tests and build pass; no visual/notification/real-data check. |

@@ -26,6 +26,7 @@ struct StrandApp: App {
                 .environmentObject(model.heart)
                 .environmentObject(model.repo)
                 .environmentObject(model.profile)
+                .environmentObject(model.checkIns)
                 .frame(minWidth: 1000, minHeight: 700)
         }
         .windowStyle(.hiddenTitleBar)

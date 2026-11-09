@@ -40,7 +40,8 @@ public struct BatteryAlertPolicy: Sendable {
 
     public var lowPercent = 20
     public var rearmPercent = 25
-    public var staleAfter: Double = 600
+    /// Longer than the 15-min battery poll: between polls the strap pushes a reading only on a ~1 % step.
+    public var staleAfter: Double = 20 * 60
     public init() {}
 
     public func evaluate(_ r: BatteryReading, now: Double, state: inout BatteryAlertState,

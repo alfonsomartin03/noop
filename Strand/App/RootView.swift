@@ -2,10 +2,11 @@ import SwiftUI
 import AppKit
 import StrandDesign
 
-/// The four primary destinations. Everything else is reached from a card (detail view / sheet) or a segment.
+/// The five primary destinations (Cmd-1…5 in this order). Everything else is reached from a card (detail view / sheet) or a segment.
 enum NavItem: String, CaseIterable, Identifiable, Hashable {
     case overview = "Overview"
     case trends = "Trends"
+    case health = "Health"
     case alarms = "Alarms"
     case settings = "Settings"
 
@@ -14,6 +15,7 @@ enum NavItem: String, CaseIterable, Identifiable, Hashable {
         switch self {
         case .overview: return "square.grid.2x2.fill"
         case .trends: return "chart.xyaxis.line"
+        case .health: return "heart.text.square.fill"
         case .alarms: return "alarm.fill"
         case .settings: return "gearshape.fill"
         }
@@ -21,7 +23,7 @@ enum NavItem: String, CaseIterable, Identifiable, Hashable {
 }
 
 /// Where a card can send the user: a primary tab, or the live-strap sheet (a contextual detail, not a destination).
-enum NavTarget { case overview, trends, alarms, settings, live }
+enum NavTarget { case overview, trends, health, alarms, settings, live }
 
 private struct NavigateKey: EnvironmentKey {
     static let defaultValue: (NavTarget) -> Void = { _ in }
@@ -61,6 +63,7 @@ struct RootView: View {
             switch target {
             case .overview: selection = .overview
             case .trends: selection = .trends
+            case .health: selection = .health
             case .alarms: selection = .alarms
             case .settings: selection = .settings
             case .live: showLive = true
@@ -73,6 +76,7 @@ struct RootView: View {
         switch selection {
         case .overview: TodayView()
         case .trends: TrendsHub()
+        case .health: HealthPageView()
         case .alarms: AlarmsView()
         case .settings: SettingsHub()
         }
@@ -91,7 +95,7 @@ private struct LiveSheet: View {
     }
 }
 
-/// Compact floating pill: four icons, the active one expands to show its name.
+/// Compact floating pill: five icons, the active one expands to show its name.
 private struct FloatingNav: View {
     @Binding var selection: NavItem
     @Namespace private var ns
@@ -158,11 +162,20 @@ private struct BatteryBadge: View {
             Image(systemName: b.symbol).font(.system(size: 16, weight: .semibold)).foregroundStyle(b.tint)
             Text(b.valueText).font(StrandFont.number(13, weight: .bold))
                 .foregroundStyle(b.percent == nil || b.stale ? StrandPalette.textTertiary : StrandPalette.textPrimary)
+            if b.needsCharge {
+                Text("Charge")
+                    .font(StrandFont.number(10, weight: .bold))
+                    .foregroundStyle(StrandPalette.statusCriticalInk)
+                    .padding(.horizontal, 6).padding(.vertical, 2)
+                    .background(StrandPalette.statusCritical.opacity(0.14), in: Capsule())
+                    .transition(.opacity)
+            }
         }
         .padding(.horizontal, 12).padding(.vertical, 6)
         .background(StrandPalette.surfaceRaised, in: Capsule())
         .overlay(Capsule().strokeBorder(b.isCharging ? StrandPalette.statusPositive.opacity(0.6) : StrandPalette.hairline,
                                         lineWidth: b.isCharging ? 1 : 0.5))
         .animation(StrandMotion.respecting(StrandMotion.gentle), value: b.charge)
+        .animation(StrandMotion.respecting(StrandMotion.gentle), value: b.needsCharge)
     }
 }

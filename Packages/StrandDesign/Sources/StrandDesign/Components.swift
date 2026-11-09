@@ -198,6 +198,9 @@ public struct SegmentedPillControl<T: Hashable>: View {
     let title: String?
     var controlSize: ControlSize
     @Binding var selection: T
+    @Environment(\.isEnabled) private var enabled
+    @FocusState private var focused: Bool
+    @State private var hovered: Int?
     public init(_ items: [T], selection: Binding<T>, title: String? = nil, controlSize: ControlSize = .regular,
                 label: @escaping (T) -> String) {
         self.items = items; self._selection = selection; self.title = title; self.controlSize = controlSize; self.label = label
@@ -215,26 +218,33 @@ public struct SegmentedPillControl<T: Hashable>: View {
     public var body: some View {
         let large = controlSize != .small && controlSize != .mini
         HStack(spacing: 4) {
-            ForEach(Array(items.enumerated()), id: \.offset) { _, item in
+            ForEach(Array(items.enumerated()), id: \.offset) { i, item in
                 let sel = item == selection
+                let hover = hovered == i && !sel && enabled
                 Button { select(item) } label: {
                     Text(label(item))
                         .font(large ? StrandFont.captionNumber : .system(size: 12, weight: .semibold, design: .rounded))
-                        .foregroundStyle(sel ? StrandPalette.textPrimary : StrandPalette.textSecondary)
+                        .foregroundStyle(sel ? StrandPalette.textPrimary : hover ? StrandPalette.textPrimary.opacity(0.85) : StrandPalette.textSecondary)
                         .frame(minWidth: 32)
                         .padding(.vertical, large ? 5 : 4).padding(.horizontal, large ? 11 : 12)
-                        .background(Capsule(style: .continuous).fill(sel ? StrandPalette.surfaceRaised : Color.clear)
+                        .background(Capsule(style: .continuous)
+                            .fill(sel ? StrandPalette.surfaceRaised : hover ? StrandPalette.surfaceRaised.opacity(0.45) : Color.clear)
                             .shadow(color: StrandPalette.shadow.opacity(sel ? 1.6 : 0), radius: 3, y: 1))
                         .contentShape(Capsule(style: .continuous))
                 }
                 .buttonStyle(.plain)
+                .focusable(false)
+                .onHover { hovered = $0 ? i : (hovered == i ? nil : hovered) }
                 .accessibilityLabel(label(item))
                 .accessibilityAddTraits(sel ? [.isSelected] : [])
             }
         }
         .padding(3)
         .background(StrandPalette.surfaceInset, in: Capsule(style: .continuous))
+        .opacity(enabled ? 1 : StrandPalette.disabledOpacity)
         .focusable()
+        .focused($focused)
+        .strandFocusRing(focused, shape: Capsule(style: .continuous))
         .onMoveCommand { dir in
             switch dir {
             case .left: if let n = Self.moved(items, from: selection, by: -1) { select(n) }
@@ -242,8 +252,95 @@ public struct SegmentedPillControl<T: Hashable>: View {
             default: break
             }
         }
+        .animation(StrandMotion.respecting(StrandMotion.interactive), value: hovered)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(title ?? "")
+    }
+}
+
+/// Primary section tabs (icon + name) for a page's top level, e.g. Trends ▸ Scores / Sleep / Vitals / Activity. Reads one
+/// step above `SegmentedPillControl`: the selected section carries the accent wash and ink, the others stay quiet text,
+/// so section, sub-view and range never compete. Arrow keys move between sections; focus draws its own ring, never the
+/// selection's.
+public struct SectionTabBar<T: Hashable>: View {
+    let items: [T]
+    let label: (T) -> String
+    let symbol: (T) -> String
+    let title: String
+    @Binding var selection: T
+    @Environment(\.isEnabled) private var enabled
+    @FocusState private var focused: Bool
+    @State private var hovered: Int?
+    @Namespace private var ns
+
+    public init(_ items: [T], selection: Binding<T>, title: String, symbol: @escaping (T) -> String, label: @escaping (T) -> String) {
+        self.items = items; self._selection = selection; self.title = title; self.symbol = symbol; self.label = label
+    }
+
+    private func select(_ item: T) { withAnimation(StrandMotion.respecting(.spring(response: 0.3, dampingFraction: 0.86))) { selection = item } }
+
+    public var body: some View {
+        HStack(spacing: 2) {
+            ForEach(Array(items.enumerated()), id: \.offset) { i, item in
+                let sel = item == selection
+                let hover = hovered == i && !sel && enabled
+                Button { select(item) } label: {
+                    HStack(spacing: 7) {
+                        Image(systemName: symbol(item)).font(.system(size: 13, weight: .semibold))
+                        Text(label(item)).font(.system(size: 14, weight: sel ? .semibold : .medium, design: .rounded))
+                    }
+                    .foregroundStyle(sel ? StrandPalette.accentInk : hover ? StrandPalette.textPrimary : StrandPalette.textSecondary)
+                    .padding(.horizontal, 14).frame(height: 34)
+                    .background {
+                        if sel {
+                            Capsule(style: .continuous).fill(StrandPalette.accentMuted)
+                                .overlay(Capsule(style: .continuous).strokeBorder(StrandPalette.accent.opacity(0.25), lineWidth: 0.5))
+                                .matchedGeometryEffect(id: "section", in: ns)
+                        } else if hover {
+                            Capsule(style: .continuous).fill(StrandPalette.surfaceInset)
+                        }
+                    }
+                    .contentShape(Capsule(style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .focusable(false)
+                .onHover { hovered = $0 ? i : (hovered == i ? nil : hovered) }
+                .accessibilityLabel(label(item))
+                .accessibilityAddTraits(sel ? [.isSelected, .isButton] : [.isButton])
+            }
+        }
+        .padding(4)
+        .background(StrandPalette.surfaceRaised, in: Capsule(style: .continuous))
+        .overlay(Capsule(style: .continuous).strokeBorder(StrandPalette.hairline, lineWidth: 0.5))
+        .shadow(color: StrandPalette.shadow, radius: 6, y: 2)
+        .opacity(enabled ? 1 : StrandPalette.disabledOpacity)
+        .focusable()
+        .focused($focused)
+        .strandFocusRing(focused, shape: Capsule(style: .continuous))
+        .onMoveCommand { dir in
+            switch dir {
+            case .left: if let n = SegmentedPillControl<T>.moved(items, from: selection, by: -1) { select(n) }
+            case .right: if let n = SegmentedPillControl<T>.moved(items, from: selection, by: 1) { select(n) }
+            default: break
+            }
+        }
+        .animation(StrandMotion.respecting(StrandMotion.interactive), value: hovered)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(title)
+        .accessibilityHint("Use the left and right arrow keys to change section")
+    }
+}
+
+public extension View {
+    /// Keyboard-focus indicator drawn outside the control (offset ring), so it is never mistaken for a selected state.
+    /// Replaces the system ring where macOS lets us turn it off (14+); on 13 the system ring stays and this adds nothing.
+    @ViewBuilder func strandFocusRing<S: InsettableShape>(_ focused: Bool, shape: S) -> some View {
+        if #available(macOS 14.0, iOS 17.0, *) {
+            self.focusEffectDisabled()
+                .overlay(shape.inset(by: -3).stroke(StrandPalette.focusRing, lineWidth: 2).opacity(focused ? 1 : 0).allowsHitTesting(false))
+        } else {
+            self
+        }
     }
 }
 

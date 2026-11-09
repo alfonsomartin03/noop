@@ -115,6 +115,14 @@ final class Whoop5MessagesTests: XCTestCase {
         XCTAssertEqual(b.socPercent, 20.0)
         XCTAssertEqual(b.millivolts, 3706)
         XCTAssertFalse(b.charging)
+        // Captured 2026-11-09 while charging on the pack (32.6 %, 3920 mV): byte 9 = 1.
+        let chg = hexBytes("0246010000500f000001002b1202001001000000")
+        var q: [UInt8] = [48, 1, 3, 0, 0x40, 0xB6, 0xE8, 0x6A, 0x47, 0x61, UInt8(chg.count), 0]
+        q += chg
+        let c = try XCTUnwrap(try Whoop5Event.decode(buildWhoop5Frame(payload: q)).get().batteryCandidate)
+        XCTAssertEqual(c.socPercent, 32.6)
+        XCTAssertEqual(c.millivolts, 3920)
+        XCTAssertTrue(c.charging)
         XCTAssertEqual(Whoop5EventKind(33), .realtimeHROn)
         XCTAssertEqual(Whoop5EventKind(34), .realtimeHROff)
     }
