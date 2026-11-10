@@ -355,71 +355,101 @@ struct ConnectionStrip: View {
     }
 }
 
-/// Sync status while the strap offloads stored data, then while NOOP processes it.
+/// Sync status while the strap offloads stored data, then while NOOP processes it: one quiet line and a hairline bar.
 /// Progress is measured in strap time (how much of the strap's unsent history is saved), never in bytes or rows,
 /// and reaches 100 % only after the strap confirmed the transfer complete.
 private struct SyncProgressStrip: View {
     @EnvironmentObject var live: LiveState
 
     var body: some View {
-        if live.historyBusy {
-            strip(icon: "arrow.triangle.2.circlepath", title: "Syncing WHOOP data") { downloading }
-        } else if let status = live.processingStatus {
-            strip(icon: "gearshape.2", title: "Processing your data") {
+        Group {
+            if live.historyBusy {
+                downloading
+            } else if let status = live.processingStatus {
+                row(title: "Processing", detail: status, trailing: nil, fraction: nil)
+            } else if let outcome = live.lastSyncOutcome {
                 HStack(spacing: 8) {
-                    ProgressView().controlSize(.small)
-                    Text(status).font(.system(size: 12)).foregroundStyle(StrandPalette.textSecondary)
-                }
-            }
-        } else if let outcome = live.lastSyncOutcome {
-            strip(icon: "exclamationmark.triangle", title: "Sync incomplete") {
-                HStack {
-                    Text(outcome).font(.system(size: 12)).foregroundStyle(StrandPalette.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Spacer()
+                    Image(systemName: "exclamationmark.triangle")
+                        .font(.system(size: 11, weight: .semibold)).foregroundStyle(StrandPalette.textSecondary)
+                    Text("Sync incomplete").font(.system(size: 12, weight: .semibold)).foregroundStyle(StrandPalette.textPrimary)
+                    Text(outcome).font(.system(size: 12)).foregroundStyle(StrandPalette.textTertiary)
+                        .lineLimit(1).truncationMode(.tail).help(outcome)
+                    Spacer(minLength: 8)
                     Button("Dismiss") { live.lastSyncOutcome = nil }.buttonStyle(.plain)
                         .font(.system(size: 12, weight: .semibold)).foregroundStyle(StrandPalette.textSecondary)
                 }
+                .padding(.horizontal, 14).padding(.vertical, 10)
+                .strandSurface(cornerRadius: NoopMetrics.controlRadius)
             }
         }
+        .animation(StrandMotion.respecting(StrandMotion.gentle), value: live.historyBusy)
     }
 
     @ViewBuilder private var downloading: some View {
         if let s = live.syncSession, s.target > s.strapFrom {
             let total = s.target - s.strapFrom
-            VStack(alignment: .leading, spacing: 6) {
-                HStack {
-                    Text("\(SyncFormat.duration(s.accountedSeconds)) of \(SyncFormat.duration(total)) synchronized")
-                        .font(.system(size: 12)).foregroundStyle(StrandPalette.textSecondary)
-                    Spacer()
-                    Text("\(Int((s.fraction * 100).rounded(.down)))%")
-                        .font(.system(size: 12, weight: .semibold).monospacedDigit()).foregroundStyle(StrandPalette.textSecondary)
-                }
-                ProgressView(value: s.fraction).animation(.easeOut(duration: 0.4), value: s.fraction)
-                Text("\(SyncFormat.duration(s.remainingSeconds)) of recorded history left to download · \(live.syncSavedRows.formatted()) new readings saved")
-                    .font(.system(size: 12)).foregroundStyle(StrandPalette.textTertiary)
-            }
+            row(title: "Syncing",
+                detail: "\(SyncFormat.duration(s.remainingSeconds)) left of \(SyncFormat.duration(total))",
+                trailing: "\(Int((s.fraction * 100).rounded(.down)))%",
+                fraction: s.fraction)
         } else {
             // Before the strap reports its range (or if it never does) there is no honest percentage.
-            VStack(alignment: .leading, spacing: 6) {
-                ProgressView().progressViewStyle(.linear)
-                Text(live.historyStatus + (live.syncSavedRows > 0 ? " · \(live.syncSavedRows.formatted()) new readings saved" : ""))
-                    .font(.system(size: 12)).foregroundStyle(StrandPalette.textSecondary)
-            }
+            row(title: "Syncing", detail: live.historyStatus,
+                trailing: live.syncSavedRows > 0 ? "\(live.syncSavedRows.formatted()) saved" : nil, fraction: nil)
         }
     }
 
-    private func strip<Content: View>(icon: String, title: String, @ViewBuilder content: () -> Content) -> some View {
-        HStack(alignment: .top, spacing: 12) {
-            Image(systemName: icon)
-                .font(.system(size: 16, weight: .semibold)).foregroundStyle(StrandPalette.textSecondary)
-            VStack(alignment: .leading, spacing: 6) {
-                Text(title).font(.system(size: 14, weight: .semibold)).foregroundStyle(StrandPalette.textPrimary)
-                content()
+    /// Title · detail ……… trailing, over a 3 pt bar (determinate when `fraction` is known).
+    private func row(title: String, detail: String, trailing: String?, fraction: Double?) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Text(title).font(.system(size: 12, weight: .semibold)).foregroundStyle(StrandPalette.textPrimary)
+                Text(detail).font(.system(size: 12)).foregroundStyle(StrandPalette.textTertiary)
+                    .lineLimit(1).truncationMode(.tail)
+                Spacer(minLength: 8)
+                if let trailing {
+                    Text(trailing).font(.system(size: 12, weight: .medium).monospacedDigit())
+                        .foregroundStyle(StrandPalette.textSecondary)
+                }
+            }
+            ThinProgressBar(fraction: fraction)
+        }
+        .padding(.horizontal, 14).padding(.vertical, 10)
+        .strandSurface(cornerRadius: NoopMetrics.controlRadius)
+        .accessibilityElement(children: .combine)
+        .accessibilityValue(fraction.map { "\(Int(($0 * 100).rounded(.down))) percent" } ?? "In progress")
+    }
+}
+
+/// A 3 pt capsule bar. With a fraction it fills to that value; without one a short segment drifts across
+/// (a static partial fill under Reduce Motion).
+private struct ThinProgressBar: View {
+    var fraction: Double?
+    @State private var sweep = false
+
+    var body: some View {
+        GeometryReader { geo in
+            let w = geo.size.width
+            ZStack(alignment: .leading) {
+                Capsule().fill(StrandPalette.hairline)
+                if let fraction {
+                    Capsule().fill(StrandPalette.accent)
+                        .frame(width: max(3, w * min(1, max(0, fraction))))
+                        .animation(StrandMotion.respecting(.easeOut(duration: 0.4)), value: fraction)
+                } else {
+                    let seg = w * 0.28
+                    Capsule().fill(StrandPalette.accent.opacity(0.85))
+                        .frame(width: seg)
+                        .offset(x: StrandMotion.reduceMotion ? 0 : (sweep ? w - seg : 0))
+                        .onAppear {
+                            guard !StrandMotion.reduceMotion else { return }
+                            withAnimation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true)) { sweep = true }
+                        }
+                }
             }
         }
-        .padding(NoopMetrics.cardPadding)
-        .strandSurface()
+        .frame(height: 3)
+        .clipShape(Capsule())
     }
 }
 

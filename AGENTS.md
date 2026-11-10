@@ -70,7 +70,7 @@ Packages (all Swift tools 5.9, platforms macOS 13 / iOS 16; **only a macOS app t
 - Overview HR card coverage: `DayCoverage` (StrandAnalytics) — supported intervals clipped/unioned to the day's real length (DST) up to now; captions "X recorded so far" / "X recorded of 24 h"; details line "Data through …", gap stretches, unsynced time; warning only for ≥1 h and ≥10 % gaps or >2 h unsynced. Never claims the strap was off. Today's load request ends at the scoring clock; the first run after midnight re-scores the full day.
 - Trends period comparisons use only completed days; missing comparison days are not zero. Summary direction is neutral, accessible, and includes compared date ranges. Activity includes HR time totals for Zones 1–5 (Zone 0 excluded).
 - Hypnograms only from genuine timestamped stage segments (`SleepTimeline.intervals(session:)`); imported stage totals draw a proportional bar (Sleep hero, Today card) with a note. No synthetic stage order anywhere.
-- Overview: week/day selection, recovery/sleep/strain detail in place, live-HR sheet, sync/download/processing status. Trends adds sleep correction and workout detail; workout labels, effort and strength sets are user records.
+- Overview: week/day selection, recovery/sleep/strain detail in place, live-HR sheet, sync/download/processing status (`SyncProgressStrip`: compact one-line row — title, truncated detail, percent/saved count — over a 3 pt `ThinProgressBar`; indeterminate segment sweeps, static under Reduce Motion; "Sync incomplete" is the same compact row with Dismiss). Trends adds sleep correction and workout detail; workout labels, effort and strength sets are user records.
 - Trends styling: summary `TrendStat` bubbles (26 pt continuous radius, SF Symbol badge, SF Rounded, accent wash/border/shadow, springy hover lift off under Reduce Motion; `accent` tints bubble, `tint` tints value). Chart cards use `TrendChart(style: .soft)` (monotone 3.5 pt line, one haloed latest-point bubble, dashed grid, rounded labels), `TrendCard(accent:)`, `TrendFooter` pills and `SoftAxis` + rounded gradient bars. Other screens keep `TrendChart` `.standard` and `ChartFooter`.
 - Realtime stream ownership: `BLEManager.realtimeOwners` (`live-sheet`, `menu`, `alarm`, default `ui`); the stream stops and the live value clears only when the last owner releases. The alarm releases on decision, edit/delete, completion and errors.
 - `LiveHeartRate`: median over ~10 s (≤40 readings), plausible 30–220 bpm, reported HR preferred, RR fallback, shared `HRZones`; publishes only changed values.
@@ -281,6 +281,8 @@ Format: `file` — purpose. Tests list `Suite(methods)`. Fixtures/resources are 
 
 - 2026-11-09 commit/cleanup: diff whitespace and file-index checks pass; clean issue/1 branch confirmed merged by GitHub PR #7 and local ancestry. Origin has only main. No program edits or test reruns in this commit-only task; prior test results below are historical.
 
+- 2026-11-10 minimal sync/processing strip: PASS app build. Not visually checked; no tests cover the view.
+
 Index check (run after file changes; expects no output):
 
 ```sh
@@ -312,6 +314,7 @@ git ls-files --cached --others --exclude-standard | grep -v -e '^AGENTS.md$' -e 
 
 | Date | Change | Checks / remaining |
 | --- | --- | --- |
+| 2026-11-10 | Overview sync/processing strip made minimal: one line + 3 pt bar (`ThinProgressBar`), smaller surface radius; same progress semantics. | App build pass; not visually checked. |
 | 2026-11-09 | Commit pending feature/charging work; remove clean merged issue/1 worktree and local branch. Origin feature branches already deleted. | Diff/index checks; GitHub merge + local ancestry verified; tests not rerun. |
 | 2026-11-09 | Charging: every 30 s strap report applied again and held until the next (5-min recheck removed); held "charging" after reconnect lapses after 90 s without a report. Battery percentage from strap-pushed event 3; poll 15 min (with history pull); percentage stale after 20 min (was 10). | Protocol 150 + hosted 44 + build pass; not run on the strap. |
 | 2026-11-09 | Charging checked less often: repeated event-3 flags applied ≤ every 5 min (changes at once); last known charging/pack state held across reconnects (labelled, 5 min hold, excluded from alert stamps). | Protocol 150 + hosted 44 + build pass; not run on the strap. |
@@ -319,4 +322,3 @@ git ls-files --cached --others --exclude-standard | grep -v -e '^AGENTS.md$' -e 
 | 2026-11-09 | Battery polling reduced from ~1 min to ~5 min; shared elapsed-time gate for keep-alive and post-download catch-up. | PASS app build + index check; battery savings not measured. |
 | 2026-11-09 | Failed pack-info polls preserve explicit attachment/charging events; fixture removal uses an event; regression coverage for repeated polls and rising battery. | PASS protocol 147 + hosted 44 (includes app build); no hardware confirmation. |
 | 2026-11-09 | Battery badge "Charge" capsule when `BatteryPresentation.needsCharge`. | Hosted 43 + build pass; not visually checked. |
-| 2026-11-09 | #4 `SectionTabBar` + own focus ring/hover/disabled on pills, shared `ZoneSpectrum` (Strain detail + Activity Trends). #13 Trends ▸ Highlights (`DataHighlights`). #12 check-ins (v17 tables, prompt library, Overview card, sheet, reminders, Yes/No insights). #14 Health tab (age gate unavailable, Health Monitor personal ranges, HR-activation timeline; `docs/HEALTH_MODELS.md`). Nav now 5 tabs (Alarms Cmd-4, Settings Cmd-5). | All package + hosted tests and build pass; no visual/notification/real-data check. |
