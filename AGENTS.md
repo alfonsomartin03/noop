@@ -305,6 +305,8 @@ Format: `file` — purpose. Tests list `Suite(methods)`. Fixtures/resources are 
 
 - 2026-11-13 #15 pre-PR validation: PASS fresh hosted 55 incl. app build, alarm analytics 32 (AlarmHistory/AlarmDelivery/AlarmEngine/SmartWake), diff whitespace and file-index checks. Source unchanged across validation. Notification race blocker resolved; real notifications/strap and remaining visual cases remain unverified as above.
 
+- 2026-11-13 #19 publication validation after merging origin/main: PASS app build + hosted 55; focused package regressions 71 pass. Diff/index checks clean. Feature-specific live pilot smoke remains pending. Published as a draft pilot candidate; original issue stays open for the recorded validation follow-ups. No hardware/accuracy claim.
+
 Index check (run after file changes; expects no output):
 
 ```sh
@@ -336,6 +338,7 @@ git ls-files --cached --others --exclude-standard | grep -v -e '^AGENTS.md$' -e 
 
 | Date | Change | Checks / remaining |
 | --- | --- | --- |
+| 2026-11-13 | #19 pilot publication: integrate main, reconcile reference and review implemented fixes. | Build + hosted 55 + focused 71 pass; live pilot gate incomplete; draft PR, issue remains open. |
 | 2026-11-13 | #19 review: evaluator arrays in reference order + match identities; nap detection labelled experimental (with versions) in the sessions card. | DetectionEvaluation 7 + hosted 44 + build pass; pilot smoke not run. |
 | 2026-11-13 | #19 completion guide: `DetectionEvaluation` medians, duration error, Wilson intervals, duration strata; nap evaluation protocol + label schema in `NAP_DETECTION.md`. | StrandAnalytics full suite pass; no labelled data, so no accuracy result; app workflow not run. |
 | 2026-11-13 | #19 review: low-evidence nap candidates kept as correctable uncertain sessions (`sessions-v2`) so user corrections survive rescoring; nap doc sourced, targets frozen, private timestamps removed. | StrandAnalytics 438 pass; measured-improvement criterion not met (no labelled data); nap UI not checked. |
@@ -343,4 +346,3 @@ git ls-files --cached --others --exclude-standard | grep -v -e '^AGENTS.md$' -e 
 | 2026-11-13 | #15 review: wake notifications get occurrence-scoped ids, are withdrawn on dismissal/skip/edit/delete, and submission races are suppressed/withdrawn (`withdrawn`). | Fresh hosted 55 + alarm analytics 32 + build pass; diff/index clean. No real-notification, narrow/light visual or hardware pass. |
 | 2026-11-12 | #19 (partial): nap audit + `nap-evidence-v2` (no HR coverage → no nap); versioned in algorithm key (days re-score once); research/validation plan doc. | StrandAnalytics 434 pass (2 new tests fail on v1); no labelled evaluation, no real-data check, nap UI not reviewed. |
 | 2026-11-12 | #15: skip the next alarm occurrence when already awake (manual, before first ring); strap slot moved/cleared, follow-ups cancelled, `skipped` history status. | Hosted 51 + StrandAnalytics AlarmHistory pass; not run on the strap; Alarms hero not visually checked. |
-| 2026-11-10 | Overview sync/processing strip made minimal: one line + 3 pt bar (`ThinProgressBar`), smaller surface radius; same progress semantics. | App build pass; not visually checked. |
