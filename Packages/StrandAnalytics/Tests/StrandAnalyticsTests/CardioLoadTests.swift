@@ -558,6 +558,40 @@ final class DetectionEvaluationTests: XCTestCase {
               reference: ref.map { .init(span: TimeSpan($0.0, $0.1), label: $0.2) }, predicted: pred.map { TimeSpan($0.0, $0.1) })
     }
 
+    /// Review 2026-11-13: arrays follow reference order even when IoU order differs (reviewer's reproduction).
+    func testPerEventArraysAreInReferenceOrder() {
+        let r = DetectionEvaluation.evaluate([rec([(0, 1000, nil), (10_000, 11_000, nil)], [(100, 1000), (10_000, 11_000)])])
+        XCTAssertEqual(r.onsetErrorsS, [100, 0])
+        XCTAssertEqual(r.matches.map(\.referenceIndex), [0, 1])
+        XCTAssertEqual(r.matches.map(\.predictionIndex), [0, 1])
+        XCTAssertEqual(r.medianOnsetErrorS, 50)
+    }
+
+    /// Issue #19: medians (not means) for the frozen edge targets, duration error, Wilson intervals, duration strata.
+    func testMediansDurationErrorWilsonAndStrata() throws {
+        // Three matched references with onset errors 0, 60, 600 s → mean 220, median 60.
+        let r = DetectionEvaluation.evaluate([
+            rec([(0, 1000, nil), (10_000, 13_000, nil), (20_000, 27_200, nil), (40_000, 41_000, nil)],
+                [(0, 1000), (10_060, 13_000), (20_600, 27_200)]),
+        ], durationEdgesS: [1800, 5400])
+        XCTAssertEqual(r.onsetErrorS ?? .nan, 220, accuracy: 1e-9)
+        XCTAssertEqual(r.medianOnsetErrorS, 60)
+        XCTAssertEqual(r.medianOffsetErrorS, 0)
+        XCTAssertEqual(r.durationErrorsS, [0, -60, -600])
+        XCTAssertEqual(r.medianAbsDurationErrorS, 60)
+        // Strata by reference length: 1000 s and 1000 s (<1800, one missed), 3000 s (1800–5400), 7200 s (≥5400).
+        XCTAssertEqual(r.recallByDuration["<1800 s"], .init(hits: 1, total: 2))
+        XCTAssertEqual(r.recallByDuration["1800–5400 s"], .init(hits: 1, total: 1))
+        XCTAssertEqual(r.recallByDuration["≥5400 s"], .init(hits: 1, total: 1))
+        XCTAssertEqual(r.recall ?? .nan, 0.75, accuracy: 1e-9)
+        XCTAssertNotNil(r.recallInterval)
+        // NIST illustration: 80 of 100 → ≈ 0.711–0.867.
+        let w = try XCTUnwrap(DetectionEvaluation.wilson(80, 100))
+        XCTAssertEqual(w.lowerBound, 0.711, accuracy: 0.001); XCTAssertEqual(w.upperBound, 0.867, accuracy: 0.001)
+        XCTAssertNil(DetectionEvaluation.wilson(0, 0))
+        XCTAssertNil(DetectionEvaluation.Fraction(hits: 0, total: 0).value)   // "not estimable", never 0
+    }
+
     func testPerfectAndEmpty() {
         let r = DetectionEvaluation.evaluate([rec([(0, 1000, "run")], [(0, 1000)])])
         XCTAssertEqual(r.f1, 1)

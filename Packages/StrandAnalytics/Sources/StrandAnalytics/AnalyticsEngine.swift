@@ -245,7 +245,12 @@ public enum AnalyticsEngine {
         // ── Awake time: the day minus confidently identified sleep, naps included ──
         // Sessions ending after this day are found by a separate pass, so `allSessions`, which feeds sleep and recovery,
         // is untouched. Without later data, sleep starting late in the day stays unseen and the result says so.
-        var sleepEpisodes = allSessions
+        // A low-evidence span (still, but no heart rate to confirm sleep) is not confident sleep: its time stays in the
+        // day's load unless the wearer confirmed it.
+        let confident = { (e: SleepSession) in
+            !e.lowEvidence || SleepSessionClassifier.userConfirmsSleep(sleepCorrections, start: e.start, end: e.end)
+        }
+        var sleepEpisodes = allSessions.filter(confident)
         var laterChecked = false
         if let f = following, let r = dayRange, let lastLater = f.gravity.map(\.ts).max(),
            lastLater - r.to >= SleepStager.provisionalWindowMin * 60 {
@@ -255,7 +260,7 @@ public enum AnalyticsEngine {
                                                 resp: resp.filter { $0.ts >= from } + f.resp,
                                                 gravity: gravity.filter { $0.ts >= from } + f.gravity,
                                                 sleepHRHint: baselines.restingHR?.usable == true ? baselines.restingHR?.baseline : nil)
-            sleepEpisodes += later.filter { $0.end > r.to }
+            sleepEpisodes += later.filter { $0.end > r.to && confident($0) }
             laterChecked = true
         }
         let awake = span.map {
