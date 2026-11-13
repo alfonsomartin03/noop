@@ -177,8 +177,9 @@ public struct ZoneSpectrum: View {
                 HStack(spacing: 4) {
                     Text(ZoneSpectrumLayout.duration(seconds)).font(.system(size: 12.5, weight: .semibold, design: .rounded).monospacedDigit())
                         .foregroundStyle(seconds > 0 ? StrandPalette.textPrimary : StrandPalette.textTertiary)
+                        .lineLimit(1).minimumScaleFactor(0.7)
                     Text(ZoneSpectrumLayout.percentText(fraction)).font(.system(size: 10.5, weight: .medium).monospacedDigit())
-                        .foregroundStyle(StrandPalette.textTertiary)
+                        .foregroundStyle(StrandPalette.textTertiary).lineLimit(1).fixedSize()
                 }
             }
             Spacer(minLength: 0)

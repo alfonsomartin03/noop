@@ -193,10 +193,16 @@ public struct InsightCard: View {
 /// Pill segmented control (range pills, Trends sub-tabs). Each pill is a button with the selected trait; the control
 /// takes keyboard focus and Left/Right arrows move the selection. `title` names the group for VoiceOver.
 public struct SegmentedPillControl<T: Hashable>: View {
+    /// `.inset`: filled track with a raised selected pill (sub-view switches). `.quiet`: no track, a hairline outline and
+    /// an accent wash on the selection, so a range filter sits in the page instead of on top of it.
+    public enum Appearance: Sendable { case inset, quiet }
     let items: [T]
     let label: (T) -> String
     let title: String?
     var controlSize: ControlSize
+    var appearance: Appearance = .inset
+    /// Spoken name per item when the visible label is an abbreviation ("3M" → "3 months").
+    var spokenLabel: ((T) -> String)?
     @Binding var selection: T
     @Environment(\.isEnabled) private var enabled
     @FocusState private var focused: Bool
@@ -204,6 +210,13 @@ public struct SegmentedPillControl<T: Hashable>: View {
     public init(_ items: [T], selection: Binding<T>, title: String? = nil, controlSize: ControlSize = .regular,
                 label: @escaping (T) -> String) {
         self.items = items; self._selection = selection; self.title = title; self.controlSize = controlSize; self.label = label
+    }
+
+    public init(_ items: [T], selection: Binding<T>, title: String, appearance: Appearance, controlSize: ControlSize = .regular,
+                spokenLabel: ((T) -> String)? = nil, label: @escaping (T) -> String) {
+        self.init(items, selection: selection, title: title, controlSize: controlSize, label: label)
+        self.appearance = appearance
+        self.spokenLabel = spokenLabel
     }
 
     private func select(_ item: T) { withAnimation(StrandMotion.respecting(StrandMotion.interactive)) { selection = item } }
@@ -217,30 +230,47 @@ public struct SegmentedPillControl<T: Hashable>: View {
 
     public var body: some View {
         let large = controlSize != .small && controlSize != .mini
-        HStack(spacing: 4) {
+        let quiet = appearance == .quiet
+        HStack(spacing: quiet ? 2 : 4) {
             ForEach(Array(items.enumerated()), id: \.offset) { i, item in
                 let sel = item == selection
                 let hover = hovered == i && !sel && enabled
                 Button { select(item) } label: {
                     Text(label(item))
-                        .font(large ? StrandFont.captionNumber : .system(size: 12, weight: .semibold, design: .rounded))
-                        .foregroundStyle(sel ? StrandPalette.textPrimary : hover ? StrandPalette.textPrimary.opacity(0.85) : StrandPalette.textSecondary)
-                        .frame(minWidth: 32)
-                        .padding(.vertical, large ? 5 : 4).padding(.horizontal, large ? 11 : 12)
-                        .background(Capsule(style: .continuous)
-                            .fill(sel ? StrandPalette.surfaceRaised : hover ? StrandPalette.surfaceRaised.opacity(0.45) : Color.clear)
-                            .shadow(color: StrandPalette.shadow.opacity(sel ? 1.6 : 0), radius: 3, y: 1))
+                        .font(quiet ? .system(size: 12, weight: sel ? .bold : .semibold, design: .rounded).monospacedDigit()
+                              : large ? StrandFont.captionNumber : .system(size: 12, weight: .semibold, design: .rounded))
+                        .foregroundStyle(quiet ? (sel ? StrandPalette.accentInk : hover ? StrandPalette.textPrimary : StrandPalette.textSecondary)
+                                         : sel ? StrandPalette.textPrimary : hover ? StrandPalette.textPrimary.opacity(0.85) : StrandPalette.textSecondary)
+                        .frame(minWidth: quiet ? 28 : 32)
+                        .padding(.vertical, quiet ? 4 : large ? 5 : 4).padding(.horizontal, quiet ? 9 : large ? 11 : 12)
+                        .background {
+                            if quiet {
+                                Capsule(style: .continuous)
+                                    .fill(sel ? StrandPalette.accentMuted : hover ? StrandPalette.surfaceInset : Color.clear)
+                                    .overlay(Capsule(style: .continuous).strokeBorder(StrandPalette.accent.opacity(sel ? 0.25 : 0), lineWidth: 0.5))
+                            } else {
+                                Capsule(style: .continuous)
+                                    .fill(sel ? StrandPalette.surfaceRaised : hover ? StrandPalette.surfaceRaised.opacity(0.45) : Color.clear)
+                                    .shadow(color: StrandPalette.shadow.opacity(sel ? 1.6 : 0), radius: 3, y: 1)
+                            }
+                        }
                         .contentShape(Capsule(style: .continuous))
                 }
                 .buttonStyle(.plain)
                 .focusable(false)
                 .onHover { hovered = $0 ? i : (hovered == i ? nil : hovered) }
-                .accessibilityLabel(label(item))
-                .accessibilityAddTraits(sel ? [.isSelected] : [])
+                .accessibilityLabel(spokenLabel?(item) ?? label(item))
+                .accessibilityAddTraits(sel ? [.isSelected, .isButton] : [.isButton])
             }
         }
-        .padding(3)
-        .background(StrandPalette.surfaceInset, in: Capsule(style: .continuous))
+        .padding(quiet ? 2 : 3)
+        .background {
+            if quiet {
+                Capsule(style: .continuous).strokeBorder(StrandPalette.hairline, lineWidth: 0.5)
+            } else {
+                Capsule(style: .continuous).fill(StrandPalette.surfaceInset)
+            }
+        }
         .opacity(enabled ? 1 : StrandPalette.disabledOpacity)
         .focusable()
         .focused($focused)

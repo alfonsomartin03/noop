@@ -18,6 +18,7 @@ struct HealthPageView: View {
         ScreenScaffold(title: "Health", subtitle: "Healthspan, vital signs and heart-rate activation, from your own data.", spacing: 28) {
             ConnectionStrip()
             AgeHero(profile: profile)
+            VO2MaxCard()
             monitor
             ActivationSection()
             Text("NOOP describes your measurements against your own history. Personal ranges aren't clinical normal ranges, and nothing here is a diagnosis. If you feel unwell, talk to a clinician.")
@@ -195,7 +196,7 @@ private struct MonitorTile: View {
                     .foregroundStyle(reading.latest == nil ? StrandPalette.textTertiary : StrandPalette.textPrimary)
                 Text(m.unit).font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
             }
-            Label(reading.status.label, systemImage: reading.status.symbol).font(.system(size: 12, weight: .semibold)).foregroundStyle(tint)
+            Label(statusText, systemImage: reading.status.symbol).font(.system(size: 12, weight: .semibold)).foregroundStyle(tint)
             Text(caption).font(StrandFont.footnote).foregroundStyle(StrandPalette.textTertiary).lineLimit(2)
         }
         .padding(16)
@@ -203,8 +204,11 @@ private struct MonitorTile: View {
         .strandSurface(cornerRadius: 20)
         .contentShape(Rectangle())
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(m.title): \(reading.latest.map { "\(HealthFormat.value($0.value, m)) \(m.unit)" } ?? "no reading"). \(reading.status.label). \(caption)")
+        .accessibilityLabel("\(m.title): \(reading.latest.map { "\(HealthFormat.value($0.value, m)) \(m.unit)" } ?? "no reading"). \(statusText). \(caption)")
     }
+
+    /// HRV reads against the median first (issue #17): near the median is "Typical for you".
+    private var statusText: String { reading.metric == .hrv ? reading.position?.label ?? reading.status.label : reading.status.label }
 
     private var caption: String {
         guard let l = reading.latest else {
@@ -247,15 +251,19 @@ private struct HealthMetricDetail: View {
             }
             Grid(alignment: .leading, horizontalSpacing: 20, verticalSpacing: 8) {
                 row("Latest", reading.latest.map { "\(HealthFormat.value($0.value, m)) \(m.unit) · night of \(HighlightsContent.long($0.day))" } ?? "None")
-                row("Status", reading.status.label)
+                row("Status", m == .hrv ? reading.position?.label ?? reading.status.label : reading.status.label)
                 row("Source", "\(reading.source) (value and range from this source only)")
                 if let b = reading.baseline {
                     row("Personal range", "\(HealthFormat.value(b.low, m))–\(HealthFormat.value(b.high, m)) \(m.unit), median \(HealthFormat.value(b.median, m))")
+                    if m == .hrv {
+                        let t = PersonalRangePosition.typicalHalfWidth(b, metric: m)
+                        row("Typical for you", "\(HealthFormat.value(b.median - t, m))–\(HealthFormat.value(b.median + t, m)) \(m.unit) (median ± 1 robust spread)")
+                    }
                     row("Range built from", "\(b.count) nights, \(HighlightsContent.long(b.firstDay)) – \(HighlightsContent.long(b.lastDay))" + (b.outliers > 0 ? " · \(b.outliers) outlier\(b.outliers == 1 ? "" : "s") left out" : ""))
                 }
                 row("Coverage", coverage)
             }
-            Text("The range is your median ± 2 robust spreads from earlier nights (never including the night shown). It describes your usual values, not a clinical normal range.")
+            Text("The range is your median ± 2 robust spreads from earlier nights (never including the night shown)." + (m == .hrv ? " Within one spread of the median reads as typical for you; between one and two, higher or lower than usual." : "") + " It describes your usual values, not a clinical normal range.")
                 .font(StrandFont.footnote).foregroundStyle(StrandPalette.textTertiary).fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
         }
@@ -277,6 +285,11 @@ private struct HealthMetricDetail: View {
             if let b = reading.baseline, let f = pts.first?.date, let l = pts.last?.date {
                 RectangleMark(xStart: .value("From", f), xEnd: .value("To", l), yStart: .value("Low", b.low), yEnd: .value("High", b.high))
                     .foregroundStyle(StrandPalette.statusPositive.opacity(0.12))
+                if m == .hrv {
+                    let t = PersonalRangePosition.typicalHalfWidth(b, metric: m)
+                    RectangleMark(xStart: .value("From", f), xEnd: .value("To", l), yStart: .value("Typical low", b.median - t), yEnd: .value("Typical high", b.median + t))
+                        .foregroundStyle(StrandPalette.statusPositive.opacity(0.14))
+                }
                 RuleMark(y: .value("Median", b.median)).foregroundStyle(StrandPalette.statusPositive.opacity(0.5))
                     .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 3]))
             }
@@ -314,10 +327,7 @@ private struct ActivationSection: View {
 
     private var day: String { HighlightCalendar.addDays(Repository.dayString(Date()), -dayOffset) ?? Repository.dayString(Date()) }
 
-    private static let colors: [HRActivation.Level: Color] = [
-        .low: StrandPalette.statusPositive, .moderate: StrandPalette.metricAmber, .high: StrandPalette.statusCritical,
-        .sleep: StrandPalette.sleepDeep, .exercise: StrandPalette.accent, .noData: StrandPalette.surfaceInset,
-    ]
+    private static let colors = ActivationPalette.colors
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -412,22 +422,9 @@ private struct ActivationSection: View {
     private func load() async {
         loaded = false
         defer { loaded = true }
-        // Resting HR: NOOP's own latest scored night up to this day, else imported (labelled).
-        let noopRest = repo.estimates.values.filter { $0.day <= day && $0.restingHr != nil }.max { $0.day < $1.day }
-        let impRest = repo.official.values.filter { $0.day <= day && $0.restingHr != nil }.max { $0.day < $1.day }
-        if let r = noopRest?.restingHr { resting = (Double(r), "NOOP, night of \(HighlightsContent.long(noopRest!.day))") }
-        else if let r = impRest?.restingHr { resting = (Double(r), "WHOOP import, night of \(HighlightsContent.long(impRest!.day))") }
-        else { resting = nil; bins = []; return }
-        guard let range = ZoneTimeline.shared.dayRange(day) else { bins = []; return }
-        dayLength = range.to - range.from
-        let end = min(range.to, Int(Date().timeIntervalSince1970))
-        let hr = await repo.hrSamples(from: range.from, to: end, limit: 200_000)
-        let sleeps = await repo.noopSleepEpisodes(from: range.from, to: end).map { ($0.startTs, $0.endTs) }
-        let workouts = await repo.workoutRows().filter { $0.endTs > range.from && $0.startTs < end }.map { ($0.startTs, $0.endTs) }
-        let rest = resting!.bpm, maxHR = Double(profile.hrMax)
-        let samples = hr.map { (ts: $0.ts, bpm: $0.bpm) }
-        bins = await Task.detached(priority: .userInitiated) {
-            HRActivation.timeline(samples: samples, from: range.from, to: end, restingHR: rest, maxHR: maxHR, sleep: sleeps, workouts: workouts)
-        }.value
+        guard let l = await ActivationLoad.load(repo: repo, maxHR: profile.hrMax, day: day) else { resting = nil; bins = []; return }
+        resting = l.resting
+        dayLength = l.dayLength
+        bins = l.bins
     }
 }

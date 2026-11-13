@@ -89,7 +89,8 @@ struct HighlightsContent: View {
 
     private var controls: some View {
         HStack(spacing: 12) {
-            SegmentedPillControl(HighlightRange.allCases, selection: $range, title: "Highlights range") { $0.rawValue }
+            SegmentedPillControl(HighlightRange.allCases, selection: $range, title: "Highlights range", appearance: .quiet,
+                                 spokenLabel: { $0 == .allTime ? "All time" : $0 == .month1 ? "1 month" : "3 months" }) { $0.rawValue }
             Spacer(minLength: 12)
             if available.count > 1 {
                 SegmentedPillControl(available, selection: Binding(get: { source }, set: { sourceRaw = $0.rawValue }),
@@ -127,8 +128,8 @@ struct HighlightsContent: View {
             RecordOrb(title: "Best sleep", symbol: "moon.stars.fill", record: h.bestSleep, scale: 100,
                       format: { "\(Int($0.rounded()))" }, unit: "%", color: { _ in StrandPalette.sleepLight },
                       definition: source == .whoop ? "Highest WHOOP sleep performance: sleep you got as a share of the sleep WHOOP estimated you needed."
-                                                    : "Highest sleep performance.",
-                      unavailable: source == .noop ? "NOOP doesn't compute a sleep-performance score. Import a WHOOP export to see this record." : "No sleep performance in this range.",
+                                                    : "Highest NOOP sleep performance (estimate): hours asleep as a share of NOOP's estimated sleep need, capped at 100 %. Not WHOOP's score.",
+                      unavailable: "No sleep performance in this range.",
                       inspect: { inspect($0, "Best sleep") })
             RecordOrb(title: "Peak recovery", symbol: "heart.circle.fill", record: h.peakRecovery, scale: 100,
                       format: { "\(Int($0.rounded()))" }, unit: "%", color: StrandPalette.recoveryColor,
@@ -151,7 +152,7 @@ struct HighlightsContent: View {
             EqualRowLayout(minWidth: 200, fallbackColumns: 1, spacing: 12) {
                 StreakBadge(title: "Sleep", symbol: "moon.fill", tint: StrandPalette.sleepLight, streak: h.sleepStreak,
                             rule: h.thresholds.sleepLabel,
-                            unavailable: source == .noop ? "Needs WHOOP sleep performance" : "No qualifying nights")
+                            unavailable: "No qualifying nights")
                 StreakBadge(title: "Green recovery", symbol: "heart.fill", tint: StrandPalette.statusPositive, streak: h.greenStreak,
                             rule: h.thresholds.recoveryLabel, unavailable: "No qualifying days")
                 StreakBadge(title: "Strain", symbol: "flame.fill", tint: StrandPalette.zone4, streak: h.strainStreak,
@@ -272,7 +273,7 @@ private struct RecordOrb: View {
             .frame(width: 128, height: 128)
             if let r = record {
                 Text(HighlightsContent.dateLine(r)).font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
-                    .multilineTextAlignment(.center)
+                    .multilineTextAlignment(.center).lineLimit(3).fixedSize(horizontal: false, vertical: true)
                 Button("View day") { inspect(r) }.buttonStyle(.strandSecondary).controlSize(.small)
             } else {
                 Text(unavailable).font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
@@ -348,7 +349,7 @@ struct SupportingDay: Identifiable {
     var id: String { "\(source.rawValue)-\(day)-\(title)" }
 }
 
-private struct SupportingDaySheet: View {
+struct SupportingDaySheet: View {
     let item: SupportingDay
     @EnvironmentObject var repo: Repository
     @Environment(\.dismiss) private var dismiss

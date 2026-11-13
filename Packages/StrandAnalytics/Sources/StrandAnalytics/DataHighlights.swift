@@ -35,7 +35,7 @@ public enum HighlightSource: String, CaseIterable, Sendable {
     public var label: String { self == .whoop ? "WHOOP import" : "NOOP" }
 }
 
-/// One source's daily values. Any series may be empty (e.g. NOOP does not compute WHOOP's sleep performance).
+/// One source's daily values. Any series may be empty. NOOP's sleep performance is `SleepPerformance`, not WHOOP's.
 public struct HighlightInputs: Sendable {
     public var sleepPerformance: [(day: String, value: Double)]
     public var recovery: [(day: String, value: Double)]
@@ -90,7 +90,7 @@ public struct HighlightThresholds: Equatable, Sendable {
                                        strainLabel: "WHOOP day strain ≥ 10")
         case .noop:
             return HighlightThresholds(sleepPerformanceMin: 70, greenRecoveryMin: RecoveryScorer.bandYellowMax, strainMin: 10,
-                                       sleepLabel: "Sleep performance ≥ 70 %",
+                                       sleepLabel: "NOOP sleep performance ≥ 70 % (hours vs estimated need)",
                                        recoveryLabel: "NOOP recovery ≥ \(Int(RecoveryScorer.bandYellowMax)) % (NOOP's green band)",
                                        strainLabel: "NOOP day strain ≥ 10 (NOOP's 0–21 scale)")
         }

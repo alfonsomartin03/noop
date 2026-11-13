@@ -43,9 +43,26 @@ let store = try await WhoopStore(path: args[1])
 ZoneTimeline.shared.refreshFromSystem()
 
 // --score: one incremental scoring pass, reporting what it recomputed. --hash: a digest of every derived result.
+// --sleepperf: NOOP sleep performance (and its asleep/need inputs) vs the imported WHOOP export, nights paired by sleep interval.
+// Prints aggregates only; nothing is fitted, so every paired night is out-of-sample (issue #16).
 if let mode = args.dropFirst(5).first {
     let computed = rawId + "-noop"
-    if mode == "--score" {
+    if mode == "--sleepperf" {
+        // Pairs by sleep interval; WHOOP values only from the cycle that declares the matched sleep (SleepPairing).
+        // Cycles imported before 2026-11-13 lack sleep_onset_ts/wake_onset_ts: re-import the export to add them.
+        let inputs = try await SleepPairing.load(store: store, rawId: rawId, computedId: computed)
+        let nights = inputs.nights, whoopSleeps = inputs.whoopSleeps, cycles = inputs.cycles
+        let result = SleepPairing.pair(inputs)
+        print("NOOP nights", nights.count, nights.first?.day ?? "-", "…", nights.last?.day ?? "-", SleepPerformance.version,
+              "| WHOOP main sleeps", whoopSleeps.count, "cycles", cycles.count, "with a declared sleep", cycles.filter { $0.declaredSleep != nil }.count)
+        print("paired", result.pairs.count, "(warm-up", result.pairs.filter(\.warmUp).count, ") excluded", result.excluded)
+        for row in SleepPairing.report(result.pairs).rows {
+            func f(_ a: SleepPerformance.Agreement?) -> String {
+                a.map { String(format: "n=%d MAE %.1f medianAE %.1f bias %+.1f", $0.n, $0.mae, $0.medianAE, $0.bias) } ?? "n=0"
+            }
+            print("\(row.label): all [\(f(row.all))]  stable-history [\(f(row.stable))]  missing \(row.missing)")
+        }
+    } else if mode == "--score" {
         let t = ContinuousClock.now
         let out = try await IncrementalScorer.run(store: store, request: ScoringRequest(
             rawId: rawId, profile: profile, maxHROverride: maxHR, scoringVersion: 5, now: Int(Date().timeIntervalSince1970), maxDays: 21))
