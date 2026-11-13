@@ -268,9 +268,9 @@ public enum HRActivation {
             case .noData: return "No data"
             case .sleep: return "Asleep"
             case .exercise: return "Workout"
-            case .low: return "Near resting"
-            case .moderate: return "Moderately raised"
-            case .high: return "Strongly raised"
+            case .low: return "Low activation"
+            case .moderate: return "Moderate activation"
+            case .high: return "High activation"
             }
         }
     }

@@ -322,7 +322,8 @@ private struct ActivationSection: View {
     @State private var bins: [HRActivation.Bin] = []
     @State private var resting: (bpm: Double, source: String)?
     @State private var loaded = false
-    /// Length of the shown local day (23–25 h across DST), so bins sit at their true time of day.
+    /// Bounds of the shown local day (23–25 h across DST), so bins sit at their true time of day.
+    @State private var dayStart = 0
     @State private var dayLength = 86_400
 
     private var day: String { HighlightCalendar.addDays(Repository.dayString(Date()), -dayOffset) ?? Repository.dayString(Date()) }
@@ -349,7 +350,7 @@ private struct ActivationSection: View {
                 if let resting {
                     timeline
                     legend
-                    Text("Awake bins are coloured by heart rate's share of your heart-rate reserve above resting (\(Int(resting.bpm.rounded())) bpm, \(resting.source)) up to your max (\(profile.hrMax) bpm): under \(Int(HRActivation.moderateHRR * 100)) % near resting, \(Int(HRActivation.moderateHRR * 100))–\(Int(HRActivation.highHRR * 100)) % moderately raised, above that strongly raised. Movement, heat, caffeine and illness raise heart rate too, so this can't tell stress from activity, and NOOP doesn't infer emotions or mental health from it. A numerical stress score stays off until an HRV-based method can be validated on this data.")
+                    Text("Awake bins are coloured by heart rate's share of your heart-rate reserve above resting (\(Int(resting.bpm.rounded())) bpm, \(resting.source)) up to your max (\(profile.hrMax) bpm): under \(Int(HRActivation.moderateHRR * 100)) % low activation (near resting), \(Int(HRActivation.moderateHRR * 100))–\(Int(HRActivation.highHRR * 100)) % moderate activation, above that high activation. Movement, heat, caffeine and illness raise heart rate too, so this can't tell stress from activity, and NOOP doesn't infer emotions or mental health from it. A numerical stress score stays off until an HRV-based method can be validated on this data.")
                         .font(StrandFont.footnote).foregroundStyle(StrandPalette.textTertiary).fixedSize(horizontal: false, vertical: true)
                 } else if loaded {
                     StrandNotice(symbol: "heart.slash", title: "Unavailable",
@@ -367,26 +368,13 @@ private struct ActivationSection: View {
     }
 
     private var timeline: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            GeometryReader { g in
-                HStack(spacing: 0) {
-                    ForEach(Array(bins.enumerated()), id: \.offset) { _, b in
-                        Rectangle()
-                            .fill(Self.colors[b.level] ?? .clear)
-                            .overlay(b.level == .noData ? Rectangle().strokeBorder(StrandPalette.hairline, lineWidth: 0.25) : nil)
-                            .frame(width: g.size.width * CGFloat(b.end - b.start) / CGFloat(max(dayLength, 1)))
-                            .help("\(ZoneTimeline.shared.clock(b.start))–\(ZoneTimeline.shared.clock(b.end)): \(b.level.label)\(b.meanHR.map { ", avg \(Int($0.rounded())) bpm" } ?? "")")
-                    }
-                    Spacer(minLength: 0)   // the rest of today hasn't happened yet
-                }
-                .background(StrandPalette.surfaceInset.opacity(0.4))
+        // Same strip, axis and spans as Overview's heart-rate card, redrawn each minute so upcoming time stays honest.
+        TimelineView(.periodic(from: .now, by: 60)) { ctx in
+            let axis = DayTimeAxis(start: dayStart, end: dayStart + dayLength, now: Int(ctx.date.timeIntervalSince1970))
+            VStack(alignment: .leading, spacing: 4) {
+                ActivationStrip(axis: axis, spans: axis.activationSpans(bins), height: 30)
+                DayAxisLabels(axis: axis)
             }
-            .frame(height: 30)
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-            HStack {
-                Text("12 am"); Spacer(); Text("6 am"); Spacer(); Text("12 pm"); Spacer(); Text("6 pm"); Spacer(); Text("12 am")
-            }
-            .font(.system(size: 10).monospacedDigit()).foregroundStyle(StrandPalette.textTertiary)
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Heart-rate activation timeline for \(dayOffset == 0 ? "today" : HighlightsContent.long(day))")
@@ -404,14 +392,23 @@ private struct ActivationSection: View {
         let covered = total - (t[.noData] ?? 0)
         return VStack(alignment: .leading, spacing: 8) {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), alignment: .leading)], alignment: .leading, spacing: 6) {
-                ForEach([HRActivation.Level.low, .moderate, .high, .exercise, .sleep, .noData], id: \.self) { l in
+                ForEach([HRActivation.Level.sleep, .low, .moderate, .high, .exercise, .noData], id: \.self) { l in
+                    let kind: DayTimeAxis.SpanKind = l == .noData ? .missing : .observed(l)
                     HStack(spacing: 6) {
-                        RoundedRectangle(cornerRadius: 3).fill(Self.colors[l] ?? .clear).frame(width: 12, height: 12)
-                            .overlay(RoundedRectangle(cornerRadius: 3).strokeBorder(StrandPalette.hairlineStrong, lineWidth: 0.5))
+                        ActivationSwatch(kind: kind, size: 12)
                         Text(l.label).font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                         Text(DayMath.hm(Double(t[l] ?? 0) / 60)).font(StrandFont.captionNumber).foregroundStyle(StrandPalette.textPrimary)
                     }
-                    .accessibilityElement(children: .combine)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("\(l.label): \(ActivationStyle.meaning(kind)), \(DayMath.hm(Double(t[l] ?? 0) / 60))")
+                }
+                if dayOffset == 0 {
+                    HStack(spacing: 6) {
+                        ActivationSwatch(kind: .upcoming, size: 12)
+                        Text("Upcoming").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                    }
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("Upcoming: \(ActivationStyle.meaning(.upcoming))")
                 }
             }
             Text("Coverage: \(Int((Double(covered) / Double(total) * 100).rounded())) % of \(dayOffset == 0 ? "the day so far" : "the day") has readings, sleep or a workout. Gaps are shown as no data, never as calm.")
@@ -424,6 +421,7 @@ private struct ActivationSection: View {
         defer { loaded = true }
         guard let l = await ActivationLoad.load(repo: repo, maxHR: profile.hrMax, day: day) else { resting = nil; bins = []; return }
         resting = l.resting
+        dayStart = l.dayStart
         dayLength = l.dayLength
         bins = l.bins
     }

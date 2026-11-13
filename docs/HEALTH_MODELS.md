@@ -121,7 +121,7 @@ Decision: no numerical stress score. The page instead shows **heart-rate activat
 
 - 15-minute bins over the local day (up to now for today), scaled to the day's real length (23–25 h across DST).
 - Bins inside NOOP sleep episodes are labelled "Asleep", and bins inside stored workouts are labelled "Workout". A bin is "No data" when its readings span less than 50 % of it. Gaps are never shown as calm.
-- Other bins are classified by mean HR as a share of heart-rate reserve (resting HR → profile HR max): < 20 % near resting, 20–40 % moderately raised, ≥ 40 % strongly raised.
+- Other bins are classified by mean HR as a share of heart-rate reserve (resting HR → profile HR max): < 20 % low activation (near resting), 20–40 % moderate activation, ≥ 40 % high activation (labels renamed in #26; thresholds unchanged). Overview and Health draw the same strip, legend and colours (`HeartRateDayChart.swift`): purple asleep, green/amber/red low/moderate/high, blue + running figure workout, hatched no data, dashed empty upcoming.
 - Resting HR comes from NOOP's latest scored night up to that day, or from the imported night (labelled) when NOOP has none. With no resting HR at all, the section reports that it's unavailable.
 - The copy says this can't separate stress from movement, heat, caffeine or illness. It infers nothing about emotions or mental health.
 

@@ -1117,21 +1117,26 @@ struct ScoreCardRow<First: View, Second: View, Third: View>: View {
 }
 
 /// A fixed-width summary beside a chart that fills the rest and matches its height; stacked when too narrow for both.
+/// Heights come from both children's ideal heights, so a chart column with a legend and notes is never squeezed.
 struct SummaryChartLayout: Layout {
     private let summaryWidth: CGFloat = 300, minChartWidth: CGFloat = 280, minChartHeight: CGFloat = 180
     private let columnGap: CGFloat = 24, rowGap: CGFloat = 16
 
     private func sideBySide(_ width: CGFloat) -> Bool { width >= summaryWidth + columnGap + minChartWidth }
+    private func chartHeight(_ chart: LayoutSubview, width: CGFloat) -> CGFloat {
+        max(minChartHeight, chart.sizeThatFits(ProposedViewSize(width: width, height: nil)).height)
+    }
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         let width = proposal.width ?? summaryWidth + columnGap + minChartWidth
-        guard let summary = subviews.first else { return CGSize(width: width, height: 0) }
+        guard subviews.count == 2 else { return CGSize(width: width, height: 0) }
+        let summary = subviews[0], chart = subviews[1]
         if sideBySide(width) {
             let h = summary.sizeThatFits(ProposedViewSize(width: summaryWidth, height: nil)).height
-            return CGSize(width: width, height: max(h, minChartHeight))
+            return CGSize(width: width, height: max(h, chartHeight(chart, width: width - summaryWidth - columnGap)))
         }
         let h = summary.sizeThatFits(ProposedViewSize(width: width, height: nil)).height
-        return CGSize(width: width, height: h + rowGap + minChartHeight)
+        return CGSize(width: width, height: h + rowGap + chartHeight(chart, width: width))
     }
 
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
@@ -1145,7 +1150,7 @@ struct SummaryChartLayout: Layout {
             let h = summary.sizeThatFits(ProposedViewSize(width: bounds.width, height: nil)).height
             summary.place(at: bounds.origin, proposal: ProposedViewSize(width: bounds.width, height: h))
             chart.place(at: CGPoint(x: bounds.minX, y: bounds.minY + h + rowGap),
-                        proposal: ProposedViewSize(width: bounds.width, height: minChartHeight))
+                        proposal: ProposedViewSize(width: bounds.width, height: bounds.height - h - rowGap))
         }
     }
 }
