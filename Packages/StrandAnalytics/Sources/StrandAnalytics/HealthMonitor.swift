@@ -97,6 +97,8 @@ public struct PersonalBaseline: Equatable, Sendable {
     public let outliers: Int
     public let firstDay: String
     public let lastDay: String
+    /// Robust SD (1.4826 × MAD) of the kept nights; the range is median ± max(2 × this, the metric's floor).
+    public var robustSD: Double = 0
 }
 
 public enum HealthMetricStatus: Equatable, Sendable {
@@ -138,6 +140,11 @@ public struct HealthMetricReading: Equatable, Sendable {
     public let status: HealthMetricStatus
     /// Every clean point in the source, oldest first (for the detail chart).
     public let history: [HealthPoint]
+    /// Where the latest value sits relative to the personal median (nil unless the status is usable).
+    public var position: PersonalRangePosition? {
+        guard status.isUsable, let v = latest?.value, let b = baseline else { return nil }
+        return PersonalRangePosition.assess(v, baseline: b, metric: metric)
+    }
 }
 
 public struct HealthMonitorSummary: Equatable, Sendable {
@@ -194,7 +201,7 @@ public enum HealthMonitor {
         let m = median(k), s = madScale * median(k.map { abs($0 - m) })
         let half = max(2 * s, metric.minHalfWidth)
         return PersonalBaseline(median: m, low: m - half, high: m + half, count: kept.count, outliers: prior.count - kept.count,
-                                firstDay: kept.first!.day, lastDay: kept.last!.day)
+                                firstDay: kept.first!.day, lastDay: kept.last!.day, robustSD: s)
     }
 
     /// Prefer NOOP's own values when they are fresh; else imported values when fresher; else whichever has data.

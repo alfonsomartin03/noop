@@ -490,17 +490,19 @@ struct TrendCardGridLayout: Layout {
 /// Sleep over time: how long, how efficiently, and how the stages split.
 struct SleepTrendsView: View {
     @EnvironmentObject var repo: Repository
-    var body: some View { SleepTrendsContent(days: repo.days, loaded: repo.loaded) }
+    var body: some View { SleepTrendsContent(days: repo.days, loaded: repo.loaded, noopDays: Array(repo.estimates.values)) }
 }
 
 struct SleepTrendsContent: View {
     let days: [DailyMetric]
     let loaded: Bool
+    /// Computed NOOP rows only; imported need/performance never enters this estimate.
+    var noopDays: [DailyMetric] = []
     @State private var range: TrendRange
 
     /// `initialRange` lets previews and render checks open on any range (the control still changes it).
-    init(days: [DailyMetric], loaded: Bool, initialRange: TrendRange = .month) {
-        self.days = days; self.loaded = loaded
+    init(days: [DailyMetric], loaded: Bool, noopDays: [DailyMetric] = [], initialRange: TrendRange = .month) {
+        self.days = days; self.loaded = loaded; self.noopDays = noopDays
         _range = State(initialValue: initialRange)
     }
 
@@ -544,6 +546,10 @@ struct SleepTrendsContent: View {
                 TrendLineCard(title: "Time asleep", unit: "", series: duration, gradient: TrendWindow.gradient(StrandPalette.sleepLight),
                               valueRange: TrendWindow.valueRange(duration.points, fallback: 4...10), format: Self.hoursText, note: "hours")
                 TrendCardGrid {
+                    let perf = TrendWindow.resolve(SleepPerformance.series(noopDays).compactMap { p in
+                        TrendWindow.date(p.day).map { TrendPoint(date: $0, value: p.value) } }, range: range, anchor: anchor)
+                    TrendLineCard(title: "Sleep performance", unit: "%", series: perf, gradient: TrendWindow.gradient(StrandPalette.sleepLight),
+                                  valueRange: 0...100, note: "NOOP estimate · hours vs estimated need")
                     TrendLineCard(title: "Sleep efficiency", unit: "%", series: efficiency, gradient: TrendWindow.gradient(StrandPalette.statusPositive),
                                   valueRange: TrendWindow.valueRange(efficiency.points, fallback: 60...100))
                     TrendCard(title: "Sleep stages", caption: stages.caption, value: stages.totalText, valueLabel: "staged, average",

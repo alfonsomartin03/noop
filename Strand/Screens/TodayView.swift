@@ -492,6 +492,7 @@ private struct HeartRateDayCard: View {
                                 .font(.system(size: 10)).foregroundStyle(StrandPalette.textTertiary)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
+                        ActivationMini(day: day).padding(.top, 4)
                     }
                 }
             }
