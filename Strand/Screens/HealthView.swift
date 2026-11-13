@@ -182,7 +182,7 @@ private struct VitalsSection: View {
     /// "as of" caption sourced from the most recent imported day.
     private var vitalsAsOf: String? {
         guard let day = repo.today?.day else { return nil }
-        return "as of \(day)"
+        return "as of \(HighlightsContent.long(day))"   // same date style as the rest of Trends (was raw yyyy-MM-dd)
     }
 
     /// The vitals row, built from the most recent imported day.

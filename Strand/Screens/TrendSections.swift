@@ -76,6 +76,8 @@ enum TrendWindow {
         return f
     }()
     static func date(_ day: String) -> Date? { dayParser.date(from: day) }
+    /// Daily series: a missing day (> 1 day between readings, with slack for DST-free UTC day keys) breaks the line.
+    static let dailyGap: TimeInterval = 1.5 * 86_400
 
     /// Points inside `range`, taken RELATIVE TO `anchor` (the latest day), not "now".
     static func points(_ all: [TrendPoint], in range: TrendRange, anchor: Date?) -> [TrendPoint] {
@@ -158,10 +160,11 @@ struct TrendRangeBar: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                SegmentedPillControl(TrendRange.allCases, selection: $range) { $0.label }
-                Spacer(minLength: 12)
-                Text(range.subtitle).strandOverline()
+            // Quiet range filter: sits on the page (hairline + accent wash), one step below the section tabs and the
+            // Trends/detail switch, so the three levels never compete. Wraps under the subtitle when narrow.
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 12) { control; Spacer(minLength: 12); subtitle }
+                VStack(alignment: .leading, spacing: 6) { control; subtitle }
             }
             if let sparseNote {
                 Label(sparseNote, systemImage: "calendar.badge.clock")
@@ -170,6 +173,15 @@ struct TrendRangeBar: View {
             }
         }
     }
+}
+
+extension TrendRangeBar {
+    private var control: some View {
+        SegmentedPillControl(TrendRange.allCases, selection: $range, title: "Time range", appearance: .quiet,
+                             spokenLabel: { $0.name.prefix(1).uppercased() + $0.name.dropFirst() }) { $0.label }
+            .accessibilityHint("Use the left and right arrow keys to change the range")
+    }
+    private var subtitle: some View { Text(range.subtitle).strandOverline() }
 }
 
 /// One period comparison in words: direction, difference with its unit, and both periods. Neutral: up is not "better".
@@ -268,7 +280,7 @@ struct TrendStat: View {
                     Label(change.text, systemImage: change.symbol)
                         .font(.system(size: 11, weight: .semibold, design: .rounded))
                         .foregroundStyle(StrandPalette.textSecondary)   // neutral on purpose: direction is not a verdict
-                        .lineLimit(1).minimumScaleFactor(0.8)
+                        .lineLimit(2).minimumScaleFactor(0.85).fixedSize(horizontal: false, vertical: true)
                         .help(change.detail)
                         .accessibilityLabel(change.detail)
                 }
@@ -335,8 +347,11 @@ struct TrendCard<Chart: View, Footer: View>: View {
                 }
                 .accessibilityElement(children: .combine)
                 chart().frame(height: height)
+                // In a `TrendCardGrid` row a card is stretched to the tallest card; the spacer keeps footers level.
+                Spacer(minLength: 0)
                 footer()
             }
+            .frame(maxHeight: .infinity, alignment: .top)
         }
     }
 }
@@ -351,10 +366,12 @@ struct TrendFooter: View {
         HStack(spacing: 8) {
             ForEach(Array(items.enumerated()), id: \.offset) { _, it in
                 VStack(alignment: .leading, spacing: 1) {
+                    // Shrinks a little before it truncates ("Active weeks" was cut to "Active wee…" in a 3-up row).
                     Text(it.0).font(.system(size: 11, weight: .medium, design: .rounded)).foregroundStyle(StrandPalette.textTertiary)
-                        .lineLimit(1)
+                        .lineLimit(1).minimumScaleFactor(0.75)
                     Text(it.1).font(.system(size: 14, weight: .semibold, design: .rounded).monospacedDigit())
-                        .foregroundStyle(StrandPalette.textPrimary).lineLimit(1).minimumScaleFactor(0.75)
+                        .foregroundStyle(StrandPalette.textPrimary).lineLimit(2).minimumScaleFactor(0.8)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(.horizontal, 12).padding(.vertical, 8)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -410,7 +427,8 @@ struct TrendLineCard: View {
                   value: series.mean.map { unit.isEmpty ? format($0) : "\(format($0)) \(unit)" }, height: height, accent: accent) {
             if series.canDraw {
                 TrendChart(points: series.points, gradient: gradient, valueRange: valueRange, showsArea: true, height: height,
-                           valueFormat: { unit.isEmpty ? format($0) : "\(format($0)) \(unit)" }, style: .soft)
+                           valueFormat: { unit.isEmpty ? format($0) : "\(format($0)) \(unit)" }, style: .soft,
+                           maxGap: TrendWindow.dailyGap)
             } else {
                 TrendEmptyChart(count: series.points.count)
             }
@@ -421,7 +439,51 @@ struct TrendLineCard: View {
     }
 }
 
-private let trendCardColumns = [GridItem(.adaptive(minimum: 320), spacing: NoopMetrics.gap, alignment: .top)]
+/// Trend cards in as many ≥ 320 pt columns as fit, every card in a row as tall as the tallest one. A `LazyVGrid`
+/// left cards whose captions wrap (Respiratory rate, Skin temperature change) taller than their neighbours, with
+/// footers at different heights (#18 audit).
+struct TrendCardGrid<Content: View>: View {
+    @ViewBuilder var content: () -> Content
+    var body: some View { TrendCardGridLayout(minWidth: 320, spacing: NoopMetrics.gap) { content() } }
+}
+
+struct TrendCardGridLayout: Layout {
+    var minWidth: CGFloat
+    var spacing: CGFloat
+
+    func columns(_ width: CGFloat, count: Int) -> Int {
+        max(1, min(count, Int((width + spacing) / (minWidth + spacing))))
+    }
+
+    private func rows(_ subviews: Subviews, width: CGFloat) -> (cols: Int, cell: CGFloat, heights: [CGFloat]) {
+        let cols = columns(width, count: subviews.count)
+        let cell = (width - CGFloat(cols - 1) * spacing) / CGFloat(cols)
+        let heights = stride(from: 0, to: subviews.count, by: cols).map { start in
+            subviews[start..<min(start + cols, subviews.count)]
+                .map { $0.sizeThatFits(ProposedViewSize(width: cell, height: nil)).height }.max() ?? 0
+        }
+        return (cols, cell, heights)
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        guard !subviews.isEmpty else { return .zero }
+        let width = proposal.width ?? minWidth
+        let r = rows(subviews, width: width)
+        return CGSize(width: width, height: r.heights.reduce(0, +) + CGFloat(max(0, r.heights.count - 1)) * spacing)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let r = rows(subviews, width: bounds.width)
+        var y = bounds.minY
+        for (row, height) in r.heights.enumerated() {
+            for c in 0..<r.cols where row * r.cols + c < subviews.count {
+                subviews[row * r.cols + c].place(at: CGPoint(x: bounds.minX + CGFloat(c) * (r.cell + spacing), y: y),
+                                                 anchor: .topLeading, proposal: ProposedViewSize(width: r.cell, height: height))
+            }
+            y += height + spacing
+        }
+    }
+}
 
 // MARK: Sleep
 
@@ -434,7 +496,13 @@ struct SleepTrendsView: View {
 struct SleepTrendsContent: View {
     let days: [DailyMetric]
     let loaded: Bool
-    @State private var range: TrendRange = .month
+    @State private var range: TrendRange
+
+    /// `initialRange` lets previews and render checks open on any range (the control still changes it).
+    init(days: [DailyMetric], loaded: Bool, initialRange: TrendRange = .month) {
+        self.days = days; self.loaded = loaded
+        _range = State(initialValue: initialRange)
+    }
 
     private static func hoursText(_ hours: Double) -> String { DayMath.hm(hours * 60) }
 
@@ -475,7 +543,7 @@ struct SleepTrendsContent: View {
                 }
                 TrendLineCard(title: "Time asleep", unit: "", series: duration, gradient: TrendWindow.gradient(StrandPalette.sleepLight),
                               valueRange: TrendWindow.valueRange(duration.points, fallback: 4...10), format: Self.hoursText, note: "hours")
-                LazyVGrid(columns: trendCardColumns, alignment: .leading, spacing: NoopMetrics.gap) {
+                TrendCardGrid {
                     TrendLineCard(title: "Sleep efficiency", unit: "%", series: efficiency, gradient: TrendWindow.gradient(StrandPalette.statusPositive),
                                   valueRange: TrendWindow.valueRange(efficiency.points, fallback: 60...100))
                     TrendCard(title: "Sleep stages", caption: stages.caption, value: stages.totalText, valueLabel: "staged, average",
@@ -573,7 +641,13 @@ private struct StageChart: View {
         }
         .chartForegroundStyleScale(domain: StageWindow.Stage.allCases.map(\.title), range: StageWindow.Stage.allCases.map(\.color))
         .chartLegend(position: .top, alignment: .leading, spacing: 10)
-        .chartXAxis { SoftAxis.x(count: 4) }
+        // A few nightly bars: one day label each (automatic ticks put colliding "Nov 10 at 12 PM" labels between them).
+        .chartXAxis {
+            if !window.weekly && window.buckets.count <= 7 { SoftAxis.x(at: window.buckets.map(\.date)) }
+            else { SoftAxis.x(count: 4, dates: window.buckets.map(\.date)) }
+        }
+        // Bars are binned on UTC calendar days: label the axis in UTC too, or a day reads as the evening before.
+        .environment(\.timeZone, TimeZone(identifier: "UTC")!)
         .chartYAxis { SoftAxis.y(count: 4) }
         .chartYAxisLabel("hours")
         .accessibilityLabel("Sleep stages over time")
@@ -586,13 +660,26 @@ private struct StageChart: View {
 /// Body signals over time. The live heart-rate view stays one switch away.
 struct VitalsTrendsView: View {
     @EnvironmentObject var repo: Repository
-    var body: some View { VitalsTrendsContent(days: repo.days, loaded: repo.loaded) }
+    var body: some View {
+        VitalsTrendsContent(days: repo.days, loaded: repo.loaded,
+                            importedDays: Array(repo.official.values), noopDays: Array(repo.estimates.values))
+    }
 }
 
 struct VitalsTrendsContent: View {
     let days: [DailyMetric]
     let loaded: Bool
-    @State private var range: TrendRange = .month
+    /// Skin temperature is two different quantities: WHOOP's export is absolute wrist °C, NOOP stores a change from
+    /// baseline. The merged `days` field mixes them, so each source gets its own card and series.
+    var importedDays: [DailyMetric] = []
+    var noopDays: [DailyMetric] = []
+    @State private var range: TrendRange
+
+    init(days: [DailyMetric], loaded: Bool, importedDays: [DailyMetric] = [], noopDays: [DailyMetric] = [],
+         initialRange: TrendRange = .month) {
+        self.days = days; self.loaded = loaded; self.importedDays = importedDays; self.noopDays = noopDays
+        _range = State(initialValue: initialRange)
+    }
 
     private func series(_ value: (DailyMetric) -> Double?) -> TrendSeries {
         TrendWindow.series(days, value, range: range, anchor: days.last.flatMap { TrendWindow.date($0.day) })
@@ -601,10 +688,13 @@ struct VitalsTrendsContent: View {
     var body: some View {
         ScreenScaffold(title: "Vitals trends") {
             let rhr = series { $0.restingHr.map(Double.init) }, hrv = series { $0.avgHrv }
-            let resp = series { $0.respRateBpm }, spo2 = series { $0.spo2Pct }, temp = series { $0.skinTempDevC }
+            let resp = series { $0.respRateBpm }, spo2 = series { $0.spo2Pct }, temp = TrendWindow.series(importedDays.sorted { $0.day < $1.day }, { $0.skinTempDevC }, range: range,
+                                                                       anchor: days.last.flatMap { TrendWindow.date($0.day) })
+            let tempChange = TrendWindow.series(noopDays.sorted { $0.day < $1.day }, { $0.skinTempDevC }, range: range,
+                                                anchor: days.last.flatMap { TrendWindow.date($0.day) })
             let oneDecimal: (Double) -> String = { String(format: "%.1f", $0) }
 
-            if [rhr, hrv, resp, spo2, temp].allSatisfy(\.points.isEmpty) {
+            if [rhr, hrv, resp, spo2, temp, tempChange].allSatisfy(\.points.isEmpty) {
                 ComingSoon(what: loaded ? "No vitals stored yet. They appear after a night of wear, or import your WHOOP export in Settings → Data."
                                         : "Loading your history…")
             } else {
@@ -629,7 +719,7 @@ struct VitalsTrendsContent: View {
                               symbol: "drop.fill", accent: StrandPalette.accent,
                               change: change({ $0.spo2Pct }, spo2, "%", 0.5, oneDecimal))
                 }
-                LazyVGrid(columns: trendCardColumns, alignment: .leading, spacing: NoopMetrics.gap) {
+                TrendCardGrid {
                     TrendLineCard(title: "Resting heart rate", unit: "bpm", series: rhr, gradient: TrendWindow.gradient(StrandPalette.metricRose),
                                   valueRange: TrendWindow.valueRange(rhr.points, fallback: 40...80))
                     TrendLineCard(title: "Heart rate variability", unit: "ms", series: hrv, gradient: TrendWindow.gradient(StrandPalette.metricPurple),
@@ -645,7 +735,13 @@ struct VitalsTrendsContent: View {
                     }
                     if !temp.points.isEmpty {
                         TrendLineCard(title: "Skin temperature", unit: "°C", series: temp, gradient: TrendWindow.gradient(StrandPalette.metricAmber),
-                                      valueRange: TrendWindow.valueRange(temp.points, fallback: -1...1), format: oneDecimal)
+                                      valueRange: TrendWindow.valueRange(temp.points, fallback: 30...36), format: oneDecimal,
+                                      note: "WHOOP import, wrist °C")
+                    }
+                    if !tempChange.points.isEmpty {
+                        TrendLineCard(title: "Skin temperature change", unit: "°C", series: tempChange, gradient: TrendWindow.gradient(StrandPalette.metricAmber),
+                                      valueRange: TrendWindow.valueRange(tempChange.points, fallback: -1...1), format: { String(format: "%+.1f", $0) },
+                                      note: "NOOP, vs your baseline")
                     }
                 }
             }
@@ -680,7 +776,13 @@ struct ActivityTrendsContent: View {
     let apple: [AppleDaily]
     var loads: [DayLoadRecord] = []
     let loaded: Bool
-    @State private var range: TrendRange = .month
+    @State private var range: TrendRange
+
+    init(days: [DailyMetric], workouts: [WorkoutRow], apple: [AppleDaily], loads: [DayLoadRecord] = [], loaded: Bool,
+         initialRange: TrendRange = .month) {
+        self.days = days; self.workouts = workouts; self.apple = apple; self.loads = loads; self.loaded = loaded
+        _range = State(initialValue: initialRange)
+    }
 
     /// The latest day any activity source reaches.
     private var anchor: Date? {
@@ -774,7 +876,7 @@ struct ActivityTrendsContent: View {
             Text("Steps and active energy appear here after an Apple Health import in Settings → Data.")
                 .font(StrandFont.footnote).foregroundStyle(StrandPalette.textTertiary)
         } else {
-            LazyVGrid(columns: trendCardColumns, alignment: .leading, spacing: NoopMetrics.gap) {
+            TrendCardGrid {
                 workoutsCard(sessions)
                 if !steps.points.isEmpty {
                     TrendLineCard(title: "Steps", unit: "", series: steps, gradient: TrendWindow.gradient(StrandPalette.statusPositive),
@@ -867,7 +969,11 @@ private struct WeeklyWorkoutChart: View {
                                                 startPoint: .top, endPoint: .bottom))
                 .cornerRadius(weeks.count > 20 ? 3 : 8, style: .continuous)
         }
-        .chartXAxis { SoftAxis.x(count: 4) }
+        .chartXAxis {
+            if weeks.count <= 6 { SoftAxis.x(at: weeks.map(\.start)) } else { SoftAxis.x(count: 4, dates: weeks.map(\.start)) }
+        }
+        // Bars are binned on UTC calendar days: label the axis in UTC too, or a day reads as the evening before.
+        .environment(\.timeZone, TimeZone(identifier: "UTC")!)
         .chartYAxis { SoftAxis.y(count: 3) }
         .accessibilityLabel("Workouts per week")
     }
@@ -883,6 +989,31 @@ enum SoftAxis {
             AxisValueLabel().font(font).foregroundStyle(StrandPalette.textTertiary)
         }
     }
+    /// Date axis matching `TrendChart`: "MMM 'yy" once the span reaches ~300 days (the automatic labels read
+    /// "Dec 2025" here and "Dec '25" on the line charts beside it), else the automatic labels.
+    @AxisContentBuilder
+    static func x(count: Int, dates: [Date]) -> some AxisContent {
+        if let first = dates.min(), let last = dates.max(), last.timeIntervalSince(first) >= 300 * 86_400 {
+            AxisMarks(preset: .aligned, values: .automatic(desiredCount: count)) { value in
+                AxisValueLabel { Text(value.as(Date.self).map { yearMonth.string(from: $0) } ?? "") }
+                    .font(font).foregroundStyle(StrandPalette.textTertiary)
+            }
+        } else {
+            AxisMarks(preset: .aligned, values: .automatic(desiredCount: count)) { _ in
+                AxisValueLabel().font(font).foregroundStyle(StrandPalette.textTertiary)
+            }
+        }
+    }
+    /// One label per bar (a few weekly bars): automatic ticks labelled the end of the last week, past the range.
+    static func x(at dates: [Date]) -> some AxisContent {
+        AxisMarks(preset: .aligned, values: dates) { _ in
+            AxisValueLabel(format: .dateTime.month(.abbreviated).day()).font(font).foregroundStyle(StrandPalette.textTertiary)
+        }
+    }
+    private static let yearMonth: DateFormatter = {
+        let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX"); f.dateFormat = "MMM ''yy"
+        f.timeZone = TimeZone(identifier: "UTC"); return f
+    }()
     static func y(count: Int) -> some AxisContent {
         AxisMarks(values: .automatic(desiredCount: count)) { _ in
             AxisGridLine(stroke: grid).foregroundStyle(StrandPalette.hairline.opacity(0.6))

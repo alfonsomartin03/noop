@@ -37,6 +37,8 @@ final class Repository: ObservableObject {
     @Published var official: [String: DailyMetric] = [:]
 
     init(deviceId: String) { self.deviceId = deviceId }
+    /// Tests: read from an already-open (in-memory) store instead of the app database.
+    init(deviceId: String, store: WhoopStore) { self.deviceId = deviceId; self.store = store }
 
     /// The most recent day with data (treated as "today" for the dashboard hero).
     var today: DailyMetric? { days.last }
