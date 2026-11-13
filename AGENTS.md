@@ -15,10 +15,10 @@ This is a convention, not CI: reconcile with the working tree before trusting it
 
 ## 1 · Snapshot
 
-- Refreshed **2026-11-09** (America/New_York). Local `main` includes #1–#5 merges and the 2026-11-09 commit of issues #4 (nav + zone spectrum), #12 (check-ins), #13 (Highlights), #14 (Health page) and charging fixes.
+- Refreshed **2026-11-13** (America/New_York). Includes pilot implementations #15–#19; experimental estimates and outstanding manual/hardware/accuracy checks are distinguished in §3/§4/§8.
 - **NOOP**: local-only macOS companion for WHOOP 4.0/5.0 straps. Internal target/scheme/package prefix **Strand**; bundle `com.noopapp.noop`, product `NOOP.app`, v0.1.0 (1).
-- 335 first-party files indexed in §7 (tracked + non-ignored untracked, excluding this file). Source size hotspots: `BLEManager.swift` ~2.0k lines, `SleepStager.swift` ~1.3k, `OnboardingWizard.swift` ~1.1k, `TrendSections.swift` ~0.9k — search, don't read whole.
-- Test inventory (methods in files, not pass results): StrandAnalytics 448, WhoopProtocol 150, WhoopStore 115, StrandImport 61, StrandDesign 40 (2 snapshot tests skip without env), hosted StrandTests 80 (4 render tests skip without `NOOP_RENDER_TRENDS=1`), Python 27.
+- 358 first-party files indexed in §7 (tracked + non-ignored untracked, excluding this file). Source size hotspots: `BLEManager.swift` ~2.0k lines, `SleepStager.swift` ~1.3k, `OnboardingWizard.swift` ~1.1k, `TrendSections.swift` ~0.9k — search, don't read whole.
+- Test inventory (methods in files, not pass results): StrandAnalytics 458, WhoopProtocol 150, WhoopStore 115, StrandImport 61, StrandDesign 40 (2 snapshot tests skip without env), hosted StrandTests 80 (4 render tests skip without `NOOP_RENDER_TRENDS=1`), Python 27.
 
 ## 2 · Architecture and routing
 
@@ -107,6 +107,7 @@ Packages (all Swift tools 5.9, platforms macOS 13 / iOS 16; **only a macOS app t
 - `WhoopImporter` → idempotent upserts of cycles, sleeps, workouts, journal, metric series. `DataBackup` exports the DB and restores by replacement (relaunch); not a merge, not preferences or raw archive.
 - `IntelligenceEngine.scoringVersion = 5`; `IncrementalScorer` reuses unchanged days, tracks algorithm/config/source changes, scores in causal order; upgrades archive old derived rows and replace per-day results atomically.
 - `HRQuality`/`SupportedHR` gate supported time; `HRCalibration` gives HR references; `CardioLoad` → `StrainScorer` (versioned 0–21). Confident sleep/naps excluded from load in v5.
+- Nap evidence v2 (#19, `SleepStager.napDetectionVersion` = `nap-evidence-v2`, `SleepSessionClassifier.version` = `sessions-v2`, both in `algorithmKey`): a nap candidate needs HR in ≥ 50 % of minutes (`napMinHRCoverage`). One that fails is emitted with `SleepSession.lowEvidence`: never joined to other episodes, never primary, labelled uncertain (counted in no total, not excluded from load) until the wearer confirms/marks it — stored corrections therefore survive rescoring; reject removes it. No HR/HRV/stage is invented for it. Sessions can only be corrected where a span was detected; none can be added. Research, sources, frozen acceptance targets and validation plan: `docs/NAP_DETECTION.md`; no labelled evaluation run.
 - Sleep: minute/epoch evidence → episodes → classified sessions (primary / interrupted-primary / nap / uncertain) → user corrections → accounting, vitals, recovery. Corrections survive rescoring.
 - HRV uses cleaned RR with sequence. Baselines use compatible metric identities from prior days only. `RecoveryAssessment` separates dimensions; legacy composite is an estimate.
 - Missing ≠ zero/awake/sleep. Imported stage totals are not a hypnogram. Load, calories, labels, strength volume and RPE are different quantities. `StagingEvaluation`/`DetectionEvaluation` do not establish clinical accuracy.
@@ -124,6 +125,8 @@ Packages (all Swift tools 5.9, platforms macOS 13 / iOS 16; **only a macOS app t
 
 ## 4 · Known issues and documentation drift
 
+- Issues #16–#19 are accepted at experimental pilot scope by explicit owner instruction. This does not establish measured VO₂/nap accuracy, a full Trends/accessibility audit, or completed live correction/restart smoke; follow-up observations remain useful and must retain source/model versions.
+
 - Alarm delivery is tested against a fake link only; the real SET→RUN→haptics sequence, delayed answers, slot hold timing and dismissal attribution are not hardware-confirmed. `BLEManager` stream ownership has no direct test (CoreBluetooth). Smart-wake v2 thresholds are untested on real nights.
 - Stage source label shows the current `IntelligenceEngine.scoringVersion`; rows don't store their own version (rescoring replaces them).
 - Overview coverage caption is unit-tested but not visually inspected (card is below the fold in fixture screenshots).
@@ -136,6 +139,8 @@ Packages (all Swift tools 5.9, platforms macOS 13 / iOS 16; **only a macOS app t
 - No CI workflow exists. No release/test-health conclusion is implied by this file.
 
 ## 5 · Build, configuration, runtime switches
+
+- GitHub `main` protection (applied and read back 2026-11-13): PR required; resolved conversations; linear history; admins included; force-push and deletion blocked. Independent approvals optional (0 required; single collaborator). No required status checks because no CI workflow exists; local test evidence remains recorded in PRs/§8.
 
 - `project.yml` (XcodeGen) is canonical; `Strand.xcodeproj` is generated and ignored — regenerate after adding app files or changing settings. macOS 13+, Swift 5.0 language mode, minimal strict concurrency.
 - Entitlements: sandbox, Bluetooth, user-selected read/write. `Signing.xcconfig` optionally includes ignored `Local.xcconfig` (template `Local.xcconfig.example`).
@@ -260,7 +265,7 @@ Format: `file` — purpose. Tests list `Suite(methods)`. Fixtures/resources are 
 - Alarms: `AlarmEngine` (planning, states), `SmartWake` (evidence buffer, policy, decider, decision record), `AlarmDelivery` (SET→RUN transaction), `AlarmHistory` (summaries, `AlarmStageLookup`). `DayCoverage` (Overview coverage captions).
 - Health, highlights, check-ins: `FitnessEstimates` (`VO2MaxEstimate`, `SleepPerformance`, `SleepPairing`, activation helpers), `PersonalRangePosition` (HRV typical/higher/lower vs median, `NightlyMaxHRV`), `HealthMonitor` (personal ranges, `BiologicalAgeModel` gate, `HRActivation` timeline), `DataHighlights` (records/streaks/ranges, `HighlightCalendar`), `CheckIns` (`CheckInLibrary`, `CheckInInsights`).
 - Other: `TrendPeriodComparison`, `ComparisonEngine`, `CorrelationEngine`, `BehaviorInsights`, `EstimateAccuracy`, `StagingEvaluation`, `DetectionEvaluation`, `StrandAnalytics` (module info).
-- Tests: AlarmDeliveryTests(6), AlarmEngineTests(9), AlarmHistoryTests(6), CheckInInsightsTests(7), DataHighlightsTests(11), DayCoverageTests(7), HealthMonitorTests(11), PersonalRangePositionTests(8), FitnessEstimatesTests(9), SmartWakeTests(11), AnalyticsEngineTests(7), BaselinesTests(11), BehaviorInsightsTests(11), CardioLoadTests = supported HR, load, calibration, day load, episodes, reconciliation, detection eval, awake load (79), ComparisonEngineTests(14), CorrelationEngineTests(11), EstimateAccuracyTests(3), HRVAnalyzerTests(9), HRZonesTests(8), IncrementalScorerTests + WorkoutLabel(23), MeasurementValidityTests(35), RecoveryScorerTests(8), ReplayRegressionTests(11), RespiratoryRateTests(6), SleepNeedTests(4), SleepSessionClassifierTests(25), SleepStagerTests(16), SleepStrainScenarioTests(21), SleepVitalsTests(18), StrainScorerTests(8), TrendPeriodComparisonTests, WorkoutDetectorTests + HROnly(18), ZoneTimelineTests(4). `Package.swift`, `Package.resolved`.
+- Tests: AlarmDeliveryTests(6), AlarmEngineTests(9), AlarmHistoryTests(6), CheckInInsightsTests(7), DataHighlightsTests(11), DayCoverageTests(7), HealthMonitorTests(11), PersonalRangePositionTests(8), FitnessEstimatesTests(9), SmartWakeTests(11), AnalyticsEngineTests(7), BaselinesTests(11), BehaviorInsightsTests(11), CardioLoadTests = supported HR, load, calibration, day load, episodes, reconciliation, detection eval, awake load (81), ComparisonEngineTests(14), CorrelationEngineTests(11), EstimateAccuracyTests(3), HRVAnalyzerTests(9), HRZonesTests(8), IncrementalScorerTests + WorkoutLabel(23), MeasurementValidityTests(35), RecoveryScorerTests(8), ReplayRegressionTests(11), RespiratoryRateTests(6), SleepNeedTests(4), SleepSessionClassifierTests(25), SleepStagerTests(24), SleepStrainScenarioTests(21), SleepVitalsTests(18), StrainScorerTests(8), TrendPeriodComparisonTests, WorkoutDetectorTests + HROnly(18), ZoneTimelineTests(4). `Package.swift`, `Package.resolved`.
 
 ### `Packages/StrandImport`
 - Sources: `ImportCoordinator` (detect ZIP/folder kind), `WhoopExportImporter` (CSV → rows), `CSVParsing` (BOM, headers, WHOOP time), `ImportModels`, `AppleHealthImporter` (XML SAX), `AppleHealthAggregator` (daily aggregates), `StrandImport` (module info).
@@ -280,7 +285,7 @@ Format: `file` — purpose. Tests list `Suite(methods)`. Fixtures/resources are 
 - Guides: `README.md` (index), `ARCHITECTURE.md`, `BUILD.md`, `CONTRIBUTING.md`, `DATA_MODEL.md`, `FEATURES.md`, `LIBRARY.md`, `PRIVACY_SECURITY.md`, `SCREEN_INVENTORY.md`, `ANALYTICS.md`.
 - Protocol: `PROTOCOL.md`, `BLE_REVERSE_ENGINEERING.md`, `HR_BROADCAST_RESEARCH.md`, `WHOOP_REVERSE_ENGINEERING.md` (export scoring analysis).
 - `HEALTH_MODELS.md` — Health page inputs, biological-age/stress model review, personal-range and activation methods.
-- Measurement reports: `MEASUREMENT_VALIDITY.md`, `SLEEP_SESSIONS.md`, `SLEEP_STRAIN_AUDIT.md`, `SLEEP_RECOVERY_RESEARCH_2026-10-27.md`, `WORKOUT_STRAIN_REPORT.md`, `WORKOUT_STRAIN_RESEARCH_2026-10-30.md`.
+- Measurement reports: `MEASUREMENT_VALIDITY.md`, `NAP_DETECTION.md` (versioned nap evidence, private label schema, evaluation limits), `SLEEP_SESSIONS.md`, `SLEEP_STRAIN_AUDIT.md`, `SLEEP_RECOVERY_RESEARCH_2026-10-27.md`, `WORKOUT_STRAIN_REPORT.md`, `WORKOUT_STRAIN_RESEARCH_2026-10-30.md`.
 - `assets/` — `banner.svg`, `logo.svg`. `assets/qa/issue-18/2026-11-13/` — synthetic (no personal data) before/after QA renders for #18: `year-strip-760-dark-before.png`, `year-strip-760-dark-after.png`, `vitals-card-rows-1180-light-before.jpg`, `vitals-card-rows-1180-light-after.jpg`, `sparse-sections-sleep-stage-labels-before.jpg`, `sparse-sections-sleep-stage-labels-after.jpg`, `activity-sessions-workout-detail-long-label-760-before.jpg`, `workout-detail-long-label-760-after.jpg`, `vitals-live-recent-cycles-supporting-day.jpg`.
 - `reverse-engineering/` — `README.md`, `AUDIT.md`, `SAFETY_MATRIX.md`, `COMMAND_REGISTRY.md` + `whoop5_commands.json`, `GATT_MAP.md`, `PROTOCOL_SPEC.md`, `PACKET_TYPES.md`, `SENSOR_STREAMS.md`, `STATE_MACHINE.md`, `ALARM_CAPABILITIES.md`, `EXPERIMENT_LOG.md`, `TEST_RESULTS.md`, `UNKNOWN_CAPABILITIES.md`.
 - `reverse-engineering/captures/` — redacted JSONL evidence: `E01-passive-gatt`, `E02-readonly-matrix`, `E04-realtime-hr`, `H01-get-alarm`, `H02-H03-H06-slot0`, `H02b`, `H05-disable`, `H07`.
@@ -290,6 +295,18 @@ Format: `file` — purpose. Tests list `Suite(methods)`. Fixtures/resources are 
 - 2026-11-09 commit/cleanup: diff whitespace and file-index checks pass; clean issue/1 branch confirmed merged by GitHub PR #7 and local ancestry. Origin has only main. No program edits or test reruns in this commit-only task; prior test results below are historical.
 
 - 2026-11-10 minimal sync/processing strip: PASS app build. Not visually checked; no tests cover the view.
+
+- 2026-11-12 #19 nap evidence: PASS StrandAnalytics 434 (new SleepStagerTests 4; F1/F2 tests confirmed failing with v1 rules restored); hosted 44 + app build PASS. Not done: labelled dataset, precision/recall, real-night review, nap presentation check.
+
+- 2026-11-13 #19 real-data replay (first v2 cut): v1 vs v2 `detectSleep` on a private DB copy over 29 days gave identical output, including the one wearer-confirmed nap. Regression evidence only: no precision/recall, no exact ground-truth bounds; not repeated after the low-evidence change. Details stay private.
+
+- 2026-11-13 #19 review fix (P1 corrections): PASS StrandAnalytics 438 (4 new `SleepStagerTests`: low-evidence span is uncertain and counts nowhere; stored markNap/confirm/markPrimary/reject on it through `analyzeDay` with main sleep, recovery inputs and load exclusion checked; never joins real sleep; versions in `algorithmKey`). Wearable/validation sources looked up and linked (no official WHOOP page found; no nap-specific consumer-wearable validation found). NOT done: labelled dataset, precision/recall, held-out comparison, app check of the uncertain/nap rows and correction flow. Hosted 44 incl. app build PASS after the change.
+
+- 2026-11-13 #19 input cadence: measured on a DB backup copy (28.5 days, aggregates only, in `docs/NAP_DETECTION.md`): HR and gravity 1 Hz with 82 % daytime minute coverage; RR only 47 % (529 gaps ≥ 5 min); respiration empty. No code change. Labelled held-out evaluation still not possible (no independently timed nap/quiet-wake labels).
+
+- 2026-11-13 #19 completion guide: `DetectionEvaluation` adds median onset/offset error (targets are medians; existing means unchanged and labelled), per-event edge + signed duration errors, median |duration error|, 95 % Wilson intervals (`wilson`, `Fraction`: zero denominator = not estimable) and recall per reference-duration stratum (`durationEdgesS`). New `testMediansDurationErrorWilsonAndStrata` (incl. NIST 80/100 → 0.711–0.867). `docs/NAP_DETECTION.md`: private label schema, denominator rule (fully annotated eligible monitoring time only), score final classified sessions, no correction leakage, pinning/splits, report contents; target judgement (point vs bound) and improvement rule left as an explicit owner decision; WHOOP official page noted as indexed but unverified. Still no labelled set; app confirm/reject/relaunch workflow not run.
+
+- 2026-11-13 #19 review fix + pilot gate: `DetectionEvaluation` per-event arrays are emitted in reference order (were in highest-IoU match order) and carry `matches` (recording, reference index, prediction index) so context is joined by identity, not position; new `testPerEventArraysAreInReferenceOrder` (reviewer's reproduction → [100, 0]). Sleep sessions card states nap detection is experimental with its versions (`nap-evidence-v2`, `sessions-v2`) and asks testers to correct and note missed naps / quiet rest. PASS StrandAnalytics `DetectionEvaluationTests` 7, hosted 44 incl. app build. Pilot smoke (uncertain row → confirm/reject → rescore → restart → correction kept) NOT run. Still no evaluation runner or labelled data (pilot follow-ups).
 
 - 2026-11-12 #18 Trends audit (code only): defects found by reading source — line charts interpolated across missing days; range control had no accessible title and spoke "W"/"3M". Fixed; PASS StrandDesign 36 (2 snapshot skips, new `TrendChartGapTests` 3) + app build. Not done: visual inspection/screenshots of any Trends view, light/dark, narrow/wide, VoiceOver, Reduce Motion.
 
@@ -331,6 +348,8 @@ Format: `file` — purpose. Tests list `Suite(methods)`. Fixtures/resources are 
 
 - 2026-11-13 #15 pre-PR validation: PASS fresh hosted 55 incl. app build, alarm analytics 32 (AlarmHistory/AlarmDelivery/AlarmEngine/SmartWake), diff whitespace and file-index checks. Source unchanged across validation. Notification race blocker resolved; real notifications/strap and remaining visual cases remain unverified as above.
 
+- 2026-11-13 #19 publication validation after merging origin/main: PASS app build + hosted 55; focused package regressions 71 pass. Diff/index checks clean. Feature-specific live pilot smoke remains pending. Published as a draft pilot candidate; original issue stays open for the recorded validation follow-ups. No hardware/accuracy claim.
+
 - 2026-11-13 pilot UI smoke (pre-integration issue build): Scores, Sleep, Vitals, Activity and Highlights loaded; Activity Week/Month updated in place; Sleep Last night loaded; Highlights NOOP→WHOOP source switched. No correction writes or hardware checks; full audit remains open.
 
 - 2026-11-13 #18 publication validation after merging origin/main: PASS app build + hosted 66 (4 environment-gated render skips); focused package regressions 7 pass. Diff/index checks clean. Initial parallel hosted runs interfered via the shared AlarmControllerTests preferences domain; serial rerun passed. Pre-integration live Trends smoke recorded above; remaining activity detail/width and exact-head smoke are pending. Published as a draft pilot candidate; original issue stays open for the recorded validation follow-ups. No hardware/accuracy claim.
@@ -342,6 +361,10 @@ Format: `file` — purpose. Tests list `Suite(methods)`. Fixtures/resources are 
 - 2026-11-13 PR #22 integration review: resolved merge conflicts while preserving prior pilot features; app build and hosted suite PASS (Executed 69 tests, with 0 failures (0 unexpected) in 2.845 (2.866) seconds). Local automated validation only; remaining manual/hardware/accuracy checks are not implied. User requested merge and issue closure at pilot scope.
 
 - 2026-11-13 PR #23 integration review: resolved merge conflicts while preserving prior pilot features; app build and hosted suite PASS (Executed 80 tests, with 4 tests skipped and 0 failures (0 unexpected) in 3.690 (3.717) seconds). Local automated validation only; remaining manual/hardware/accuracy checks are not implied. User requested merge and issue closure at pilot scope.
+
+- 2026-11-13 final combined candidate (PRs #21–#24): PASS full StrandAnalytics 458, app build + hosted 80 (4 render skips), full StrandDesign 40 (2 snapshot skips; run after #23, unchanged by #24), Python sleep evaluator 5. No CI workflow or remote test check was used. Main protection API read-back verified. Manual/hardware/accuracy limits remain as recorded.
+
+- 2026-11-13 PR #24 integration review: resolved merge conflicts while preserving prior pilot features; app build and hosted suite PASS (Executed 80 tests, with 4 tests skipped and 0 failures (0 unexpected) in 3.627 (3.652) seconds). Full combined analytics/design/Python results recorded separately. Local automated validation only; remaining manual/hardware/accuracy checks are not implied. User requested merge and issue closure at pilot scope.
 
 Index check (run after file changes; expects no output):
 
@@ -374,11 +397,11 @@ git ls-files --cached --others --exclude-standard | grep -v -e '^AGENTS.md$' -e 
 
 | Date | Change | Checks / remaining |
 | --- | --- | --- |
-| 2026-11-13 | PR #23 integration review, merge-conflict reconciliation; issue #18 accepted for experimental pilot. | App build + hosted suite pass; broad manual/hardware/accuracy work remains unverified. |
-| 2026-11-13 | #18 pilot publication: integrate main, reconcile reference and review implemented fixes. | Build + hosted 66 (4 render skips) + focused 7 pass; live pilot gate incomplete; draft PR, issue remains open. |
-| 2026-11-13 | #18 completion guide: nested-surface renders (Sessions, workout detail, Vitals Live, Recent cycles, supporting-day sheet); fixed workout-detail header clipping at 760 pt and raw ISO "as of" date; synthetic before/after evidence in `docs/assets/qa/issue-18/`. | Hosted 55 + StrandDesign 40 + render harness pass; live transitions, Sleep Last night, tooltips on screen and accessibility not run. |
-| 2026-11-13 | #18 audit pass 3: every harness render inspected; fixed year-strip clipping at 760 pt, uneven card rows (`TrendCardGrid`), bar-chart axis labels (long-span format, per-bar labels). | StrandDesign 40 + hosted 54 + render harness pass; transitions, detail sheets/Sessions, tooltips on screen and accessibility not checked. |
-| 2026-11-13 | #18 audit pass 2: per-range data tests + env-gated synthetic render harness; fixed daily-chart axis/tooltip time zone, short- and long-span tick labels, year-strip Sunday clipping, footer label truncation. | Hosted 54 (3 render skips) + StrandDesign 40 (2 skips) pass; subset of renders inspected; detail sheets, Sessions tab, hover on screen, keyboard/VoiceOver/Reduce Motion not checked. |
-| 2026-11-13 | #18 visual audit on a DB copy (Scores/Sleep/Vitals/Activity/Highlights, 760/1180, light/dark) and fixes: area baseline, short-run fill, wrapping, zone legend, skin-temp source split, year strip gaps/time zone/labels. | StrandDesign 36 (2 skips) + hosted 44 PASS; no VoiceOver/keyboard/Reduce Motion pass; non-default ranges and sub-views not rendered. |
+| 2026-11-13 | PR #24 integration review, merge-conflict reconciliation; issue #19 accepted for experimental pilot. | App build + hosted suite pass; broad manual/hardware/accuracy work remains unverified. |
+| 2026-11-13 | #19 pilot publication: integrate main, reconcile reference and review implemented fixes. | Build + hosted 55 + focused 71 pass; live pilot gate incomplete; draft PR, issue remains open. |
+| 2026-11-13 | #19 review: evaluator arrays in reference order + match identities; nap detection labelled experimental (with versions) in the sessions card. | DetectionEvaluation 7 + hosted 44 + build pass; pilot smoke not run. |
+| 2026-11-13 | #19 completion guide: `DetectionEvaluation` medians, duration error, Wilson intervals, duration strata; nap evaluation protocol + label schema in `NAP_DETECTION.md`. | StrandAnalytics full suite pass; no labelled data, so no accuracy result; app workflow not run. |
+| 2026-11-13 | #19 review: low-evidence nap candidates kept as correctable uncertain sessions (`sessions-v2`) so user corrections survive rescoring; nap doc sourced, targets frozen, private timestamps removed. | StrandAnalytics 438 pass; measured-improvement criterion not met (no labelled data); nap UI not checked. |
+| 2026-11-13 | #19 real-data replay v1 vs v2 (29 days, private copy): identical; the one confirmed nap kept. | No labelled set beyond one nap; acceptance targets not measurable yet. |
 | 2026-11-13 | #15 review: wake notifications get occurrence-scoped ids, are withdrawn on dismissal/skip/edit/delete, and submission races are suppressed/withdrawn (`withdrawn`). | Fresh hosted 55 + alarm analytics 32 + build pass; diff/index clean. No real-notification, narrow/light visual or hardware pass. |
-| 2026-11-13 | PR #22 integration review, merge-conflict reconciliation; issue #17 accepted for experimental pilot. | App build + hosted suite pass; broad manual/hardware/accuracy work remains unverified. |
+| 2026-11-13 | PR #23 integration review, merge-conflict reconciliation; issue #18 accepted for experimental pilot. | App build + hosted suite pass; broad manual/hardware/accuracy work remains unverified. |

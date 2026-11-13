@@ -78,7 +78,7 @@ public enum IncrementalScorer {
     public static func algorithmKey(scoringVersion: Int, generation: Int) -> String {
         [String(scoringVersion), String(generation), CardioLoad.loadVersion, CardioLoad.detectorVersion,
          StrainScorer.indexVersion, SupportedHR.policyVersion, HRCalibration.version,
-         MetricIdentity.noopVitalsVersion, SleepStager.stagingMethod,
+         MetricIdentity.noopVitalsVersion, SleepStager.stagingMethod, SleepStager.napDetectionVersion,
          SleepSessionClassifier.version].joined(separator: "|")
     }
 

@@ -138,7 +138,7 @@ public struct SleepSessionPolicy: Sendable, Equatable {
 
 public enum SleepSessionClassifier {
     /// Part of the scoring algorithm key: bump when grouping or labelling rules change, so stored days re-score.
-    public static let version = "sessions-v1"
+    public static let version = "sessions-v2"   // v2: low-evidence episodes stay uncertain and never join a group
 
     // MARK: C — grouping
 
@@ -153,7 +153,9 @@ public enum SleepSessionClassifier {
             guard var last = out.last, let prev = last.last else { out.append([e]); continue }
             let gapMin = (e.start - prev.end) / 60
             let join: Bool
-            if gapMin <= policy.alwaysJoinGapMin { join = true }
+            // A span without enough heart rate to confirm sleep never attaches itself to real sleep.
+            if e.lowEvidence || prev.lowEvidence { join = false }
+            else if gapMin <= policy.alwaysJoinGapMin { join = true }
             else if gapMin <= policy.habitualJoinGapMin {
                 join = inHabitWindow(prev.end, habit, policy, calendar) && inHabitWindow(e.start, habit, policy, calendar)
             } else { join = false }
@@ -202,7 +204,9 @@ public enum SleepSessionClassifier {
         func score(_ s: ClassifiedSleepSession) -> Double {
             Double(s.asleepSeconds) / 3600 * circadianWeight((s.start + s.end) / 2, habit, calendar)
         }
+        func unconfirmed(_ s: ClassifiedSleepSession) -> Bool { s.episodes.allSatisfy(\.lowEvidence) }
         func qualifiesPrimary(_ s: ClassifiedSleepSession) -> Bool {
+            if unconfirmed(s) { return false }
             let asleepMin = s.asleepSeconds / 60
             if asleepMin >= policy.minPrimaryAsleepMin { return true }
             let aligned = inHabitWindow((s.start + s.end) / 2, habit, policy, calendar)
@@ -225,6 +229,10 @@ public enum SleepSessionClassifier {
                 sessions[i].reason = s.episodes.count > 1
                     ? "Main sleep, \(s.episodes.count) parts with \(s.gaps.count) awake gap(s) kept"
                     : (aligned ? "Main sleep at your usual time" : "Main sleep (longest sleep, outside your usual hours)")
+            } else if unconfirmed(s) {
+                sessions[i].kind = .uncertain
+                sessions[i].confidence = 0.2
+                sessions[i].reason = lowEvidenceReason
             } else if asleepMin >= policy.minNapAsleepMin && longestEpisodeMin >= policy.confidentEpisodeMin {
                 sessions[i].kind = .nap
                 sessions[i].confidence = longestEpisodeMin >= 45 ? 0.8 : 0.6
@@ -242,7 +250,17 @@ public enum SleepSessionClassifier {
         return applyLabels(corrections, sessions, dayOf: dayOf)
     }
 
+    public static let lowEvidenceReason = "Still, but too little heart-rate data to tell sleep from an off-wrist strap: confirm or reject it"
+
     // MARK: corrections
+
+    /// True when the wearer has said this span was sleep (confirm / nap / main sleep / adjusted bounds) and has not
+    /// rejected it. Used for spans the detector cannot confirm by itself (`SleepSession.lowEvidence`).
+    public static func userConfirmsSleep(_ cs: [SleepCorrection], start: Int, end: Int) -> Bool {
+        let touching = cs.filter { overlaps($0, start, end) }
+        let confirming: Set<SleepCorrection.Action> = [.confirm, .markNap, .markPrimary, .adjust]
+        return touching.contains { confirming.contains($0.action) } && !touching.contains { $0.action == .reject }
+    }
 
     static func overlaps(_ c: SleepCorrection, _ s: Int, _ e: Int) -> Bool {
         let lo = max(c.start, s), hi = min(c.end, e)

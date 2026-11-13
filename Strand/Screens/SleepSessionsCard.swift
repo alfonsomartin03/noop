@@ -38,7 +38,7 @@ struct SleepSessionsCard: View {
                 }
                 .padding(NoopMetrics.cardPadding)
                 .strandSurface()
-                Text("Only the main sleep feeds recovery. Naps add to your 24-hour sleep; unconfirmed sessions count nowhere until you confirm them. Your corrections are kept through future syncs.")
+                Text("Only the main sleep feeds recovery. Naps add to your 24-hour sleep; unconfirmed sessions count nowhere until you confirm them. Your corrections are kept through future syncs.\nNap detection is experimental (\(SleepStager.napDetectionVersion), \(SleepSessionClassifier.version)) and its accuracy is not yet measured: if a nap was missed or quiet rest was marked as sleep, correct it here and note the time.")
                     .font(.system(size: 11)).foregroundStyle(StrandPalette.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
             }

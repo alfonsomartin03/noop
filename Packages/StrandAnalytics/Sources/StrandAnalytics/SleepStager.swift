@@ -65,13 +65,19 @@ public struct SleepSession: Equatable, Sendable {
     public let isProvisional: Bool
     /// Measurement quality behind `restingHR` / `avgHRV` (nil for sessions not built by `detectSleep`).
     public let vitalsQuality: VitalsQuality?
+    /// A still daytime span with too little heart rate to confirm sleep (`SleepStager.napMinHRCoverage`). It is kept
+    /// only so the wearer can confirm or reject it: by itself it is never a nap, never main sleep, never counted in
+    /// any total and never excluded from load. Stages come from the normal stager, which withholds a stage wherever
+    /// there is no cardiac data (`asleep` / "no cardiac data"); no heart rate or HRV is derived for it.
+    public let lowEvidence: Bool
 
     public init(start: Int, end: Int, efficiency: Double, stages: [StageSegment],
                 restingHR: Int?, avgHRV: Double?, avgResp: Double? = nil, kind: SleepKind = .main, isProvisional: Bool = false,
-                vitalsQuality: VitalsQuality? = nil) {
+                vitalsQuality: VitalsQuality? = nil, lowEvidence: Bool = false) {
         self.start = start; self.end = end; self.efficiency = efficiency
         self.stages = stages; self.restingHR = restingHR; self.avgHRV = avgHRV; self.avgResp = avgResp
         self.kind = kind; self.isProvisional = isProvisional; self.vitalsQuality = vitalsQuality
+        self.lowEvidence = lowEvidence
     }
 }
 
@@ -157,6 +163,14 @@ public enum SleepStager {
     /// A nap must also look like the wearer's own sleep: its median HR within max(12 bpm, 25%) of their usual sleeping
     /// HR (this window's main sleep, else `sleepHRHint`). With no reference at all it needs a larger dip vs waking HR.
     public static let napNoReferenceMinHRDip: Double = 0.18
+    /// Nap evidence (issue #19, `napDetectionVersion`): a nap candidate needs heart rate in at least this share of its
+    /// minutes. Stillness alone is not sleep — a strap lying off-wrist, or a stretch with no HR, is perfectly still.
+    /// Before v2 a candidate with no HR (or too few samples to judge a dip) was accepted on motion alone. From v2 such
+    /// a candidate is emitted with `lowEvidence` = true: the classifier holds it as `uncertain` (counted nowhere), so a
+    /// stored user correction still has a span to act on after rescoring.
+    public static let napMinHRCoverage: Double = 0.5
+    /// Versioned nap-evidence rules; part of the scoring algorithm key so stored days re-score when it changes.
+    public static let napDetectionVersion = "nap-evidence-v2"
     /// Final-wake extension: after the strict (quiet) core of a night, sleep continues through restless 5-min blocks
     /// while HR stays at sleeping level (+ `edgeHR` tolerance) and ≥ `extendMinQuietFrac` of minutes are quiet.
     /// Light morning sleep is physically restless (position changes, brief arousals), so motion alone ends nights too soon.
@@ -606,10 +620,16 @@ public enum SleepStager {
             rowsBetween(hrS, start: m.p.start, end: m.p.end) { $0.ts }.map { Double($0.bpm) }
         }
         let sleepLevel: Double? = median(mainHR) ?? sleepHRHint.map { $0 * 1.12 }
+        var lowEvidence = Set<Int>()   // starts of candidates kept only for the wearer to confirm or reject
         joined = joined.filter { j in
             guard j.kind == .nap else { return true }
+            // Missing evidence is not sleep: without HR across most of the span there is nothing to confirm it. The
+            // candidate is not dropped, though: a correction the wearer already made on it must survive rescoring.
             let napHR = rowsBetween(hrS, start: j.p.start, end: j.p.end) { $0.ts }.map { Double($0.bpm) }
-            guard let m = median(napHR) else { return true }
+            guard hrMinuteCoverage(hrS, start: j.p.start, end: j.p.end) >= napMinHRCoverage, let m = median(napHR) else {
+                lowEvidence.insert(j.p.start)
+                return true
+            }
             if let lvl = sleepLevel { return m <= lvl + max(12, 0.25 * lvl) }
             if let ref = awakeRef, ref > 0 { return 1.0 - m / ref >= napNoReferenceMinHRDip }
             return true
@@ -627,10 +647,18 @@ public enum SleepStager {
             sessions.append(SleepSession(start: p.start, end: p.end, efficiency: eff,
                                          stages: stages, restingHR: resting, avgHRV: avgHrv, avgResp: vitals.respRate, kind: kind,
                                          isProvisional: dataEnd - p.end < provisionalWindowMin * 60,
-                                         vitalsQuality: VitalsQuality(vitals)))
+                                         vitalsQuality: VitalsQuality(vitals), lowEvidence: lowEvidence.contains(p.start)))
         }
         sessions.sort { $0.start < $1.start }
         return sessions
+    }
+
+    /// Share (0…1) of the span's whole minutes holding at least one HR sample.
+    static func hrMinuteCoverage(_ hr: [HRSample], start: Int, end: Int) -> Double {
+        let minutes = (end - start) / 60
+        guard minutes > 0 else { return 0 }
+        let covered = Set(rowsBetween(hr, start: start, end: end - 1) { $0.ts }.map { ($0.ts - start) / 60 }).count
+        return min(1, Double(covered) / Double(minutes))
     }
 
     /// Sleep ÷ observed time of the period. Unknown time is neither sleep nor wake, so it leaves both terms; with

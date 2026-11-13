@@ -217,4 +217,143 @@ final class SleepStagerTests: XCTestCase {
         XCTAssertEqual(s.count, 1)
         XCTAssertEqual(s.first?.kind, .main)
     }
+
+    // MARK: nap evidence v2 (issue #19)
+
+    /// Night, active afternoon, then a still 60-min daytime span with the given HR (nil = none recorded).
+    private func dayWithStillSpan(hr spanHR: [HRSample]?) -> (hr: [HRSample], grav: [GravitySample], spanStart: Int) {
+        let start = 9_000_000
+        let day = 4 * 3600, night = 7 * 3600, gap = 3 * 3600, still = 60 * 60
+        var grav = activeGravity(start: start, durationS: day)
+        var hr = hrStream(start: start, durationS: day, bpm: 85)
+        grav += stillGravity(start: start + day, durationS: night)
+        hr += hrStream(start: start + day, durationS: night, bpm: 52)
+        let after = start + day + night
+        grav += activeGravity(start: after, durationS: gap)
+        hr += hrStream(start: after, durationS: gap, bpm: 85)
+        grav += stillGravity(start: after + gap, durationS: still)
+        hr += spanHR ?? []
+        grav += activeGravity(start: after + gap + still, durationS: 3600)
+        hr += hrStream(start: after + gap + still, durationS: 3600, bpm: 85)
+        return (hr, grav, after + gap)
+    }
+
+    func testStillSpanWithoutHeartRateIsNotANap() {
+        // Off-wrist on a table / no HR: perfectly still, nothing to confirm sleep. v1 called this a nap.
+        let d = dayWithStillSpan(hr: nil)
+        let s = SleepStager.detectSleep(hr: d.hr, gravity: d.grav)
+        XCTAssertEqual(s.filter { !$0.lowEvidence }.map(\.kind), [.main])
+        // The span is kept only as a correctable candidate, with no invented heart rate, HRV or stage.
+        let weak = try! XCTUnwrap(s.first(where: \.lowEvidence))
+        XCTAssertEqual(Double(weak.start), Double(d.spanStart), accuracy: 15 * 60)
+        XCTAssertNil(weak.restingHR)
+        XCTAssertNil(weak.avgHRV)
+        XCTAssertFalse(weak.stages.contains { $0.state.isStaged }, "no stage estimate without cardiac data")
+    }
+
+    func testStillSpanWithSparseHeartRateIsNotANap() {
+        // Ten readings in an hour: too little to judge a dip, so it can't be confirmed as sleep.
+        let e = dayWithStillSpan(hr: nil)
+        let sparse = (0..<10).map { HRSample(ts: e.spanStart + $0 * 360, bpm: 60) }
+        let s = SleepStager.detectSleep(hr: (e.hr + sparse).sorted { $0.ts < $1.ts }, gravity: e.grav)
+        XCTAssertEqual(s.filter { !$0.lowEvidence }.map(\.kind), [.main])
+        XCTAssertEqual(s.filter(\.lowEvidence).count, 1)
+    }
+
+    func testStillSpanWithSleepLevelHeartRateIsStillANap() {
+        let e = dayWithStillSpan(hr: nil)
+        let napHR = hrStream(start: e.spanStart, durationS: 3600, bpm: 60)
+        let s = SleepStager.detectSleep(hr: (e.hr + napHR).sorted { $0.ts < $1.ts }, gravity: e.grav)
+        XCTAssertEqual(s.map(\.kind), [.main, .nap])
+        XCTAssertFalse(s.contains(where: \.lowEvidence))
+    }
+
+    // MARK: low-evidence spans and user corrections (issue #19 review, P1)
+
+    private func analyze(_ d: (hr: [HRSample], grav: [GravitySample], spanStart: Int), corrections: [SleepCorrection]) -> AnalyticsEngine.DayResult {
+        AnalyticsEngine.analyzeDay(day: AnalyticsEngine.dayString(d.spanStart + 3600), hr: d.hr, gravity: d.grav,
+                                   profile: UserProfile(age: 30), dayRange: (9_000_000, 9_000_000 + 16 * 3600),
+                                   sleepCorrections: corrections)
+    }
+    private func overlapping(_ r: AnalyticsEngine.DayResult, _ start: Int) -> ClassifiedSleepSession? {
+        r.classifiedSleep.first { $0.start < start + 3600 && $0.end > start }
+    }
+
+    func testLowEvidenceSpanIsUncertainAndCountsNowhere() throws {
+        let d = dayWithStillSpan(hr: nil)
+        try XCTSkipUnless(AnalyticsEngine.dayString(d.spanStart - 3 * 3600) == AnalyticsEngine.dayString(d.spanStart + 3600),
+                          "fixture night and still span fall on different local days in this time zone")
+        let r = analyze(d, corrections: [])
+        let s = try XCTUnwrap(overlapping(r, d.spanStart))
+        XCTAssertEqual(s.kind, .uncertain)
+        XCTAssertEqual(s.reason, SleepSessionClassifier.lowEvidenceReason)
+        XCTAssertFalse(s.userCorrected)
+        XCTAssertTrue(r.napSessions.isEmpty)
+        XCTAssertEqual(r.classifiedSleep.filter(\.isPrimary).count, 1)
+        // Not confident sleep: its hour is not taken out of the day's load.
+        let excluded = try XCTUnwrap(r.load?.sleepExcludedS)
+        XCTAssertEqual(Double(excluded), 7 * 3600, accuracy: 20 * 60)
+    }
+
+    func testStoredNapCorrectionOnALowEvidenceSpanSurvivesRescoring() throws {
+        // The reported failure: a still hour without heart rate that the wearer had marked as a nap. v2's first cut
+        // deleted the candidate before corrections ran, so the stored correction had nothing to act on.
+        let d = dayWithStillSpan(hr: nil)
+        try XCTSkipUnless(AnalyticsEngine.dayString(d.spanStart - 3 * 3600) == AnalyticsEngine.dayString(d.spanStart + 3600),
+                          "fixture night and still span fall on different local days in this time zone")
+        let plain = analyze(d, corrections: [])
+        let nap = SleepCorrection(action: .markNap, start: d.spanStart, end: d.spanStart + 3600, createdAt: 1)
+        let r = analyze(d, corrections: [nap])                       // what a version re-score runs with the stored row
+        let s = try XCTUnwrap(overlapping(r, d.spanStart))
+        XCTAssertEqual(s.kind, .nap)
+        XCTAssertTrue(s.userCorrected)
+        XCTAssertEqual(r.napSessions.count, 1)
+        XCTAssertEqual(r.cachedSleep.filter { $0.kind == "nap" }.count, 1)
+        // Nothing is invented for it: no heart rate, HRV or stage estimate.
+        let e = try XCTUnwrap(r.napSessions.first)
+        XCTAssertNil(e.restingHR); XCTAssertNil(e.avgHRV)
+        XCTAssertFalse(e.stages.contains { $0.state.isStaged })
+        // Main sleep, and everything recovery reads from it, is unchanged.
+        XCTAssertEqual(r.daily.totalSleepMin, plain.daily.totalSleepMin)
+        XCTAssertEqual(r.daily.restingHr, plain.daily.restingHr)
+        XCTAssertEqual(r.daily.avgHrv, plain.daily.avgHrv)
+        XCTAssertEqual(r.recovery, plain.recovery)
+        XCTAssertEqual(r.sleepSessions.map(\.start), plain.sleepSessions.map(\.start))
+        // The confirmed nap now counts as sleep for the day and is excluded from load.
+        let before = try XCTUnwrap(plain.load?.sleepExcludedS), after = try XCTUnwrap(r.load?.sleepExcludedS)
+        XCTAssertEqual(Double(after - before), 3600, accuracy: 15 * 60)
+        XCTAssertGreaterThan(s.asleepSeconds, 30 * 60)
+
+        // confirm and markPrimary act on it too; reject removes it.
+        XCTAssertEqual(overlapping(analyze(d, corrections: [SleepCorrection(action: .confirm, start: d.spanStart, end: d.spanStart + 3600, createdAt: 1)]), d.spanStart)?.kind, .nap)
+        XCTAssertEqual(overlapping(analyze(d, corrections: [SleepCorrection(action: .markPrimary, start: d.spanStart, end: d.spanStart + 3600, createdAt: 1)]), d.spanStart)?.isPrimary, true)
+        XCTAssertNil(overlapping(analyze(d, corrections: [SleepCorrection(action: .reject, start: d.spanStart, end: d.spanStart + 3600, createdAt: 1)]), d.spanStart))
+    }
+
+    func testLowEvidenceSpanNeverJoinsRealSleep() {
+        // 20 min after a real night: close enough to join any other episode, but not one without evidence.
+        let night = SleepSession(start: 0, end: 7 * 3600, efficiency: 0.95, stages: [StageSegment(start: 0, end: 7 * 3600, stage: "light")],
+                                 restingHR: 52, avgHRV: 50)
+        let weak = SleepSession(start: 7 * 3600 + 1200, end: 8 * 3600 + 1200, efficiency: 1,
+                                stages: [StageSegment(start: 7 * 3600 + 1200, end: 8 * 3600 + 1200, stage: "asleep", reason: SleepStateReason.noCardiacData)],
+                                restingHR: nil, avgHRV: nil, kind: .nap, lowEvidence: true)
+        let c = SleepSessionClassifier.classify([night, weak], habit: .fallback, wakeDay: { _ in "d" })
+        XCTAssertEqual(c.map(\.kind), [.primary, .uncertain])
+        XCTAssertEqual(c.first?.episodes.count, 1)
+        // Without the flag the same pair is one interrupted night.
+        let plain = SleepSession(start: weak.start, end: weak.end, efficiency: 1, stages: weak.stages, restingHR: nil, avgHRV: nil, kind: .nap)
+        XCTAssertEqual(SleepSessionClassifier.classify([night, plain], habit: .fallback, wakeDay: { _ in "d" }).map(\.kind), [.interruptedPrimary])
+    }
+
+    func testNapRulesArePartOfTheAlgorithmKey() {
+        let key = IncrementalScorer.algorithmKey(scoringVersion: 5, generation: 0)
+        XCTAssertTrue(key.contains(SleepStager.napDetectionVersion))
+        XCTAssertTrue(key.contains(SleepSessionClassifier.version))
+    }
+
+    func testHRMinuteCoverage() {
+        let hr = (0..<30).map { HRSample(ts: 1_000 + $0 * 60, bpm: 60) }
+        XCTAssertEqual(SleepStager.hrMinuteCoverage(hr, start: 1_000, end: 1_000 + 60 * 60), 0.5, accuracy: 1e-9)
+        XCTAssertEqual(SleepStager.hrMinuteCoverage([], start: 0, end: 3600), 0)
+    }
 }
