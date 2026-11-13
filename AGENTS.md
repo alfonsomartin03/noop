@@ -305,6 +305,8 @@ Format: `file` — purpose. Tests list `Suite(methods)`. Fixtures/resources are 
 
 - 2026-11-13 pilot UI smoke (pre-integration issue build): Scores, Sleep, Vitals, Activity and Highlights loaded; Activity Week/Month updated in place; Sleep Last night loaded; Highlights NOOP→WHOOP source switched. No correction writes or hardware checks; full audit remains open.
 
+- 2026-11-13 #18 publication validation after merging origin/main: PASS app build + hosted 66 (4 environment-gated render skips); focused package regressions 7 pass. Diff/index checks clean. Initial parallel hosted runs interfered via the shared AlarmControllerTests preferences domain; serial rerun passed. Pre-integration live Trends smoke recorded above; remaining activity detail/width and exact-head smoke are pending. Published as a draft pilot candidate; original issue stays open for the recorded validation follow-ups. No hardware/accuracy claim.
+
 Index check (run after file changes; expects no output):
 
 ```sh
@@ -336,6 +338,7 @@ git ls-files --cached --others --exclude-standard | grep -v -e '^AGENTS.md$' -e 
 
 | Date | Change | Checks / remaining |
 | --- | --- | --- |
+| 2026-11-13 | #18 pilot publication: integrate main, reconcile reference and review implemented fixes. | Build + hosted 66 (4 render skips) + focused 7 pass; live pilot gate incomplete; draft PR, issue remains open. |
 | 2026-11-13 | #18 completion guide: nested-surface renders (Sessions, workout detail, Vitals Live, Recent cycles, supporting-day sheet); fixed workout-detail header clipping at 760 pt and raw ISO "as of" date; synthetic before/after evidence in `docs/assets/qa/issue-18/`. | Hosted 55 + StrandDesign 40 + render harness pass; live transitions, Sleep Last night, tooltips on screen and accessibility not run. |
 | 2026-11-13 | #18 audit pass 3: every harness render inspected; fixed year-strip clipping at 760 pt, uneven card rows (`TrendCardGrid`), bar-chart axis labels (long-span format, per-bar labels). | StrandDesign 40 + hosted 54 + render harness pass; transitions, detail sheets/Sessions, tooltips on screen and accessibility not checked. |
 | 2026-11-13 | #18 audit pass 2: per-range data tests + env-gated synthetic render harness; fixed daily-chart axis/tooltip time zone, short- and long-span tick labels, year-strip Sunday clipping, footer label truncation. | Hosted 54 (3 render skips) + StrandDesign 40 (2 skips) pass; subset of renders inspected; detail sheets, Sessions tab, hover on screen, keyboard/VoiceOver/Reduce Motion not checked. |
@@ -343,4 +346,3 @@ git ls-files --cached --others --exclude-standard | grep -v -e '^AGENTS.md$' -e 
 | 2026-11-13 | #15 review: wake notifications get occurrence-scoped ids, are withdrawn on dismissal/skip/edit/delete, and submission races are suppressed/withdrawn (`withdrawn`). | Fresh hosted 55 + alarm analytics 32 + build pass; diff/index clean. No real-notification, narrow/light visual or hardware pass. |
 | 2026-11-12 | #18 (code audit part): trend lines no longer bridge missing days; quiet range filters on Trends/Highlights with accessible names. | StrandDesign 36 (2 skips) + app build pass; the visual audit (every graph/range, light/dark, narrow/wide, VoiceOver, screenshots) is NOT done. |
 | 2026-11-12 | #15: skip the next alarm occurrence when already awake (manual, before first ring); strap slot moved/cleared, follow-ups cancelled, `skipped` history status. | Hosted 51 + StrandAnalytics AlarmHistory pass; not run on the strap; Alarms hero not visually checked. |
-| 2026-11-10 | Overview sync/processing strip made minimal: one line + 3 pt bar (`ThinProgressBar`), smaller surface radius; same progress semantics. | App build pass; not visually checked. |
