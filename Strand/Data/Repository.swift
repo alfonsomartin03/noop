@@ -254,7 +254,8 @@ final class Repository: ObservableObject {
     }
 
     /// Every stored day for Data Highlights, per source, read straight from the store (all history, not the UI cache).
-    /// Imported WHOOP rows and NOOP's computed rows stay apart; NOOP has no sleep-performance score, so its series is empty.
+    /// Imported WHOOP rows and NOOP's computed rows stay apart; NOOP's sleep performance is its own `SleepPerformance`
+    /// (hours vs NOOP's estimated need), never WHOOP's imported score.
     func highlightInputs() async -> [HighlightSource: HighlightInputs] {
         guard let store = await ensureStore() else { return [:] }
         let lo = "0000-01-01", hi = "9999-12-31"
@@ -267,7 +268,7 @@ final class Repository: ObservableObject {
             return HighlightInputs(sleepPerformance: sleep, recovery: pick(\.recovery), strain: pick(\.strain),
                                    restingHR: pick { $0.restingHr.map(Double.init) }, hrv: pick(\.avgHrv))
         }
-        return [.whoop: inputs(imported, sleep: perf), .noop: inputs(computed, sleep: [])]
+        return [.whoop: inputs(imported, sleep: perf), .noop: inputs(computed, sleep: SleepPerformance.series(computed))]
     }
 
     /// One stored day's row from one source, for a highlight's supporting-day sheet.

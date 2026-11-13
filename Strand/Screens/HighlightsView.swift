@@ -127,8 +127,8 @@ struct HighlightsContent: View {
             RecordOrb(title: "Best sleep", symbol: "moon.stars.fill", record: h.bestSleep, scale: 100,
                       format: { "\(Int($0.rounded()))" }, unit: "%", color: { _ in StrandPalette.sleepLight },
                       definition: source == .whoop ? "Highest WHOOP sleep performance: sleep you got as a share of the sleep WHOOP estimated you needed."
-                                                    : "Highest sleep performance.",
-                      unavailable: source == .noop ? "NOOP doesn't compute a sleep-performance score. Import a WHOOP export to see this record." : "No sleep performance in this range.",
+                                                    : "Highest NOOP sleep performance (estimate): hours asleep as a share of NOOP's estimated sleep need, capped at 100 %. Not WHOOP's score.",
+                      unavailable: "No sleep performance in this range.",
                       inspect: { inspect($0, "Best sleep") })
             RecordOrb(title: "Peak recovery", symbol: "heart.circle.fill", record: h.peakRecovery, scale: 100,
                       format: { "\(Int($0.rounded()))" }, unit: "%", color: StrandPalette.recoveryColor,
@@ -151,7 +151,7 @@ struct HighlightsContent: View {
             EqualRowLayout(minWidth: 200, fallbackColumns: 1, spacing: 12) {
                 StreakBadge(title: "Sleep", symbol: "moon.fill", tint: StrandPalette.sleepLight, streak: h.sleepStreak,
                             rule: h.thresholds.sleepLabel,
-                            unavailable: source == .noop ? "Needs WHOOP sleep performance" : "No qualifying nights")
+                            unavailable: "No qualifying nights")
                 StreakBadge(title: "Green recovery", symbol: "heart.fill", tint: StrandPalette.statusPositive, streak: h.greenStreak,
                             rule: h.thresholds.recoveryLabel, unavailable: "No qualifying days")
                 StreakBadge(title: "Strain", symbol: "flame.fill", tint: StrandPalette.zone4, streak: h.strainStreak,

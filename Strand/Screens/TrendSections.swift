@@ -428,12 +428,14 @@ private let trendCardColumns = [GridItem(.adaptive(minimum: 320), spacing: NoopM
 /// Sleep over time: how long, how efficiently, and how the stages split.
 struct SleepTrendsView: View {
     @EnvironmentObject var repo: Repository
-    var body: some View { SleepTrendsContent(days: repo.days, loaded: repo.loaded) }
+    var body: some View { SleepTrendsContent(days: repo.days, loaded: repo.loaded, noopDays: Array(repo.estimates.values)) }
 }
 
 struct SleepTrendsContent: View {
     let days: [DailyMetric]
     let loaded: Bool
+    /// NOOP's own computed rows only: the source of NOOP sleep performance (never imported need or score).
+    var noopDays: [DailyMetric] = []
     @State private var range: TrendRange = .month
 
     private static func hoursText(_ hours: Double) -> String { DayMath.hm(hours * 60) }
@@ -476,6 +478,10 @@ struct SleepTrendsContent: View {
                 TrendLineCard(title: "Time asleep", unit: "", series: duration, gradient: TrendWindow.gradient(StrandPalette.sleepLight),
                               valueRange: TrendWindow.valueRange(duration.points, fallback: 4...10), format: Self.hoursText, note: "hours")
                 LazyVGrid(columns: trendCardColumns, alignment: .leading, spacing: NoopMetrics.gap) {
+                    let perf = TrendWindow.resolve(SleepPerformance.series(noopDays).compactMap { p in
+                        TrendWindow.date(p.day).map { TrendPoint(date: $0, value: p.value) } }, range: range, anchor: anchor)
+                    TrendLineCard(title: "Sleep performance", unit: "%", series: perf, gradient: TrendWindow.gradient(StrandPalette.sleepLight),
+                                  valueRange: 0...100, note: "NOOP estimate · hours vs estimated need")
                     TrendLineCard(title: "Sleep efficiency", unit: "%", series: efficiency, gradient: TrendWindow.gradient(StrandPalette.statusPositive),
                                   valueRange: TrendWindow.valueRange(efficiency.points, fallback: 60...100))
                     TrendCard(title: "Sleep stages", caption: stages.caption, value: stages.totalText, valueLabel: "staged, average",
