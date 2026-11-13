@@ -23,13 +23,15 @@ public enum AlarmHistoryKind {
     public static let host = "host"
     /// Periodic summary of live HR evidence during the wake window (diagnostic; not proof of a stage or of waking).
     public static let evidence = "evidence"
+    /// The wearer skipped an occurrence before it rang because they were already awake (explicit user action).
+    public static let skipped = "skipped"
 }
 
 /// One occurrence as the history tells it.
 public struct AlarmOccurrenceSummary: Equatable, Sendable, Identifiable {
     public enum Status: String, Equatable, Sendable {
         case scheduled, ringingOnMac, buzzRequested, strapReportedVibration, strapAlarmRang, dismissedOnStrap,
-             dismissedInApp, deliveryUnconfirmed, failed, missed
+             dismissedInApp, deliveryUnconfirmed, failed, missed, skippedAwake
         public var label: String {
             switch self {
             case .scheduled: return "Scheduled"
@@ -42,6 +44,7 @@ public struct AlarmOccurrenceSummary: Equatable, Sendable, Identifiable {
             case .deliveryUnconfirmed: return "Delivery unconfirmed"
             case .failed: return "Delivery failed"
             case .missed: return "Missed (NOOP not running)"
+            case .skippedAwake: return "Skipped — already awake"
             }
         }
     }
@@ -69,9 +72,12 @@ public struct AlarmOccurrenceSummary: Equatable, Sendable, Identifiable {
     public var hostNotes: [String] = []
     /// Newest live-HR summary in the window: samples in the last 5 min (nil = none recorded).
     public var liveSamples: Int?
+    /// When the wearer skipped this occurrence as already awake (before it rang), and why.
+    public var skippedAt: Date?
+    public var skipReason: String?
     public var status: Status = .scheduled
     /// The time the summary is sorted and shown by.
-    public var anchor: Date { decisionAt ?? deadline ?? .distantPast }
+    public var anchor: Date { decisionAt ?? skippedAt ?? deadline ?? .distantPast }
 }
 
 public enum AlarmHistory {
@@ -138,11 +144,16 @@ public enum AlarmHistory {
                 if let e = f["event"] as? String { s.hostNotes.append(e) }
             case AlarmHistoryKind.evidence:
                 s.liveSamples = (f["liveSamples"] as? NSNumber)?.intValue
+            case AlarmHistoryKind.skipped:
+                if s.skippedAt == nil { s.skippedAt = t; s.skipReason = f["reason"] as? String }
             default: break
             }
         }
         if s.dismissedAt != nil {
             s.status = s.dismissalSource == "strap" ? .dismissedOnStrap : .dismissedInApp
+        } else if s.skippedAt != nil {
+            // Skipped before it rang. A strap that still rang (unreachable when skipped) shows in the event trail.
+            s.status = .skippedAwake
         } else if outcome == "missed" {
             s.status = .missed
         } else if strapRang {
