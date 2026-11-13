@@ -40,6 +40,20 @@ Decision: `BiologicalAgeModel.version = nil`. The hero shows chronological age f
 - **Calendar:** day keys are local calendar days, so DST doesn't change day boundaries in this logic.
 - **Recompute:** the page reloads on `Repository.dataVersion` (sync and scoring), on daily-row changes (imports and rescoring) and when the day changes. The computation runs in a detached task, never in view bodies. Nothing is stored, so a model change can't leave stale results behind.
 
+### HRV position against the median (issue #17)
+
+- Before: the Recovery detail compared HRV with a 30-day **mean** and coloured any non-zero difference green/amber; its summary said "HRV below your norm" for a value 1 ms under that mean, while the Health page called the same value "within your range". Two rules disagreed.
+- Now one rule (`PersonalRangePosition`, StrandAnalytics) feeds the Health Monitor HRV tile/detail and the Recovery detail: personal range = `HealthMonitor.baseline` (median ± max(2 robust SD, 6 ms), ≥ 14 of 30 earlier nights, same source, causal). Within **one robust SD** of the median (floor 3 ms, half the range floor, for very steady histories) = "Typical for you"; one–two spreads = "Within your range, higher/lower than usual"; outside = above/below range. No population cut-offs; the 1-SD band is half the existing 2-SD range, not a new tuned threshold.
+- Stale, missing or < 14 prior nights: no position (building baseline / stale shown as before).
+
+### Nightly maximum HRV (issue #17)
+
+- Recovery detail only (not Overview): highest 5-min RMSSD among the selected night's main-sleep windows that pass `SleepVitalsCalculator`'s HRV gates (inside the session, past onset/waking edges, ≥ 90 % asleep and known state, beat coverage, ≥ 60 clean beats, ≥ 80 % surviving artifact rejection). Needs ≥ 6 valid windows; otherwise "Unavailable" with the reason. Recomputed from this Mac's raw RR, so imported nights show unavailable. It never replaces the nightly median used by recovery and baselines.
+- Eligible sleep interval: the NOOP **main sleep whose final wake falls on the selected day** (`Repository.mainSleepEpisodes`), resolved as a whole session — every episode sharing its session id, including a fragment that ended before midnight. Naps and uncertain episodes are never eligible. Two main sessions waking the same day: the longer one.
+- Source: always NOOP strap data. The tile is titled "Nightly maximum HRV (NOOP)" and its caption gives the time of the maximum, the main-sleep bounds (and the number of parts), the clean-window count and "not used for recovery"; when the recovery values beside it come from the WHOOP import it adds "(not from the WHOOP import)". An imported-only night is unavailable — no average is borrowed and no maximum invented.
+- Refresh: the lookup is keyed by day + `Repository.dataVersion` + shown source (`NightlyMaxHRVRequest`), so a late RR sync, rescoring, a sleep correction or a source change recomputes it while the detail stays open; a superseded lookup is cancelled and cannot overwrite the newer result; the previous value stays visible during a same-night refresh.
+- Tested (hosted `NightlyMaxHRVTests`, in-memory store, synthetic streams): maximum in a pre-midnight fragment, pre-midnight fragment counted toward the ≥ 6-window gate, imported-only and uncertain-only nights unavailable, late sync and a nap correction changing the result, request identity. The view-level cancellation guard is not unit-tested.
+
 Personal ranges describe the wearer's usual values. They are not clinical reference ranges or diagnoses.
 
 ## Stress Monitor — heart-rate activation timeline (implemented); stress score — **unavailable**

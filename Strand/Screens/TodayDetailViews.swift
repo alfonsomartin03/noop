@@ -139,23 +139,39 @@ struct DetailTile: View {
     var captionColor: Color = StrandPalette.textSecondary
     var tint: Color
     var spark: [Double]? = nil
+    /// Context lines under the caption that must stay readable in full (never truncated; they wrap).
+    var details: [String] = []
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title).font(.system(size: 12, weight: .semibold)).foregroundStyle(StrandPalette.textSecondary)
             WidgetValue(value, unit: unit, size: 28)
             if let caption {
-                Text(caption).font(.system(size: 11, weight: .medium)).foregroundStyle(captionColor).lineLimit(2)
+                Text(caption).font(.system(size: 11, weight: .medium)).foregroundStyle(captionColor)
+                    .lineLimit(details.isEmpty ? 2 : nil)
+                    .fixedSize(horizontal: false, vertical: !details.isEmpty)
+            }
+            if !details.isEmpty {
+                VStack(alignment: .leading, spacing: 2) {
+                    ForEach(details, id: \.self) { line in
+                        Text(line).font(.system(size: 11)).foregroundStyle(StrandPalette.textTertiary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
             }
             Spacer(minLength: 0)
-            if let spark, spark.count > 1 { WidgetSpark(spark, tint: tint).frame(height: 26) }
+            if let spark, spark.count > 1 { WidgetSpark(spark, tint: tint).frame(height: 26).accessibilityHidden(true) }
         }
         .padding(16)
         .frame(maxWidth: .infinity, minHeight: 128, alignment: .topLeading)
         .strandSurface(cornerRadius: 18)
         .overlay(alignment: .topTrailing) {
             Circle().fill(tint).frame(width: 8, height: 8).shadow(color: tint.opacity(0.8), radius: 4).padding(14)
+                .accessibilityHidden(true)
         }
+        // One VoiceOver element per tile, read in visual order: title, value + unit, caption, every detail line.
+        // The sparkline is decorative here (its values are the tile's history, already summarised by the caption).
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -192,10 +208,31 @@ private struct HeroCard<Content: View>: View {
 // MARK: - Recovery
 
 struct RecoveryDetailView: View {
+    @EnvironmentObject var repo: Repository
     let day: DailyMetric?
     let days: [DailyMetric]
     let official: Bool
     let back: () -> Void
+
+    @State private var maxHRV: Repository.NightlyMaxHRVResult?
+    /// The night `maxHRV` belongs to: a refresh of the same night keeps the shown value until the new one arrives.
+    @State private var maxHRVDay: String?
+
+    /// The shown HRV with the source it ACTUALLY came from and that source's history (field-level; issue #17 review: a day
+    /// with an imported recovery but no imported HRV shows NOOP's HRV and must be judged against NOOP's baseline).
+    private var dayKey: String { day?.day ?? "" }
+    private var hrvReading: Repository.FieldReading? { repo.fieldReading(day: dayKey) { $0.avgHrv } }
+    /// Skin temperature resolved the same way: imported = absolute wrist °C, NOOP = change from baseline. Never mixed.
+    private var tempReading: Repository.FieldReading? { repo.fieldReading(day: dayKey) { $0.skinTempDevC } }
+    /// Shared personal-baseline rule (`PersonalRangePosition`, same as the Health Monitor); nil while < 14 prior nights.
+    private func hrvPosition(_ d: DailyMetric?) -> (PersonalRangePosition, PersonalBaseline)? {
+        guard let d, let r = hrvReading else { return nil }
+        return PersonalRangePosition.assess(day: d.day, value: r.value, points: r.history, metric: .hrv)
+    }
+    /// Up to 14 values from one source only, ending at the shown night (no mixed-source sparklines).
+    private func spark(_ r: Repository.FieldReading?) -> [Double]? {
+        r.map { Array($0.history.filter { $0.day <= dayKey }.map(\.value).suffix(14)) }
+    }
 
     var body: some View {
         let d = day
@@ -225,10 +262,11 @@ struct RecoveryDetailView: View {
                 }
             }
             DetailGrid {
-                let hrv = versus(d?.avgHrv, DayMath.baseline(days, before: key) { $0.avgHrv }, unit: "ms", higherIsBetter: true)
+                let hrv = hrvCaption(d)
                 DetailTile(title: "Heart rate variability", value: d?.avgHrv.map { "\(Int($0.rounded()))" }, unit: "ms",
-                         caption: hrv?.0, captionColor: hrv?.1 ?? StrandPalette.textSecondary, tint: StrandPalette.metricPurple,
-                         spark: DayMath.series(days, upTo: key) { $0.avgHrv })
+                         caption: hrv.0, captionColor: hrv.1, tint: StrandPalette.metricPurple, spark: spark(hrvReading))
+                DetailTile(title: "Nightly maximum HRV (NOOP)", value: maxHRVValue, unit: maxHRVValue == nil ? nil : "ms",
+                         caption: maxHRVCaption, tint: StrandPalette.metricPurple, details: maxHRVDetails)
                 let rhr = versus(d?.restingHr.map(Double.init), DayMath.baseline(days, before: key) { $0.restingHr.map(Double.init) },
                                  unit: "bpm", higherIsBetter: false)
                 DetailTile(title: "Resting heart rate", value: d?.restingHr.map(String.init), unit: "bpm",
@@ -242,24 +280,94 @@ struct RecoveryDetailView: View {
                 DetailTile(title: "Blood oxygen", value: d?.spo2Pct.map { String(format: "%.0f", $0) }, unit: "%",
                          caption: d?.spo2Pct == nil ? "Not reported for this night" : "Average during sleep",
                          tint: StrandPalette.metricCyan, spark: DayMath.series(days, upTo: key) { $0.spo2Pct })
-                DetailTile(title: "Skin temperature", value: d?.skinTempDevC.map { String(format: "%+.1f", $0) }, unit: "°C",
-                         caption: d?.skinTempDevC == nil ? "Not reported for this night" : "Deviation from your baseline",
-                         tint: StrandPalette.metricAmber, spark: DayMath.series(days, upTo: key) { $0.skinTempDevC })
+                // WHOOP's export is absolute wrist °C; NOOP stores a change from baseline. Never show one as the other.
+                // The field's own source picks unit style and label; an unresolvable source shows no value rather than a guess.
+                let temp = tempReading
+                DetailTile(title: "Skin temperature",
+                         value: temp.map { String(format: $0.source == .imported ? "%.1f" : "%+.1f", $0.value) }, unit: temp == nil ? nil : "°C",
+                         caption: temp == nil ? (d?.skinTempDevC == nil ? "Not reported for this night" : "Unavailable: source of this value is unknown")
+                             : temp!.source == .imported ? "Wrist temperature (WHOOP import)" : "Change from your baseline (NOOP)",
+                         tint: StrandPalette.metricAmber, spark: spark(temp))
                 DetailTile(title: "Sleep", value: d?.totalSleepMin.map { DayMath.hm($0) },
                          caption: d?.efficiency.map { String(format: "%.0f%% efficiency", $0) } ?? "No sleep recorded",
                          tint: StrandPalette.sleepLight, spark: DayMath.series(days, upTo: key) { $0.totalSleepMin })
             }
         }
+        // Re-run when the night, the stored data (late sync, rescoring, corrected sleep) or the shown source changes.
+        // SwiftUI cancels the superseded task; a cancelled lookup never overwrites the newer result.
+        .task(id: Repository.NightlyMaxHRVRequest(day: key, dataVersion: repo.dataVersion, showingImport: official)) {
+            if maxHRVDay != key { maxHRV = nil }
+            let result: Repository.NightlyMaxHRVResult = key.isEmpty ? .unavailable("No night selected")
+                : await repo.nightlyMaxHRV(day: key, showingImport: official)
+            guard !Task.isCancelled else { return }
+            maxHRV = result
+            maxHRVDay = key
+        }
+    }
+
+    /// Median-centred reading: within one robust spread of your median is "typical", not "below your norm".
+    private func hrvCaption(_ d: DailyMetric?) -> (String?, Color) {
+        guard d?.avgHrv != nil else { return (nil, StrandPalette.textSecondary) }
+        // A value whose source can't be resolved gets no interpretation (never judged against the wrong baseline).
+        guard let r = hrvReading else { return ("No personal-range reading: source of this value is unknown", StrandPalette.textSecondary) }
+        let from = r.source == .imported ? "WHOOP import" : "NOOP"
+        guard let (pos, b) = hrvPosition(d) else { return ("\(from) · building your personal range (14 earlier nights needed)", StrandPalette.textSecondary) }
+        let text = "\(pos.label) · \(from) median \(Int(b.median.rounded())) ms, range \(Int(b.low.rounded()))–\(Int(b.high.rounded()))"
+        let color: Color = switch pos {
+        case .typical: StrandPalette.statusPositiveInk
+        case .higherThanUsual, .lowerThanUsual: StrandPalette.textSecondary
+        case .aboveRange, .belowRange: StrandPalette.statusWarningInk
+        }
+        return (text, color)
+    }
+
+    private var maxHRVValue: String? {
+        if case .value(let n) = maxHRV { return "\(Int(n.max.rmssd.rounded()))" }
+        return nil
+    }
+    /// Short, always-visible summary: whose data it is and that recovery does not use it.
+    private var maxHRVCaption: String {
+        switch maxHRV {
+        case nil: return "Calculating…"
+        case .value?:
+            // Always NOOP's own strap data, whichever source the recovery values beside it come from.
+            return official ? "NOOP strap data, not the WHOOP import · not used for recovery"
+                : "NOOP strap data · not used for recovery"
+        case .unavailable?: return "Unavailable for this night"
+        }
+    }
+
+    /// Eligible-night context, one fact per line so none is cut off at narrow tile widths.
+    private var maxHRVDetails: [String] {
+        if case .unavailable(let why)? = maxHRV { return [why] }
+        guard case .value(let n)? = maxHRV else { return [] }
+        let sleep = "\(DayMath.clock(n.sleepStart))–\(DayMath.clock(n.sleepEnd))" + (n.fragments > 1 ? " in \(n.fragments) parts" : "")
+        return MaxHRVCaption.details(windowStart: DayMath.clock(n.max.windowStart), sleep: sleep, validWindows: n.max.validWindows)
     }
 
     private func summary(_ d: DailyMetric?) -> String {
         guard let d, let r = d.recovery else { return "No recovery score for this day yet. Wear the strap overnight or import your WHOOP export." }
         let lead = r >= 67 ? "Your body is well recovered" : r >= 34 ? "Recovery is moderate" : "Recovery is low"
         var tail = ""
-        if let h = d.avgHrv, let b = DayMath.baseline(days, before: d.day, { $0.avgHrv }) {
-            tail = h >= b ? ", with HRV at or above your norm." : ", with HRV below your norm."
+        if let (pos, _) = hrvPosition(d) {
+            tail = switch pos {
+            case .typical: ", with HRV typical for you."
+            case .higherThanUsual: ", with HRV within your range and higher than usual."
+            case .lowerThanUsual: ", with HRV within your range but lower than usual."
+            case .aboveRange: ", with HRV above your usual range."
+            case .belowRange: ", with HRV below your usual range."
+            }
         } else { tail = "." }
         return lead + tail
+    }
+}
+
+/// Detail lines for the nightly maximum HRV tile (pure, so the wording is testable).
+enum MaxHRVCaption {
+    static func details(windowStart: String, sleep: String, validWindows: Int) -> [String] {
+        ["Highest 5-min RMSSD at \(windowStart)",
+         "Main sleep \(sleep)",
+         "\(validWindows) clean \(validWindows == 1 ? "window" : "windows")"]
     }
 }
 
