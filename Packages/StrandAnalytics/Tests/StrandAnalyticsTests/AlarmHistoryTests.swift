@@ -22,6 +22,18 @@ final class AlarmHistoryTests: XCTestCase {
         XCTAssertEqual(s.deadline, Date(timeIntervalSince1970: 100)); XCTAssertEqual(s.policyVersion, "v2")
     }
 
+    func testSkippedAsAwakeIsItsOwnStatus() {
+        let rows = [row(AlarmHistoryKind.scheduled, 1, ["alarmId": "a", "deadline": 100.0]),
+                    row(AlarmHistoryKind.skipped, 20, ["reason": "alreadyAwake", "phase": "beforeWindow"])]
+        let s = AlarmHistory.summarize(rows).first!
+        XCTAssertEqual(s.status, .skippedAwake)
+        XCTAssertEqual(s.skipReason, "alreadyAwake")
+        XCTAssertEqual(s.anchor, Date(timeIntervalSince1970: 20))
+        // A stored strap alarm that still rang (strap offline at skip time) doesn't hide the skip.
+        let rang = rows + [row(AlarmHistoryKind.strapEvent, 100, ["event": "STRAP_DRIVEN_ALARM_EXECUTED"], prov: "live")]
+        XCTAssertEqual(AlarmHistory.summarize(rang).first?.status, .skippedAwake)
+    }
+
     func testUnattributedEventsAreNotGuessedIntoAnOccurrence() {
         let rows = [row(AlarmHistoryKind.scheduled, 1, ["deadline": 100.0]),
                     row(AlarmHistoryKind.strapEvent, 52, ["event": "HAPTICS_FIRED"], occ: nil, prov: "history")]

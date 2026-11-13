@@ -101,6 +101,22 @@ private struct AlarmsContent: View {
                     Button("I'm awake") { alarms.dismissPendingFallback() }.buttonStyle(.strandPrimary)
                 }
                 .padding(.top, 8)
+            } else if let n = alarms.next {
+                // Already up before the alarm: skip just this occurrence; the schedule stays as it is.
+                TimelineView(.periodic(from: .now, by: 30)) { ctx in
+                    if alarms.canSkipNext(at: ctx.date) {
+                        HStack(spacing: 10) {
+                            Text("Already up? Skip the \(n.deadline.formatted(date: .omitted, time: .shortened)) alarm. "
+                                 + "Your next alarms stay on.")
+                                .font(.system(size: 12, design: .rounded)).foregroundStyle(StrandPalette.textSecondary)
+                            Spacer()
+                            Button("I'm awake — skip") { alarms.skipNextAsAwake() }
+                                .buttonStyle(.strandSecondary)
+                                .accessibilityHint("Skips only this occurrence; the alarm stays scheduled for its next day")
+                        }
+                        .padding(.top, 8)
+                    }
+                }
             }
         }
     }
