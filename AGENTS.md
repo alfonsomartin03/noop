@@ -323,6 +323,8 @@ Format: `file` — purpose. Tests list `Suite(methods)`. Fixtures/resources are 
 
 - 2026-11-13 #16 publication validation after merging origin/main: PASS app build + hosted 60; focused package regressions 9 pass; Python evaluator 5 pass. Diff/index checks clean. Feature-specific live pilot smoke remains pending. Published as a draft pilot candidate; original issue stays open for the recorded validation follow-ups. No hardware/accuracy claim.
 
+- 2026-11-13 PR #22 integration review: resolved merge conflicts while preserving prior pilot features; app build and hosted suite PASS (Executed 69 tests, with 0 failures (0 unexpected) in 2.845 (2.866) seconds). Local automated validation only; remaining manual/hardware/accuracy checks are not implied. User requested merge and issue closure at pilot scope.
+
 Index check (run after file changes; expects no output):
 
 ```sh
@@ -354,6 +356,7 @@ git ls-files --cached --others --exclude-standard | grep -v -e '^AGENTS.md$' -e 
 
 | Date | Change | Checks / remaining |
 | --- | --- | --- |
+| 2026-11-13 | PR #22 integration review, merge-conflict reconciliation; issue #17 accepted for experimental pilot. | App build + hosted suite pass; broad manual/hardware/accuracy work remains unverified. |
 | 2026-11-13 | #17 pilot publication: integrate main, reconcile reference and review implemented fixes. | Build + hosted 64 + focused 19 pass; live pilot gate incomplete; draft PR, issue remains open. |
 | 2026-11-13 | #17 review P2: Recovery HRV and skin temperature resolved per field (`Repository.fieldReading`), so a NOOP value on a partially imported day uses NOOP's baseline/label; single-source sparklines. | Hosted 53 (new FieldProvenanceTests 2) + build pass; pilot smoke not run. |
 | 2026-11-13 | #17 completion guide: fixture-table regression test (alternating 45/55 and flat 60 ms cases); Recovery `DetailTile` is one VoiceOver element. | StrandAnalytics PersonalRangePosition 8 + hosted 51 + build pass; live/keyboard/VoiceOver/Reduce Motion pass not run. |
@@ -361,4 +364,3 @@ git ls-files --cached --others --exclude-standard | grep -v -e '^AGENTS.md$' -e 
 | 2026-11-13 | #17 review: nightly max HRV selects the whole main sleep by final wake date/session, is labelled NOOP with sleep bounds, refreshes on data/source change; `Repository(deviceId:store:)` for tests. | Hosted 50 + build pass; new caption not visually checked; no accessibility pass. |
 | 2026-11-13 | #17 review: Recovery skin-temp tile no longer shows imported absolute °C as a deviation; shorter max-HRV caption (was truncated). Visual check on a DB copy. | Hosted 44 PASS; visually checked (see §8); no VoiceOver pass. |
 | 2026-11-13 | #15 review: wake notifications get occurrence-scoped ids, are withdrawn on dismissal/skip/edit/delete, and submission races are suppressed/withdrawn (`withdrawn`). | Fresh hosted 55 + alarm analytics 32 + build pass; diff/index clean. No real-notification, narrow/light visual or hardware pass. |
-| 2026-11-13 | #16 pilot publication: integrate main, reconcile reference and review implemented fixes. | Build + hosted 60 + focused 9 pass; Python 5 pass; live pilot gate incomplete; draft PR, issue remains open. |
