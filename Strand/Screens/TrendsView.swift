@@ -17,7 +17,9 @@ struct TrendsView: View {
 
     typealias Range = TrendRange
 
-    @State private var range: Range = .quarter
+    @State private var range: Range
+
+    init(initialRange: TrendRange = .quarter) { _range = State(initialValue: initialRange) }
 
     /// Windows are relative to the LATEST day with data and auto-expand when the chosen range is empty.
     private var latestDay: Date? { repo.days.last.flatMap { TrendWindow.date($0.day) } }
@@ -98,7 +100,8 @@ struct TrendsView: View {
                            valueRange: 0...100,
                            showsArea: true,
                            height: NoopMetrics.chartHeight,
-                           style: .soft)
+                           style: .soft,
+                           maxGap: TrendWindow.dailyGap)
             } else {
                 TrendEmptyChart(count: recovery.points.count)
             }
@@ -138,8 +141,11 @@ struct TrendsView: View {
         // Always show at least a full year for context; expand to all history on ALL.
         let stripDays = max(range.days ?? repo.days.count, 365)
         let recent = repo.days.suffix(stripDays)
+        // Local midnight of each day key: the strip lays out weekdays (and formats hovers) on the local calendar, and
+        // a UTC-midnight date put every day on the previous weekday's row west of UTC.
         let recoveryDays: [RecoveryDay] = recent.compactMap { d in
-            guard let dt = TrendWindow.date(d.day) else { return nil }
+            let p = d.day.split(separator: "-").compactMap { Int($0) }
+            guard p.count == 3, let dt = Calendar.current.date(from: DateComponents(year: p[0], month: p[1], day: p[2])) else { return nil }
             return RecoveryDay(date: dt, score: d.recovery)
         }
         let title = (range == .all && repo.days.count > 365) ? "Recovery — all history" : "Recovery — past year"

@@ -143,6 +143,7 @@ struct WorkoutDetailView: View {
             HStack(spacing: 6) {
                 Text(label?.name ?? workout.sport).font(.system(size: 22, weight: .bold))
                     .foregroundStyle(StrandPalette.textPrimary)
+                    .lineLimit(2).truncationMode(.tail).multilineTextAlignment(.leading)
                 Image(systemName: "chevron.up.chevron.down").font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(StrandPalette.textTertiary)
                 if let source = labelSource {
@@ -151,8 +152,12 @@ struct WorkoutDetailView: View {
             }
         }
         .menuStyle(.borderlessButton)
-        .fixedSize()
+        // Width follows the sheet: a full `.fixedSize()` let a long imported label ("Functional Fitness / High-Intensity
+        // Interval Training (Outdoor, Coached)") widen the header past a 760 pt window and clip every card's left edge.
+        .fixedSize(horizontal: false, vertical: true)
+        .help(label?.name ?? workout.sport)
         .accessibilityLabel("Activity type")
+        .accessibilityValue(label?.name ?? workout.sport)
     }
 
     private var labelSource: String? {

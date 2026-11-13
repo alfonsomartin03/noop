@@ -42,6 +42,9 @@ public struct TrendChart: View {
     /// Formats a point's date for the tooltip's secondary line.
     public var dateFormat: (Date) -> String
     public var style: Style
+    /// Points further apart than this start a new line segment, so missing days stay missing instead of being bridged
+    /// by an interpolated line (nil = always connect, for continuous series).
+    public var maxGap: TimeInterval?
 
     public init(
         points: [TrendPoint],
@@ -52,7 +55,8 @@ public struct TrendChart: View {
         showsHover: Bool = true,
         valueFormat: @escaping (Double) -> String = { String(Int($0.rounded())) },
         dateFormat: @escaping (Date) -> String = { TrendChart.defaultDateString($0) },
-        style: Style = .standard
+        style: Style = .standard,
+        maxGap: TimeInterval? = nil
     ) {
         self.points = points.sorted { $0.date < $1.date }
         self.gradient = gradient
@@ -63,6 +67,34 @@ public struct TrendChart: View {
         self.valueFormat = valueFormat
         self.dateFormat = dateFormat
         self.style = style
+        self.maxGap = maxGap
+        self.runs = Self.runs(self.points, maxGap: maxGap)
+    }
+
+    /// Run index per point (same order as `points`): consecutive points closer than `maxGap` share a run.
+    private let runs: [Int]
+
+    /// Splits a date-sorted series wherever the step exceeds `maxGap`.
+    public static func runs(_ points: [TrendPoint], maxGap: TimeInterval?) -> [Int] {
+        var out: [Int] = []
+        var run = 0
+        for (i, p) in points.enumerated() {
+            if i > 0, let g = maxGap, p.date.timeIntervalSince(points[i - 1].date) > g { run += 1 }
+            out.append(run)
+        }
+        return out
+    }
+    /// Runs with enough points to fill under: a 2-point run's fill reads as a vertical stripe, so with gap breaks
+    /// only runs of ≥ 3 points are filled (lines and dots still show every reading).
+    private var areaRuns: Set<Int> {
+        guard maxGap != nil else { return Set(runs) }
+        return Set(Dictionary(grouping: runs, by: { $0 }).filter { $0.value.count >= 3 }.keys)
+    }
+    /// Points that have no neighbour in their run: drawn as dots, since a line needs two.
+    private var isolated: [TrendPoint] {
+        points.indices.filter { i in
+            (i == 0 || runs[i - 1] != runs[i]) && (i == points.count - 1 || runs[i + 1] != runs[i])
+        }.map { points[$0] }
     }
 
     /// The x-position the cursor is hovering, in chart-local coordinates.
@@ -111,10 +143,14 @@ public struct TrendChart: View {
     public var body: some View {
         Chart {
             if showsArea {
-                ForEach(points) { p in
+                ForEach(Array(points.enumerated()).filter { areaRuns.contains(runs[$0.offset]) }, id: \.element.id) { i, p in
+                    // From the bottom of the value domain, not zero: a zero baseline under a 20–70 domain drew the
+                    // fill below the plot, behind the date labels.
                     AreaMark(
                         x: .value("Date", p.date),
-                        y: .value("Value", p.value)
+                        yStart: .value("Base", valueRange.lowerBound),
+                        yEnd: .value("Value", p.value),
+                        series: .value("Run", runs[i])
                     )
                     .interpolationMethod(interpolation)
                     .foregroundStyle(
@@ -129,16 +165,22 @@ public struct TrendChart: View {
                     )
                 }
             }
-            ForEach(points) { p in
+            ForEach(Array(points.enumerated()), id: \.element.id) { i, p in
                 LineMark(
                     x: .value("Date", p.date),
-                    y: .value("Value", p.value)
+                    y: .value("Value", p.value),
+                    series: .value("Run", runs[i])
                 )
                 .interpolationMethod(interpolation)
                 .lineStyle(StrokeStyle(lineWidth: soft ? 3.5 : 2.5, lineCap: .round, lineJoin: .round))
                 .foregroundStyle(valueGradient)
             }
             if soft {
+                // A reading with no neighbour within `maxGap` has no line through it: show it as a dot.
+                ForEach(isolated) { p in
+                    PointMark(x: .value("Date", p.date), y: .value("Value", p.value))
+                        .symbolSize(22).foregroundStyle(StrandPalette.sample(stops: gradient.toStops(), at: unit(p.value)))
+                }
                 // One bubble on the latest reading: a soft halo with a white-rimmed dot inside.
                 if let last = points.last {
                     let color = StrandPalette.sample(stops: gradient.toStops(), at: unit(last.value))
@@ -165,13 +207,34 @@ public struct TrendChart: View {
         // draw past the plot area and across the page. Inset, then clip to the plot frame.
         .chartPlotStyle { $0.padding(.vertical, soft ? 10 : 5).padding(.horizontal, soft ? 10 : 6).clipped() }
         .chartXAxis {
-            // Aligned, so the first and last dates stay inside the plot instead of truncating at its edge.
-            AxisMarks(preset: .aligned, values: .automatic(desiredCount: 5)) { _ in
-                AxisGridLine(stroke: gridStroke).foregroundStyle(StrandPalette.hairline.opacity(soft ? 0.6 : 0.4))
-                AxisValueLabel().foregroundStyle(StrandPalette.textTertiary)
-                    .font(axisFont)
+            if let ticks = Self.dayTicks(points) {
+                // A few daily readings: one tick per day. Automatic ticks subdivide a 1–5 day span into hours, which a
+                // daily series doesn't have (and the hour labels collide).
+                AxisMarks(preset: .aligned, values: ticks) { v in
+                    AxisGridLine(stroke: gridStroke).foregroundStyle(StrandPalette.hairline.opacity(soft ? 0.6 : 0.4))
+                    AxisValueLabel { if let d = v.as(Date.self) { Text(Self.dayAxisLabel(d)) } }
+                        .foregroundStyle(StrandPalette.textTertiary).font(axisFont)
+                }
+            } else if Self.spansYears(points) {
+                // Many months of daily data: "Dec '25", not the automatic "Dec 2025", whose labels ran into each other
+                // in the narrow three-up cards.
+                AxisMarks(preset: .aligned, values: .automatic(desiredCount: 4)) { v in
+                    AxisGridLine(stroke: gridStroke).foregroundStyle(StrandPalette.hairline.opacity(soft ? 0.6 : 0.4))
+                    AxisValueLabel { if let d = v.as(Date.self) { Text(Self.monthYearAxisLabel(d)) } }
+                        .foregroundStyle(StrandPalette.textTertiary).font(axisFont)
+                }
+            } else {
+                // Aligned, so the first and last dates stay inside the plot instead of truncating at its edge.
+                AxisMarks(preset: .aligned, values: .automatic(desiredCount: 5)) { _ in
+                    AxisGridLine(stroke: gridStroke).foregroundStyle(StrandPalette.hairline.opacity(soft ? 0.6 : 0.4))
+                    AxisValueLabel().foregroundStyle(StrandPalette.textTertiary)
+                        .font(axisFont)
+                }
             }
         }
+        // Daily series are keyed by UTC midnights: lay out and label the axis in UTC so a day never shows as the
+        // evening before (west of UTC) or the next morning.
+        .environment(\.timeZone, Self.isDailyUTC(points) ? Self.utc : TimeZone.current)
         .chartYAxis {
             AxisMarks(position: .leading, values: .automatic(desiredCount: 4)) { _ in
                 AxisGridLine(stroke: gridStroke).foregroundStyle(StrandPalette.hairline.opacity(soft ? 0.6 : 0.4))
@@ -205,7 +268,7 @@ public struct TrendChart: View {
                             container: geo.size,
                             tooltip: ChartTooltip(
                                 value: valueFormat(p.value),
-                                label: dateFormat(p.date),
+                                label: Self.isDailyUTC(points) ? Self.tooltipLabel(p.date, daily: true) : dateFormat(p.date),
                                 accent: color
                             )
                         )
@@ -223,6 +286,45 @@ public struct TrendChart: View {
             }
         }
         .frame(height: height)
+    }
+
+    // MARK: Daily (UTC-midnight) series
+
+    static let utc = TimeZone(identifier: "UTC")!
+
+    /// True when every point sits on a UTC midnight — how Trends keys one value per calendar day.
+    public static func isDailyUTC(_ points: [TrendPoint]) -> Bool {
+        !points.isEmpty && points.allSatisfy { $0.date.timeIntervalSince1970.truncatingRemainder(dividingBy: 86_400) == 0 }
+    }
+
+    /// One tick per plotted day when a daily series spans at most `maxDays` days; nil = let the chart choose.
+    public static func dayTicks(_ points: [TrendPoint], maxDays: Int = 5) -> [Date]? {
+        guard isDailyUTC(points), let first = points.map(\.date).min(), let last = points.map(\.date).max() else { return nil }
+        let span = Int(last.timeIntervalSince(first) / 86_400)
+        guard span < maxDays else { return nil }
+        return (0...span).map { first.addingTimeInterval(Double($0) * 86_400) }
+    }
+
+    /// A daily series long enough that the automatic axis labels carry a year (about ten months and up).
+    public static func spansYears(_ points: [TrendPoint]) -> Bool {
+        guard isDailyUTC(points), let first = points.map(\.date).min(), let last = points.map(\.date).max() else { return false }
+        return last.timeIntervalSince(first) >= 300 * 86_400
+    }
+    private static let monthYearFormatter: DateFormatter = {
+        let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX"); f.dateFormat = "MMM ''yy"; f.timeZone = utc; return f
+    }()
+    public static func monthYearAxisLabel(_ date: Date) -> String { monthYearFormatter.string(from: date) }
+
+    private static let dayAxisFormatter: DateFormatter = {
+        let f = DateFormatter(); f.setLocalizedDateFormatFromTemplate("MMM d"); f.timeZone = utc; return f
+    }()
+    private static let dailyTooltipFormatter: DateFormatter = {
+        let f = DateFormatter(); f.dateFormat = "EEE d MMM"; f.timeZone = utc; return f
+    }()
+    public static func dayAxisLabel(_ date: Date) -> String { dayAxisFormatter.string(from: date) }
+    /// Tooltip date for a point of this series: the stored calendar day for daily series, local time otherwise.
+    public static func tooltipLabel(_ date: Date, daily: Bool) -> String {
+        (daily ? dailyTooltipFormatter : sharedDateFormatter).string(from: date)
     }
 
     private var averageValue: Double {

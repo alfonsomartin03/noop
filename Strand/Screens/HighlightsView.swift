@@ -89,7 +89,8 @@ struct HighlightsContent: View {
 
     private var controls: some View {
         HStack(spacing: 12) {
-            SegmentedPillControl(HighlightRange.allCases, selection: $range, title: "Highlights range") { $0.rawValue }
+            SegmentedPillControl(HighlightRange.allCases, selection: $range, title: "Highlights range", appearance: .quiet,
+                                 spokenLabel: { $0 == .allTime ? "All time" : $0 == .month1 ? "1 month" : "3 months" }) { $0.rawValue }
             Spacer(minLength: 12)
             if available.count > 1 {
                 SegmentedPillControl(available, selection: Binding(get: { source }, set: { sourceRaw = $0.rawValue }),
@@ -272,7 +273,7 @@ private struct RecordOrb: View {
             .frame(width: 128, height: 128)
             if let r = record {
                 Text(HighlightsContent.dateLine(r)).font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
-                    .multilineTextAlignment(.center)
+                    .multilineTextAlignment(.center).lineLimit(3).fixedSize(horizontal: false, vertical: true)
                 Button("View day") { inspect(r) }.buttonStyle(.strandSecondary).controlSize(.small)
             } else {
                 Text(unavailable).font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
@@ -348,7 +349,7 @@ struct SupportingDay: Identifiable {
     var id: String { "\(source.rawValue)-\(day)-\(title)" }
 }
 
-private struct SupportingDaySheet: View {
+struct SupportingDaySheet: View {
     let item: SupportingDay
     @EnvironmentObject var repo: Repository
     @Environment(\.dismiss) private var dismiss
