@@ -18,6 +18,7 @@ struct HealthPageView: View {
         ScreenScaffold(title: "Health", subtitle: "Healthspan, vital signs and heart-rate activation, from your own data.", spacing: 28) {
             ConnectionStrip()
             AgeHero(profile: profile)
+            VO2MaxCard()
             monitor
             ActivationSection()
             Text("NOOP describes your measurements against your own history. Personal ranges aren't clinical normal ranges, and nothing here is a diagnosis. If you feel unwell, talk to a clinician.")
@@ -314,10 +315,7 @@ private struct ActivationSection: View {
 
     private var day: String { HighlightCalendar.addDays(Repository.dayString(Date()), -dayOffset) ?? Repository.dayString(Date()) }
 
-    private static let colors: [HRActivation.Level: Color] = [
-        .low: StrandPalette.statusPositive, .moderate: StrandPalette.metricAmber, .high: StrandPalette.statusCritical,
-        .sleep: StrandPalette.sleepDeep, .exercise: StrandPalette.accent, .noData: StrandPalette.surfaceInset,
-    ]
+    private static let colors = ActivationPalette.colors
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -412,22 +410,9 @@ private struct ActivationSection: View {
     private func load() async {
         loaded = false
         defer { loaded = true }
-        // Resting HR: NOOP's own latest scored night up to this day, else imported (labelled).
-        let noopRest = repo.estimates.values.filter { $0.day <= day && $0.restingHr != nil }.max { $0.day < $1.day }
-        let impRest = repo.official.values.filter { $0.day <= day && $0.restingHr != nil }.max { $0.day < $1.day }
-        if let r = noopRest?.restingHr { resting = (Double(r), "NOOP, night of \(HighlightsContent.long(noopRest!.day))") }
-        else if let r = impRest?.restingHr { resting = (Double(r), "WHOOP import, night of \(HighlightsContent.long(impRest!.day))") }
-        else { resting = nil; bins = []; return }
-        guard let range = ZoneTimeline.shared.dayRange(day) else { bins = []; return }
-        dayLength = range.to - range.from
-        let end = min(range.to, Int(Date().timeIntervalSince1970))
-        let hr = await repo.hrSamples(from: range.from, to: end, limit: 200_000)
-        let sleeps = await repo.noopSleepEpisodes(from: range.from, to: end).map { ($0.startTs, $0.endTs) }
-        let workouts = await repo.workoutRows().filter { $0.endTs > range.from && $0.startTs < end }.map { ($0.startTs, $0.endTs) }
-        let rest = resting!.bpm, maxHR = Double(profile.hrMax)
-        let samples = hr.map { (ts: $0.ts, bpm: $0.bpm) }
-        bins = await Task.detached(priority: .userInitiated) {
-            HRActivation.timeline(samples: samples, from: range.from, to: end, restingHR: rest, maxHR: maxHR, sleep: sleeps, workouts: workouts)
-        }.value
+        guard let l = await ActivationLoad.load(repo: repo, maxHR: profile.hrMax, day: day) else { resting = nil; bins = []; return }
+        resting = l.resting
+        dayLength = l.dayLength
+        bins = l.bins
     }
 }
