@@ -306,6 +306,8 @@ Format: `file` — purpose. Tests list `Suite(methods)`. Fixtures/resources are 
 
 - 2026-11-13 #15 pre-PR validation: PASS fresh hosted 55 incl. app build, alarm analytics 32 (AlarmHistory/AlarmDelivery/AlarmEngine/SmartWake), diff whitespace and file-index checks. Source unchanged across validation. Notification race blocker resolved; real notifications/strap and remaining visual cases remain unverified as above.
 
+- 2026-11-13 #16 publication validation after merging origin/main: PASS app build + hosted 60; focused package regressions 9 pass; Python evaluator 5 pass. Diff/index checks clean. Feature-specific live pilot smoke remains pending. Published as a draft pilot candidate; original issue stays open for the recorded validation follow-ups. No hardware/accuracy claim.
+
 Index check (run after file changes; expects no output):
 
 ```sh
@@ -337,6 +339,7 @@ git ls-files --cached --others --exclude-standard | grep -v -e '^AGENTS.md$' -e 
 
 | Date | Change | Checks / remaining |
 | --- | --- | --- |
+| 2026-11-13 | #16 pilot publication: integrate main, reconcile reference and review implemented fixes. | Build + hosted 60 + focused 9 pass; Python 5 pass; live pilot gate incomplete; draft PR, issue remains open. |
 | 2026-11-13 | #16 review P2: sleep↔cycle link uses the export's declared sleep (importer stores `sleep_onset_ts`/`wake_onset_ts`), not cycle-start timing; importer→store→pairing regression; VO₂ labelled experimental/unvalidated. | FitnessEstimates 9 + hosted 49 + probe build pass; re-import needed for old data; pilot smoke not run. |
 | 2026-11-13 | #16 recheck: NOOP-vs-WHOOP sleep evaluator pairs nights by sleep interval (`SleepPairing`; importer keys by cycle-start date), 4 comparisons incl. capped vs uncapped hours/need, warm-up vs stable; `perf_probe --sleepperf`. Docs: 7.84 MAE is not a lower bound; VO₂ protocol mismatch + reference packet. | FitnessEstimates 8 + perf_probe build pass; 0 interval-matched pairs on local data; VO₂ unvalidated; no accessibility pass. |
 | 2026-11-13 | #16 review: activation loader drops uncertain episodes; export evaluator joins both CSVs and reports eligibility; model sources/decision table + real-export held-out result documented. | Hosted 47, Python 5 pass; one private export evaluated; VO₂ unvalidated; accessibility pass not done. |
@@ -344,4 +347,3 @@ git ls-files --cached --others --exclude-standard | grep -v -e '^AGENTS.md$' -e 
 | 2026-11-12 | #16: VO₂max estimate (HR ratio) on Health; NOOP sleep performance in Trends ▸ Sleep + Highlights; activation strip in Overview HR card; export held-out eval tool. Biological age stays unavailable. | StrandAnalytics FitnessEstimates 5, Python 2, hosted 44 + build pass; not visually checked; eval tool not run on a real export; no VO₂ validation. |
 | 2026-11-12 | #15: skip the next alarm occurrence when already awake (manual, before first ring); strap slot moved/cleared, follow-ups cancelled, `skipped` history status. | Hosted 51 + StrandAnalytics AlarmHistory pass; not run on the strap; Alarms hero not visually checked. |
 | 2026-11-10 | Overview sync/processing strip made minimal: one line + 3 pt bar (`ThinProgressBar`), smaller surface radius; same progress semantics. | App build pass; not visually checked. |
-| 2026-11-09 | Commit pending feature/charging work; remove clean merged issue/1 worktree and local branch. Origin feature branches already deleted. | Diff/index checks; GitHub merge + local ancestry verified; tests not rerun. |
