@@ -28,8 +28,11 @@ enum AlarmNotificationOutcome: Equatable {
     case submitted(critical: Bool)
     case notAuthorized(String)
     case failed(String)
+    /// The occurrence was dismissed or skipped while the request was still being prepared: nothing was shown.
+    case withdrawn
     var historyValue: String {
         switch self {
+        case .withdrawn: return "withdrawn"
         case .submitted(let c): return c ? "submitted-critical" : "submitted"
         case .notAuthorized(let s): return "not-authorized:\(s)"
         case .failed(let e): return "failed:\(e)"
@@ -39,15 +42,20 @@ enum AlarmNotificationOutcome: Equatable {
 
 @MainActor
 protocol AlarmNotifying {
-    func postWake(title: String, body: String) async -> AlarmNotificationOutcome
+    /// Post one wake notification under a stable, occurrence-scoped `id`. `stillWanted` is asked again after every
+    /// suspension and right before submission; when it says no, nothing is submitted and the outcome is `.withdrawn`.
+    func postWake(id: String, title: String, body: String, stillWanted: @MainActor () -> Bool) async -> AlarmNotificationOutcome
+    /// Remove these notifications whether still pending or already delivered.
+    func withdraw(ids: [String])
 }
 
 /// macOS notifications. Checks authorization first and reports submission errors; critical sound only when the system
 /// says critical alerts are enabled for NOOP (they normally are not), otherwise the default sound.
 struct SystemAlarmNotifier: AlarmNotifying {
-    func postWake(title: String, body: String) async -> AlarmNotificationOutcome {
+    func postWake(id: String, title: String, body: String, stillWanted: @MainActor () -> Bool) async -> AlarmNotificationOutcome {
         let center = UNUserNotificationCenter.current()
         let settings = await center.notificationSettings()
+        guard stillWanted() else { return .withdrawn }   // dismissed while the system was answering
         switch settings.authorizationStatus {
         case .authorized, .provisional: break
         case .denied: return .notAuthorized("denied")
@@ -61,11 +69,17 @@ struct SystemAlarmNotifier: AlarmNotifying {
         c.sound = critical ? .defaultCritical : .default
         c.interruptionLevel = .timeSensitive
         do {
-            try await center.add(UNNotificationRequest(identifier: "noop.alarm.\(UUID().uuidString)", content: c, trigger: nil))
+            try await center.add(UNNotificationRequest(identifier: id, content: c, trigger: nil))
             return .submitted(critical: critical)
         } catch {
             return .failed(error.localizedDescription)
         }
+    }
+
+    func withdraw(ids: [String]) {
+        let center = UNUserNotificationCenter.current()
+        center.removePendingNotificationRequests(withIdentifiers: ids)
+        center.removeDeliveredNotifications(withIdentifiers: ids)
     }
 }
 
@@ -280,6 +294,7 @@ final class AlarmController: ObservableObject {
             if let d = delivery, d.occurrenceId == f.key { var c = d; let a = c.cancel(); delivery = c; apply(a, for: c); delivery = nil }
             followUp = nil
             persist()
+            withdrawNotifications(for: f.key)
             return
         }
         guard let o = next, fallbackPending else { return }
@@ -287,6 +302,105 @@ final class AlarmController: ObservableObject {
         record(AlarmHistoryKind.dismissal, key, ["source": "app"])
         _ = delivery?.cancel(); delivery = nil
         complete(o, key: key)
+        withdrawNotifications(for: key)
+    }
+
+    // MARK: Mac notifications (occurrence-scoped)
+
+    enum WakeNotice: Equatable { case early, deadline, followUp(Int) }
+
+    /// Stable identifier of one wake notification, so a dismissal can remove it even after a restart.
+    static func notificationId(_ key: String, _ n: WakeNotice) -> String {
+        switch n {
+        case .early: return "noop.alarm.\(key).early"
+        case .deadline: return "noop.alarm.\(key).deadline"
+        case .followUp(let i): return "noop.alarm.\(key).followup-\(i)"
+        }
+    }
+
+    static func notificationIds(for key: String) -> [String] {
+        [notificationId(key, .early), notificationId(key, .deadline)] + (1...maxFollowUps).map { notificationId(key, .followUp($0)) }
+    }
+
+    /// Whether a wake notification for this occurrence should still appear. An early wake is wanted until it is
+    /// dismissed or its deadline takes over; a deadline ring or follow-up only while the follow-up is still running.
+    private func noticeStillWanted(_ key: String, _ n: WakeNotice) -> Bool {
+        switch n {
+        case .early: return fallbackPending && next.map(Self.key) == key && !completed.contains(key)
+        case .deadline, .followUp: return followUp?.key == key
+        }
+    }
+
+    /// Submit one wake notification unless the occurrence is dismissed meanwhile. The check runs before the request,
+    /// inside the notifier after its suspension, and once more afterwards (a dismissal racing the submission removes
+    /// whatever was just shown).
+    private func postWake(_ key: String, _ n: WakeNotice, body: String, extra: [String: Any] = [:], noteFailure: Bool = false) {
+        let id = Self.notificationId(key, n)
+        Task { @MainActor in
+            var outcome: AlarmNotificationOutcome = .withdrawn
+            if self.noticeStillWanted(key, n) {
+                outcome = await self.notifier.postWake(id: id, title: "Time to wake up", body: body,
+                                                       stillWanted: { self.noticeStillWanted(key, n) })
+                if case .submitted = outcome, !self.noticeStillWanted(key, n) {
+                    self.notifier.withdraw(ids: [id])
+                    outcome = .withdrawn
+                }
+            }
+            var payload = extra
+            payload["outcome"] = outcome.historyValue
+            self.record(AlarmHistoryKind.notification, key, payload)
+            if noteFailure {
+                switch outcome {
+                case .submitted, .withdrawn: break
+                default: self.status = (self.status ?? "") + " · Mac notification not shown (\(outcome.historyValue))"
+                }
+            }
+        }
+    }
+
+    /// The occurrence was dismissed, skipped, edited or deleted: take its notifications off the screen and the queue.
+    private func withdrawNotifications(for key: String) {
+        notifier.withdraw(ids: Self.notificationIds(for: key))
+    }
+
+    /// How far ahead of its latest time an occurrence can be skipped as "already awake".
+    static let skipHorizon: TimeInterval = 12 * 3600
+
+    /// True when the next occurrence hasn't rung yet and is close enough to skip ("I'm already up").
+    /// Pending fallbacks and follow-ups use `dismissPendingFallback` instead (they already rang once).
+    func canSkipNext(at t: Date? = nil) -> Bool {
+        let t = t ?? now()
+        guard let o = next, followUp == nil, !fallbackPending, !completed.contains(Self.key(o)) else { return false }
+        if let d = delivery, d.occurrenceId == Self.key(o), d.isOpen { return false }   // it is ringing right now
+        return t < o.deadline && o.deadline.timeIntervalSince(t) <= Self.skipHorizon
+    }
+
+    /// The wearer says they are already up: finish the next occurrence before its first ring, without touching the
+    /// alarm's schedule. Cancels its strap deadline (re-armed for the following occurrence, or cleared), any Mac ring
+    /// and follow-up. Explicit user action only — no heart-rate rise or missing data ever skips an alarm.
+    func skipNextAsAwake() {
+        if followUp != nil || fallbackPending { dismissPendingFallback(); return }
+        guard canSkipNext(), let o = next else { return }
+        let key = Self.key(o)
+        let t = now()
+        let phase = t >= o.windowStart ? "inWindow" : "beforeWindow"
+        let strapHeld = armedKey == key || armedTargets[key] != nil || pendingArm?.key == key
+        if var d = delivery, d.occurrenceId == key { _ = d.cancel(); delivery = nil }
+        if pendingArm?.key == key { pendingArm = nil }
+        if armedKey == key { armedKey = nil }
+        let canReachStrap = link?.alarmLinkReady ?? false
+        if let spec = alarms.first(where: { $0.id == o.alarmId }) {
+            record(AlarmHistoryKind.scheduled, key, scheduledPayload(o, spec: spec), dedupe: "scheduled:\(key)")
+        }
+        record(AlarmHistoryKind.skipped, key, [
+            "reason": "alreadyAwake", "source": "app", "phase": phase,
+            "minutesBeforeDeadline": Int(o.deadline.timeIntervalSince(t) / 60),
+            "strapAlarmStored": strapHeld, "strapReachable": canReachStrap], dedupe: "skipped:\(key)")
+        complete(o, key: key)   // persists, reschedules: the strap slot moves to the next occurrence or is cleared
+        withdrawNotifications(for: key)
+        let time = o.deadline.formatted(date: .omitted, time: .shortened)
+        status = "Skipped the \(time) alarm — you're already up"
+            + (strapHeld && !canReachStrap ? ". The strap still holds it until it reconnects and may buzz at \(time)." : "")
     }
 
     /// The wearer's own note on an occurrence ("felt it", …), stored apart from device evidence.
@@ -446,6 +560,7 @@ final class AlarmController: ObservableObject {
                 if reason == 2 {
                     record(AlarmHistoryKind.dismissal, r.key, ["source": "strap"], at: t)
                     if followUp?.key == r.key { followUp = nil; persist() }
+                    withdrawNotifications(for: r.key)
                 }
                 lastStrapRing = nil
             } else if signal == .doubleTap, let r = lastStrapRing, t.timeIntervalSince(r.at) < 600, t >= r.at {
@@ -591,12 +706,6 @@ final class AlarmController: ObservableObject {
 
         let body = early ? "\(rec.reason). Your latest wake time is \(o.deadline.formatted(date: .omitted, time: .shortened))."
                          : "It's your wake-up time."
-        Task { @MainActor in
-            let outcome = await self.notifier.postWake(title: "Time to wake up", body: body)
-            self.record(AlarmHistoryKind.notification, key, ["outcome": outcome.historyValue])
-            if case .submitted = outcome {} else { self.status = (self.status ?? "") + " · Mac notification not shown (\(outcome.historyValue))" }
-        }
-
         if early {
             earlyAttempted.insert(key)
             fallbackPending = true
@@ -605,6 +714,7 @@ final class AlarmController: ObservableObject {
         } else {
             complete(o, key: key)
         }
+        postWake(key, early ? .early : .deadline, body: body, noteFailure: true)
     }
 
     /// Start a ring-now delivery (SET now+60 → RUN) where immediate vibration is verified. False when it couldn't go out.
@@ -649,11 +759,7 @@ final class AlarmController: ObservableObject {
         record(AlarmHistoryKind.followUp, f.key, ["action": "buzz", "attempt": f.attempts, "requested": requested,
                "detail": requested ? "Not dismissed yet: buzzing again" : "Not dismissed yet; strap not reachable",
                "storedAlarmReported": storedRang])
-        let key = f.key
-        Task { @MainActor in
-            let outcome = await self.notifier.postWake(title: "Time to wake up", body: "Your alarm hasn't been dismissed yet.")
-            self.record(AlarmHistoryKind.notification, key, ["outcome": outcome.historyValue, "followUp": f.attempts])
-        }
+        postWake(f.key, .followUp(f.attempts), body: "Your alarm hasn't been dismissed yet.", extra: ["followUp": f.attempts])
     }
 
     /// The deadline passed unseen: record it as missed (with what NOOP knows about why) and finish the occurrence.
@@ -715,6 +821,7 @@ final class AlarmController: ObservableObject {
                 record(AlarmHistoryKind.dismissal, key, ["source": source], at: at)
                 if followUp?.key == key { followUp = nil; persist() }
                 if let o = next, Self.key(o) == key, !completed.contains(key) { complete(o, key: key) }
+                withdrawNotifications(for: key)
             case .terminated(let reason, let at):
                 record(AlarmHistoryKind.deliveryOutcome, key, ["outcome": "terminated", "detail": "Haptics ended (reason \(reason.map(String.init) ?? "?")) without a dismissal"], at: at)
                 syncDeviceAlarm()   // not dismissed: put the deadline fallback back on the strap
@@ -758,6 +865,8 @@ final class AlarmController: ObservableObject {
             let a = d.cancel(); delivery = d; apply(a, for: d); delivery = nil
         }
         if let p = pendingArm, p.alarmId == alarmId { pendingArm = nil }
+        if let o = next, o.alarmId == alarmId { withdrawNotifications(for: Self.key(o)) }
+        if let f = followUp, f.key.hasPrefix(alarmId + "@") { withdrawNotifications(for: f.key) }
         if next?.alarmId == alarmId { endWindow(); decider = nil; buffer.reset() }
     }
 
