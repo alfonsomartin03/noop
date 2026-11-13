@@ -362,6 +362,10 @@ Format: `file` — purpose. Tests list `Suite(methods)`. Fixtures/resources are 
 
 - 2026-11-13 PR #23 integration review: resolved merge conflicts while preserving prior pilot features; app build and hosted suite PASS (Executed 80 tests, with 4 tests skipped and 0 failures (0 unexpected) in 3.690 (3.717) seconds). Local automated validation only; remaining manual/hardware/accuracy checks are not implied. User requested merge and issue closure at pilot scope.
 
+- 2026-11-13 final combined candidate (PRs #21–#24): PASS full StrandAnalytics 458, app build + hosted 80 (4 render skips), full StrandDesign 40 (2 snapshot skips; run after #23, unchanged by #24), Python sleep evaluator 5. No CI workflow or remote test check was used. Main protection API read-back verified. Manual/hardware/accuracy limits remain as recorded.
+
+- 2026-11-13 PR #24 integration review: resolved merge conflicts while preserving prior pilot features; app build and hosted suite PASS (Executed 80 tests, with 4 tests skipped and 0 failures (0 unexpected) in 3.627 (3.652) seconds). Full combined analytics/design/Python results recorded separately. Local automated validation only; remaining manual/hardware/accuracy checks are not implied. User requested merge and issue closure at pilot scope.
+
 Index check (run after file changes; expects no output):
 
 ```sh
@@ -393,6 +397,7 @@ git ls-files --cached --others --exclude-standard | grep -v -e '^AGENTS.md$' -e 
 
 | Date | Change | Checks / remaining |
 | --- | --- | --- |
+| 2026-11-13 | PR #24 integration review, merge-conflict reconciliation; issue #19 accepted for experimental pilot. | App build + hosted suite pass; broad manual/hardware/accuracy work remains unverified. |
 | 2026-11-13 | #19 pilot publication: integrate main, reconcile reference and review implemented fixes. | Build + hosted 55 + focused 71 pass; live pilot gate incomplete; draft PR, issue remains open. |
 | 2026-11-13 | #19 review: evaluator arrays in reference order + match identities; nap detection labelled experimental (with versions) in the sessions card. | DetectionEvaluation 7 + hosted 44 + build pass; pilot smoke not run. |
 | 2026-11-13 | #19 completion guide: `DetectionEvaluation` medians, duration error, Wilson intervals, duration strata; nap evaluation protocol + label schema in `NAP_DETECTION.md`. | StrandAnalytics full suite pass; no labelled data, so no accuracy result; app workflow not run. |
@@ -400,4 +405,3 @@ git ls-files --cached --others --exclude-standard | grep -v -e '^AGENTS.md$' -e 
 | 2026-11-13 | #19 real-data replay v1 vs v2 (29 days, private copy): identical; the one confirmed nap kept. | No labelled set beyond one nap; acceptance targets not measurable yet. |
 | 2026-11-13 | #15 review: wake notifications get occurrence-scoped ids, are withdrawn on dismissal/skip/edit/delete, and submission races are suppressed/withdrawn (`withdrawn`). | Fresh hosted 55 + alarm analytics 32 + build pass; diff/index clean. No real-notification, narrow/light visual or hardware pass. |
 | 2026-11-13 | PR #23 integration review, merge-conflict reconciliation; issue #18 accepted for experimental pilot. | App build + hosted suite pass; broad manual/hardware/accuracy work remains unverified. |
-| 2026-11-13 | #18 pilot publication: integrate main, reconcile reference and review implemented fixes. | Build + hosted 66 (4 render skips) + focused 7 pass; live pilot gate incomplete; draft PR, issue remains open. |
