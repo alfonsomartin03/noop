@@ -341,6 +341,8 @@ Format: `file` — purpose. Tests list `Suite(methods)`. Fixtures/resources are 
 
 - 2026-11-13 PR #22 integration review: resolved merge conflicts while preserving prior pilot features; app build and hosted suite PASS (Executed 69 tests, with 0 failures (0 unexpected) in 2.845 (2.866) seconds). Local automated validation only; remaining manual/hardware/accuracy checks are not implied. User requested merge and issue closure at pilot scope.
 
+- 2026-11-13 PR #23 integration review: resolved merge conflicts while preserving prior pilot features; app build and hosted suite PASS (Executed 80 tests, with 4 tests skipped and 0 failures (0 unexpected) in 3.690 (3.717) seconds). Local automated validation only; remaining manual/hardware/accuracy checks are not implied. User requested merge and issue closure at pilot scope.
+
 Index check (run after file changes; expects no output):
 
 ```sh
@@ -372,6 +374,7 @@ git ls-files --cached --others --exclude-standard | grep -v -e '^AGENTS.md$' -e 
 
 | Date | Change | Checks / remaining |
 | --- | --- | --- |
+| 2026-11-13 | PR #23 integration review, merge-conflict reconciliation; issue #18 accepted for experimental pilot. | App build + hosted suite pass; broad manual/hardware/accuracy work remains unverified. |
 | 2026-11-13 | #18 pilot publication: integrate main, reconcile reference and review implemented fixes. | Build + hosted 66 (4 render skips) + focused 7 pass; live pilot gate incomplete; draft PR, issue remains open. |
 | 2026-11-13 | #18 completion guide: nested-surface renders (Sessions, workout detail, Vitals Live, Recent cycles, supporting-day sheet); fixed workout-detail header clipping at 760 pt and raw ISO "as of" date; synthetic before/after evidence in `docs/assets/qa/issue-18/`. | Hosted 55 + StrandDesign 40 + render harness pass; live transitions, Sleep Last night, tooltips on screen and accessibility not run. |
 | 2026-11-13 | #18 audit pass 3: every harness render inspected; fixed year-strip clipping at 760 pt, uneven card rows (`TrendCardGrid`), bar-chart axis labels (long-span format, per-bar labels). | StrandDesign 40 + hosted 54 + render harness pass; transitions, detail sheets/Sessions, tooltips on screen and accessibility not checked. |
@@ -379,4 +382,3 @@ git ls-files --cached --others --exclude-standard | grep -v -e '^AGENTS.md$' -e 
 | 2026-11-13 | #18 visual audit on a DB copy (Scores/Sleep/Vitals/Activity/Highlights, 760/1180, light/dark) and fixes: area baseline, short-run fill, wrapping, zone legend, skin-temp source split, year strip gaps/time zone/labels. | StrandDesign 36 (2 skips) + hosted 44 PASS; no VoiceOver/keyboard/Reduce Motion pass; non-default ranges and sub-views not rendered. |
 | 2026-11-13 | #15 review: wake notifications get occurrence-scoped ids, are withdrawn on dismissal/skip/edit/delete, and submission races are suppressed/withdrawn (`withdrawn`). | Fresh hosted 55 + alarm analytics 32 + build pass; diff/index clean. No real-notification, narrow/light visual or hardware pass. |
 | 2026-11-13 | PR #22 integration review, merge-conflict reconciliation; issue #17 accepted for experimental pilot. | App build + hosted suite pass; broad manual/hardware/accuracy work remains unverified. |
-| 2026-11-13 | #17 pilot publication: integrate main, reconcile reference and review implemented fixes. | Build + hosted 64 + focused 19 pass; live pilot gate incomplete; draft PR, issue remains open. |
