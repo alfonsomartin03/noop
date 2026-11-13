@@ -42,4 +42,14 @@ final class BluetoothChoiceTests: XCTestCase {
     func testReconnectIntervalIsFifteenMinutes() {
         XCTAssertEqual(BluetoothChoice.reconnectIntervalSeconds, 900)
     }
+
+    func testIdleSilenceDoesNotBounceTheLink() {
+        // Observed: an idle, discharging strap is silent for minutes; a 120 s limit reconnected it every ~2.5 min.
+        XCTAssertFalse(BLEManager.linkLooksStalled(silence: 150, expectingStream: false))
+        XCTAssertFalse(BLEManager.linkLooksStalled(silence: 900, expectingStream: false))   // one pull interval
+        XCTAssertTrue(BLEManager.linkLooksStalled(silence: 1_201, expectingStream: false))  // a pull drew no reply
+        // A realtime stream that stops for 2 min is still a stall.
+        XCTAssertFalse(BLEManager.linkLooksStalled(silence: 60, expectingStream: true))
+        XCTAssertTrue(BLEManager.linkLooksStalled(silence: 121, expectingStream: true))
+    }
 }

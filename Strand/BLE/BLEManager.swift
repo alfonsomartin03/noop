@@ -78,7 +78,7 @@ public final class BLEManager: NSObject, ObservableObject {
     private var backfillTimer: DispatchSourceTimer?
     // The timer fires this often, but BackfillPolicy.periodicFloorSeconds is the real floor (a recent
     // event-triggered sync defers the next periodic tick). 900s = 15 min, matching WHOOP.
-    static let backfillIntervalSeconds = 900
+    nonisolated static let backfillIntervalSeconds = 900
     /// Keep-alive: re-arm realtime, poll battery, and bounce a stalled link so streaming
     /// never silently dies. Started on bond, cancelled on disconnect.
     private var keepAliveTimer: DispatchSourceTimer?
@@ -742,6 +742,16 @@ public final class BLEManager: NSObject, ObservableObject {
         connected && bonded && !backfilling
     }
 
+    /// Silence after which a link that should be streaming realtime HR (~1 Hz) is treated as stalled.
+    nonisolated static let streamingSilenceLimitSeconds: TimeInterval = 120
+    /// Silence after which an idle link is treated as stalled: longer than one periodic history pull (whose GET_CLOCK /
+    /// GET_DATA_RANGE replies count as data) plus margin, so only a strap that ignored a pull is bounced. A truly dropped
+    /// link is reported by CoreBluetooth's supervision timeout without any help from us.
+    nonisolated static let idleSilenceLimitSeconds: TimeInterval = TimeInterval(backfillIntervalSeconds) + 300
+    nonisolated static func linkLooksStalled(silence: TimeInterval, expectingStream: Bool) -> Bool {
+        silence > (expectingStream ? streamingSilenceLimitSeconds : idleSilenceLimitSeconds)
+    }
+
     /// Start (or restart) the periodic backfill timer. Each tick re-runs the type-47 historical
     /// offload while connected+bonded and not already backfilling — the primary metric sync.
     // MARK: - Keep-alive (always-ping + liveness watchdog)
@@ -784,13 +794,15 @@ public final class BLEManager: NSObject, ObservableObject {
         keepAliveTimer = t
     }
 
-    // Runs every 30 s: bounces a silent link, re-arms realtime, and checks whether the 15-minute battery poll is due.
+    // Runs every 30 s: bounces a stalled link (see linkLooksStalled), re-arms realtime, and checks whether the 15-minute battery poll is due.
     private func keepAliveFire() {
         guard state.connected, didBond else { return }
-        // Liveness watchdog: if NOTHING has arrived for a while, the stream/link stalled.
-        // Bounce the connection — the auto-rescan on disconnect re-bonds and resumes streaming.
-        if Date().timeIntervalSince(lastDataAt) > 120 {
-            log("No data for >120s — bouncing link to resume streaming")
+        // Liveness watchdog. An idle strap (no realtime stream, not charging) is silent for many minutes and that is
+        // healthy: bouncing it re-ran the whole connect handshake, battery poll and history pull every ~2.5 min.
+        // Silence only means a stall while a stream is expected, or when even the 15-min pull drew no reply.
+        let silence = Date().timeIntervalSince(lastDataAt)
+        if BLEManager.linkLooksStalled(silence: silence, expectingStream: wantsRealtime) {
+            log("No data for \(Int(silence)) s\(wantsRealtime ? " while streaming" : "") — bouncing link")
             if let p = peripheral { central?.cancelPeripheralConnection(p) }
             return
         }

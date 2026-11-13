@@ -4,7 +4,7 @@ import StrandAnalytics
 import WhoopStore
 
 // Heart-rate activation pieces shared by the Health page's Stress Monitor and the compact strip in Overview's heart-rate
-// card (issue #16). Same pipeline (`HRActivation.timeline`) on both; neither is a stress score.
+// card (issues #16, #26; strip/axis/legend views in `HeartRateDayChart.swift`). Same pipeline (`HRActivation.timeline`) on both; neither is a stress score.
 
 enum ActivationPalette {
     static let colors: [HRActivation.Level: Color] = [
@@ -16,8 +16,10 @@ enum ActivationPalette {
 struct ActivationLoad {
     let bins: [HRActivation.Bin]
     let resting: (bpm: Double, source: String)
-    /// Real length of the local day (23–25 h across DST).
-    let dayLength: Int
+    /// The local day's real bounds (23–25 h across DST); the shared `DayTimeAxis` domain.
+    let dayStart: Int
+    let dayEnd: Int
+    var dayLength: Int { dayEnd - dayStart }
 
     /// Spans shown as "Asleep": confirmed sessions only (main sleep, interrupted main sleep, nap; legacy rows without a
     /// kind were always main sleep). Uncertain episodes are not sleep: their bins fall through to the heart-rate check,
@@ -37,7 +39,7 @@ struct ActivationLoad {
         else { return nil }
         guard let range = ZoneTimeline.shared.dayRange(day) else { return nil }
         let end = min(range.to, Int(Date().timeIntervalSince1970))
-        guard end > range.from else { return ActivationLoad(bins: [], resting: resting, dayLength: range.to - range.from) }
+        guard end > range.from else { return ActivationLoad(bins: [], resting: resting, dayStart: range.from, dayEnd: range.to) }
         let hr = await repo.hrSamples(from: range.from, to: end, limit: 200_000)
         let sleeps = sleepIntervals(await repo.noopSleepEpisodes(from: range.from, to: end))
         let workouts = await repo.workoutRows().filter { $0.endTs > range.from && $0.startTs < end }.map { ($0.startTs, $0.endTs) }
@@ -46,82 +48,7 @@ struct ActivationLoad {
         let bins = await Task.detached(priority: .userInitiated) {
             HRActivation.timeline(samples: samples, from: range.from, to: end, restingHR: rest, maxHR: mx, sleep: sleeps, workouts: workouts)
         }.value
-        return ActivationLoad(bins: bins, resting: resting, dayLength: range.to - range.from)
-    }
-}
-
-/// The day as a row of coloured 15-minute bins; the rest of today stays empty.
-struct ActivationBar: View {
-    let bins: [HRActivation.Bin]
-    let dayLength: Int
-    var height: CGFloat = 30
-
-    var body: some View {
-        GeometryReader { g in
-            HStack(spacing: 0) {
-                ForEach(Array(bins.enumerated()), id: \.offset) { _, b in
-                    Rectangle()
-                        .fill(ActivationPalette.colors[b.level] ?? .clear)
-                        .overlay(b.level == .noData ? Rectangle().strokeBorder(StrandPalette.hairline, lineWidth: 0.25) : nil)
-                        .frame(width: g.size.width * CGFloat(b.end - b.start) / CGFloat(max(dayLength, 1)))
-                        .help("\(ZoneTimeline.shared.clock(b.start))–\(ZoneTimeline.shared.clock(b.end)): \(b.level.label)\(b.meanHR.map { ", avg \(Int($0.rounded())) bpm" } ?? "")")
-                }
-                Spacer(minLength: 0)
-            }
-            .background(StrandPalette.surfaceInset.opacity(0.4))
-        }
-        .frame(height: height)
-        .clipShape(RoundedRectangle(cornerRadius: height > 16 ? 8 : 4, style: .continuous))
-    }
-}
-
-/// Overview heart-rate card: the latest known activation state, a thin day strip and its coverage. Minimal on purpose;
-/// the full timeline, legend and method live on the Health page.
-struct ActivationMini: View {
-    @EnvironmentObject var repo: Repository
-    @EnvironmentObject var profile: ProfileStore
-    let day: String
-    @State private var load: ActivationLoad?
-    @State private var loaded = false
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            HStack(spacing: 6) {
-                Text("Activation").font(.system(size: 11, weight: .semibold)).foregroundStyle(StrandPalette.textSecondary)
-                if let l = load, let last = HRActivation.latest(l.bins) {
-                    Circle().fill(ActivationPalette.colors[last.level] ?? .clear).frame(width: 7, height: 7)
-                    Text("\(last.level.label) · \(ZoneTimeline.shared.clock(last.start))–\(ZoneTimeline.shared.clock(last.end))")
-                        .font(.system(size: 11, weight: .medium).monospacedDigit()).foregroundStyle(StrandPalette.textPrimary)
-                } else if loaded {
-                    Text(load == nil ? "Needs a resting heart rate from a scored night" : "No readings yet")
-                        .font(.system(size: 11)).foregroundStyle(StrandPalette.textTertiary)
-                }
-                Spacer(minLength: 0)
-                if let l = load, !l.bins.isEmpty {
-                    Text("\(Int((HRActivation.coverage(l.bins) * 100).rounded())) % covered")
-                        .font(.system(size: 10).monospacedDigit()).foregroundStyle(StrandPalette.textTertiary)
-                }
-            }
-            if let l = load {
-                ActivationBar(bins: l.bins, dayLength: l.dayLength, height: 10)
-            }
-            Text("Heart rate vs your resting and max, in 15-min bins — not a stress score. Details on the Health page.")
-                .font(.system(size: 10)).foregroundStyle(StrandPalette.textTertiary).fixedSize(horizontal: false, vertical: true)
-        }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Heart-rate activation")
-        .accessibilityValue(accessibilityText)
-        .task(id: "\(day)-\(repo.dataVersion)-\(profile.hrMax)") {
-            loaded = false
-            load = await ActivationLoad.load(repo: repo, maxHR: profile.hrMax, day: day)
-            loaded = true
-        }
-    }
-
-    private var accessibilityText: String {
-        guard let l = load else { return loaded ? "Unavailable: needs a resting heart rate from a scored night" : "Loading" }
-        let latest = HRActivation.latest(l.bins).map { "Latest \($0.level.label), \(ZoneTimeline.shared.clock($0.start)) to \(ZoneTimeline.shared.clock($0.end))" } ?? "No readings yet"
-        return "\(latest). \(Int((HRActivation.coverage(l.bins) * 100).rounded())) percent of the day so far has readings, sleep or a workout. Not a stress score."
+        return ActivationLoad(bins: bins, resting: resting, dayStart: range.from, dayEnd: range.to)
     }
 }
 

@@ -465,9 +465,11 @@ enum SyncFormat {
     }
 }
 
-/// Heart rate for the picked day: the day's curve from the strap, the live reading when the day is today, and a few
-/// plain-language insights computed from the same samples.
-private struct HeartRateDayCard: View {
+/// Heart rate for the picked day: a primary number (live or the day's average), Low/Average/Peak, a few quieter
+/// insights, and the day's curve with its activation strip on one shared time axis (issue #26).
+struct HeartRateDayCard: View {
+    @EnvironmentObject var repo: Repository
+    @EnvironmentObject var profile: ProfileStore
     let day: String
     let metric: DailyMetric?
     let days: [DailyMetric]
@@ -475,26 +477,33 @@ private struct HeartRateDayCard: View {
     var syncedThrough: Int? = nil
     var importedSummary = false
     let openLive: () -> Void
+    /// Render fixtures only: a fixed clock and activation instead of the live clock and a store load.
+    var fixtureNow: Date? = nil
+    var fixtureActivation: ActivationAvailability? = nil
 
-    private var isToday: Bool { day == Repository.dayString(Date()) }
+    @State private var activation: ActivationAvailability = .loading
+
+    private var isToday: Bool { day == Repository.dayString(fixtureNow ?? Date()) }
 
     var body: some View {
         StrandWidget("Heart rate", symbol: "heart.fill", tint: StrandPalette.metricRose, trailing: isToday ? "Live" : nil, action: openLive) {
-            // Re-evaluated each minute so "recorded so far" follows the clock on today.
+            // Re-evaluated each minute so "recorded so far", the now line and upcoming time follow the clock on today.
             TimelineView(.periodic(from: .now, by: 60)) { ctx in
-                let cov = coverage(now: ctx.date)
+                let now = fixtureNow ?? ctx.date
+                let cov = coverage(now: now)
                 SummaryChartLayout {
                     summary(cov)
-                    VStack(alignment: .leading, spacing: 6) {
-                        chart
-                        if let cov, !cov.details(clock: DayMath.clock).isEmpty {
-                            Text(cov.details(clock: DayMath.clock).joined(separator: " "))
-                                .font(.system(size: 10)).foregroundStyle(StrandPalette.textTertiary)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                        ActivationMini(day: day).padding(.top, 4)
-                    }
+                    chartColumn(now: now, cov: cov)
                 }
+            }
+        }
+        .task(id: "\(day)-\(repo.dataVersion)-\(profile.hrMax)") {
+            if let fixtureActivation { activation = fixtureActivation; return }
+            activation = .loading
+            if let l = await ActivationLoad.load(repo: repo, maxHR: profile.hrMax, day: day) {
+                activation = .ready(l.bins)
+            } else {
+                activation = .unavailable
             }
         }
     }
@@ -507,38 +516,114 @@ private struct HeartRateDayCard: View {
                                    hasImportedSummary: importedSummary && (stats?.isEmpty ?? true))
     }
 
-    private func summary(_ cov: DayCoverage?) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            headline
-            ForEach(insights(cov).prefix(5)) { ins in
-                HStack(alignment: .top, spacing: 8) {
-                    Image(systemName: ins.icon).font(.system(size: 11, weight: .bold)).foregroundStyle(ins.tint).frame(width: 16)
-                    Text(ins.text).font(.system(size: 12)).foregroundStyle(StrandPalette.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+    // MARK: Chart column
+
+    @ViewBuilder private func chartColumn(now: Date, cov: DayCoverage?) -> some View {
+        if let r = DayMath.range(day) {
+            let axis = DayTimeAxis(start: r.from, end: r.to, now: Int(now.timeIntervalSince1970))
+            let runs = axis.hrRuns((stats?.samples ?? []).map { (ts: $0.ts, bpm: $0.bpm) })
+            VStack(alignment: .leading, spacing: 10) {
+                HeartRateDayTimeline(axis: axis, runs: runs, activation: activation,
+                                     dayName: isToday ? "today" : HighlightsContent.long(day))
+                activationKey(axis)
             }
         }
     }
 
-    // MARK: Headline numbers
-
-    @ViewBuilder private var headline: some View {
-        if isToday {
-            LiveHeadline(average: stats?.average)
-        } else if let avg = stats?.average {
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text("\(avg)").font(.system(size: 52, weight: .bold).monospacedDigit()).foregroundStyle(StrandPalette.textPrimary)
-                Text("bpm average").font(.system(size: 13, weight: .medium)).foregroundStyle(StrandPalette.textSecondary)
+    /// Latest state and the legend for every colour in the strip. What activation is (not a stress score) is on the
+    /// legend's hover help and VoiceOver hint, and in full on the Health page.
+    private func activationKey(_ axis: DayTimeAxis) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Text("Activation").font(.system(size: 11, weight: .semibold)).foregroundStyle(StrandPalette.textSecondary)
+                if case .ready(let bins) = activation, let last = HRActivation.latest(bins) {
+                    let kind = DayTimeAxis.SpanKind.observed(last.level)
+                    Text("·").foregroundStyle(StrandPalette.textTertiary)
+                    Text("Latest \(last.level.label.lowercased()), \(ZoneTimeline.shared.clock(last.start))–\(ZoneTimeline.shared.clock(last.end))")
+                        .font(.system(size: 11).monospacedDigit()).foregroundStyle(StrandPalette.textPrimary)
+                        .lineLimit(1).minimumScaleFactor(0.85)
+                        .accessibilityLabel("Latest activation: \(last.level.label), \(ActivationStyle.interval(DayTimeAxis.Span(start: last.start, end: last.end, kind: kind)))")
+                }
+                Spacer(minLength: 0)
             }
-        } else {
-            Text("—").font(.system(size: 52, weight: .bold)).foregroundStyle(StrandPalette.textTertiary)
+            if case .unavailable = activation {
+                Text("Activation appears once NOOP has scored a night and knows your resting heart rate.")
+                    .font(.system(size: 10)).foregroundStyle(StrandPalette.textTertiary).fixedSize(horizontal: false, vertical: true)
+            } else {
+                ActivationLegend(showsUpcoming: axis.hasUpcoming)
+                    .help(Self.activationCaveat)
+                    .accessibilityHint(Self.activationCaveat)
+            }
         }
-        if let s = stats, !s.isEmpty, let lo = s.low, let hi = s.peak {
-            HStack(spacing: 8) {
-                stat("Low", "\(lo.bpm)", StrandPalette.metricCyan)
-                stat("Avg", s.average.map(String.init) ?? "—", StrandPalette.textPrimary)
-                stat("Peak", "\(hi.bpm)", StrandPalette.statusCritical)
+    }
+
+    static let activationCaveat = "Heart rate against your resting and max, in 15-min blocks. Movement, heat, caffeine and illness raise it too, so high activation isn't proof of stress — not a stress score."
+
+    // MARK: Summary
+
+    private func summary(_ cov: DayCoverage?) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            if isToday {
+                LiveHeadline(average: stats?.average)
+            } else {
+                Headline(label: "Average", value: stats?.average, tint: StrandPalette.textPrimary)
             }
+            metricGroup
+            let items = insights(cov)
+            if !items.isEmpty {
+                VStack(alignment: .leading, spacing: 9) {
+                    ForEach(items) { ins in
+                        HStack(alignment: .top, spacing: 9) {
+                            Image(systemName: ins.icon).font(.system(size: 10, weight: .bold))
+                                .foregroundStyle(ins.tint)
+                                .frame(width: 22, height: 22)
+                                .background(ins.tint.opacity(0.16), in: Circle())
+                            VStack(alignment: .leading, spacing: 1) {
+                                (Text(ins.lead).foregroundColor(StrandPalette.textSecondary)
+                                 + Text(ins.value).foregroundColor(ins.tint).fontWeight(.semibold)
+                                 + Text(ins.tail).foregroundColor(StrandPalette.textSecondary))
+                                    .font(.system(size: 12))
+                                    .fixedSize(horizontal: false, vertical: true)
+                                if let d = ins.detail {
+                                    Text(d).font(.system(size: 10.5)).foregroundStyle(StrandPalette.textTertiary)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                            }
+                            .padding(.top, 3)
+                        }
+                        .accessibilityElement(children: .combine)
+                    }
+                }
+                .padding(.top, 12)
+                .overlay(alignment: .top) { Rectangle().fill(StrandPalette.hairline).frame(height: 1) }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// The primary number: a small explicit label, then the value with its unit on the same baseline.
+    private struct Headline: View {
+        let label: String
+        let value: Int?
+        let tint: Color
+        var live = false
+        var body: some View {
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 5) {
+                    if live { Circle().fill(StrandPalette.metricRose).frame(width: 6, height: 6) }
+                    Text(label.uppercased()).font(.system(size: 10, weight: .semibold)).tracking(0.8)
+                        .foregroundStyle(live ? StrandPalette.metricRose : StrandPalette.textTertiary)
+                }
+                HStack(alignment: .firstTextBaseline, spacing: 5) {
+                    Text(value.map(String.init) ?? "—").font(StrandFont.number(48, weight: .bold))
+                        .foregroundStyle(value == nil ? StrandPalette.textTertiary : tint)
+                    if value != nil {
+                        Text("bpm").font(.system(size: 15, weight: .medium)).foregroundStyle(StrandPalette.textSecondary)
+                    }
+                }
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(value.map { "\(label) heart rate, \($0) beats per minute" } ?? "\(label) heart rate unavailable")
         }
     }
 
@@ -549,104 +634,92 @@ private struct HeartRateDayCard: View {
         let average: Int?
         var body: some View {
             if let bpm = heart.bpm {
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text("\(bpm)").font(StrandFont.number(52, weight: .bold)).foregroundStyle(StrandPalette.metricRose)
-                    Text("bpm now").font(.system(size: 13, weight: .medium)).foregroundStyle(StrandPalette.textSecondary)
-                }
-                .accessibilityElement(children: .combine)
-            } else if let average {
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text("\(average)").font(StrandFont.number(52, weight: .bold)).foregroundStyle(StrandPalette.textPrimary)
-                    Text("bpm average").font(.system(size: 13, weight: .medium)).foregroundStyle(StrandPalette.textSecondary)
-                }
-                .accessibilityElement(children: .combine)
+                Headline(label: "Live", value: bpm, tint: StrandPalette.metricRose, live: true)
             } else {
-                Text("—").font(.system(size: 52, weight: .bold)).foregroundStyle(StrandPalette.textTertiary)
-                    .accessibilityLabel("No heart rate")
+                Headline(label: "Average so far", value: average, tint: StrandPalette.textPrimary)
             }
         }
     }
 
-    private func stat(_ label: String, _ value: String, _ tint: Color) -> some View {
-        VStack(spacing: 1) {
-            Text(value).font(.system(size: 17, weight: .bold).monospacedDigit()).foregroundStyle(tint)
+    /// Low / Average / Peak as one quiet row: label above, value with unit, time below where there is one.
+    @ViewBuilder private var metricGroup: some View {
+        if let s = stats, !s.isEmpty, let lo = s.low, let hi = s.peak {
+            HStack(alignment: .top, spacing: 0) {
+                metric("Low", lo.bpm, at: lo.ts, tint: StrandPalette.metricCyan)
+                Rectangle().fill(StrandPalette.hairline).frame(width: 1).padding(.vertical, 2)
+                metric("Average", s.average, at: nil, tint: StrandPalette.textPrimary)
+                Rectangle().fill(StrandPalette.hairline).frame(width: 1).padding(.vertical, 2)
+                metric("Peak", hi.bpm, at: hi.ts, tint: StrandPalette.statusCriticalInk)
+            }
+            .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func metric(_ label: String, _ value: Int?, at ts: Int?, tint: Color) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
             Text(label).font(.system(size: 10, weight: .semibold)).foregroundStyle(StrandPalette.textTertiary)
-        }
-        .frame(maxWidth: .infinity).padding(.vertical, 6)
-        .background(StrandPalette.surfaceInset, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-    }
-
-    // MARK: Chart
-
-    private static let gradient = Gradient(colors: [StrandPalette.metricCyan, StrandPalette.metricRose, StrandPalette.statusCritical])
-
-    @ViewBuilder private var chart: some View {
-        if let s = stats, s.samples.count > 1 {
-            let pts = Self.downsample(s.samples, to: 320)
-            VStack(alignment: .leading, spacing: 6) {
-                Sparkline(values: pts.map { Double($0.bpm) }, gradient: Self.gradient, lineWidth: 2.5, showsArea: true,
-                          showsHead: false, showsHover: true,
-                          valueFormat: { "\(Int($0.rounded())) bpm" },
-                          indexLabel: { i in pts.indices.contains(i) ? DayMath.clock(pts[i].ts) : "" })
-                HStack {
-                    Text(DayMath.clock(pts.first!.ts)); Spacer(); Text(DayMath.clock(pts.last!.ts))
-                }
-                .font(.system(size: 10)).foregroundStyle(StrandPalette.textTertiary)
+            HStack(alignment: .firstTextBaseline, spacing: 3) {
+                Text(value.map(String.init) ?? "—").font(StrandFont.number(18, weight: .semibold)).foregroundStyle(tint)
+                Text("bpm").font(.system(size: 10, weight: .medium)).foregroundStyle(StrandPalette.textTertiary)
             }
-        } else {
-            VStack(spacing: 8) {
-                Image(systemName: "heart.slash").font(.system(size: 22)).foregroundStyle(StrandPalette.textTertiary)
-                Text("No heart-rate samples stored for this day").font(.system(size: 13)).foregroundStyle(StrandPalette.textSecondary)
-                Text("They arrive when the strap syncs.").font(.system(size: 11)).foregroundStyle(StrandPalette.textTertiary)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            Text(ts.map { DayMath.clock($0) } ?? " ").font(.system(size: 10).monospacedDigit()).foregroundStyle(StrandPalette.textTertiary)
         }
-    }
-
-    private static func downsample(_ s: [HRSample], to n: Int) -> [HRSample] {
-        guard s.count > n else { return s }
-        let step = Double(s.count) / Double(n)
-        return (0..<n).map { s[Int(Double($0) * step)] }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.leading, label == "Low" ? 0 : 10)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(label) \(value.map { "\($0) beats per minute" } ?? "unavailable")\(ts.map { ", at \(DayMath.clock($0))" } ?? "")")
     }
 
     // MARK: Insights
 
-    private struct Insight: Identifiable { let id = UUID(); let icon: String; let text: String; let tint: Color }
+    /// One supporting line: a tinted badge, then text whose key number carries the same tint.
+    private struct Insight: Identifiable {
+        let id = UUID()
+        let icon: String
+        let tint: Color
+        var lead = ""
+        let value: String
+        var tail = ""
+        var detail: String? = nil
+    }
 
     private func insights(_ cov: DayCoverage?) -> [Insight] {
         var out: [Insight] = []
         if let rhr = metric?.restingHr {
-            let base = DayMath.baseline(days, before: day) { $0.restingHr.map(Double.init) }
-            if let base {
+            if let base = DayMath.baseline(days, before: day, { $0.restingHr.map(Double.init) }) {
                 let d = Double(rhr) - base
-                let rel = abs(d) < 1 ? "in line with your 30-day average"
-                    : "\(Int(abs(d).rounded())) bpm \(d < 0 ? "below" : "above") your 30-day average"
-                out.append(Insight(icon: d <= 0.5 ? "arrow.down.heart.fill" : "arrow.up.heart.fill",
-                                   text: "Resting HR \(rhr) bpm, \(rel).",
-                                   tint: d <= 0.5 ? StrandPalette.statusPositive : StrandPalette.statusWarning))
+                let rel = abs(d) < 1 ? ", in line with your 30-day average"
+                    : ", \(Int(abs(d).rounded())) bpm \(d < 0 ? "below" : "above") your 30-day average"
+                out.append(Insight(icon: "moon.zzz.fill", tint: StrandPalette.lavenderInk, lead: "Resting ", value: "\(rhr) bpm", tail: rel + "."))
             } else {
-                out.append(Insight(icon: "heart.fill", text: "Resting HR \(rhr) bpm.", tint: StrandPalette.metricRose))
+                out.append(Insight(icon: "moon.zzz.fill", tint: StrandPalette.lavenderInk, lead: "Resting ", value: "\(rhr) bpm", tail: "."))
             }
         }
         if let s = stats, !s.isEmpty {
             if let hi = s.peak {
                 let pct = Int((Double(hi.bpm) / max(s.zoneSet.maxHR, 1) * 100).rounded())
-                out.append(Insight(icon: "bolt.heart.fill", text: "Peaked at \(hi.bpm) bpm at \(DayMath.clock(hi.ts)), \(pct)% of your max.",
-                                   tint: StrandPalette.statusCritical))
+                out.append(Insight(icon: "bolt.heart.fill", tint: StrandPalette.statusCriticalInk,
+                                   lead: "Peak reached ", value: "\(pct) %", tail: " of your max (\(Int(s.zoneSet.maxHR.rounded())) bpm) at \(DayMath.clock(hi.ts))."))
             }
-            if let lo = s.low {
-                out.append(Insight(icon: "moon.zzz.fill", text: "Lowest was \(lo.bpm) bpm at \(DayMath.clock(lo.ts)).", tint: StrandPalette.metricCyan))
-            }
-            out.append(Insight(icon: "flame.fill",
-                               text: s.elevatedMin >= 1 ? "Elevated (Zone 3+) for \(DayMath.hm(s.elevatedMin))."
-                                                        : "No time in Zone 3 or higher, a calm day for your heart.",
-                               tint: StrandPalette.metricAmber))
+            out.append(s.elevatedMin >= 1
+                ? Insight(icon: "flame.fill", tint: StrandPalette.statusWarningInk, lead: "", value: DayMath.hm(s.elevatedMin), tail: " in Zone 3 or higher.")
+                : Insight(icon: "flame.fill", tint: StrandPalette.statusWarningInk, lead: "", value: "No time", tail: " in Zone 3 or higher."))
+        }
+        if case .ready(let bins) = activation, let high = HRActivation.totals(bins)[.high], high >= 15 * 60 {
+            out.append(Insight(icon: "waveform.path.ecg", tint: StrandPalette.statusCriticalInk,
+                               lead: "High activation for ", value: DayMath.hm(Double(high) / 60), tail: " outside workouts."))
+        }
+        if let s = stats, let kcal = s.kcal, kcal >= 1 {
+            out.append(Insight(icon: "bolt.fill", tint: StrandPalette.accentInk,
+                               lead: "About ", value: "\(Int(kcal.rounded()).formatted()) kcal", tail: " burned over recorded time (heart-rate estimate)."))
         }
         // Coverage: neutral wording; a warning only for meaningful missing elapsed time (not the normal sync delay).
         if let cov, !cov.isFuture {
             let warn = cov.warrantsWarning
-            out.append(Insight(icon: warn ? "exclamationmark.circle.fill" : "clock",
-                               text: cov.caption(), tint: warn ? StrandPalette.statusWarning : StrandPalette.textTertiary))
+            let details = cov.details(clock: DayMath.clock)
+            out.append(Insight(icon: warn ? "exclamationmark.circle.fill" : "clock.fill",
+                               tint: warn ? StrandPalette.statusWarningInk : StrandPalette.textSecondary,
+                               value: cov.caption(), detail: details.isEmpty ? nil : details.joined(separator: " ")))
         }
         return out
     }
