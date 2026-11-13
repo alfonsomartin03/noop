@@ -63,9 +63,20 @@ enum WhoopImporter {
         func add(_ day: String, _ key: String, _ v: Double?) {
             if let v { points.append(MetricPoint(day: day, key: key, value: v)) }
         }
+        // The sleep each cycle declares as its own (issue #16): the cycle row's Sleep/Wake onset, else the main sleep in
+        // sleeps.csv that names this cycle's start. Explicit links only — a cycle's start is not assumed to be its sleep's
+        // onset or wake, so nothing is inferred from timing.
+        let mainSleepsByCycle = Dictionary(grouping: result.sleeps.filter { !$0.isNap && $0.cycleStart != nil }) { $0.cycleStart! }
+        let declaredSleep: [Date: (onset: Date, wake: Date)] = mainSleepsByCycle.compactMapValues { rows in
+            guard rows.count == 1, let on = rows[0].sleepOnset, let wk = rows[0].wakeOnset else { return nil }   // ambiguous → no link
+            return (on, wk)
+        }
         for c in result.cycles {
             guard let start = c.cycleStart else { continue }
             let day = dayString(start, tzOffsetMin: c.tzOffsetMin)
+            if let on = c.sleepOnset ?? declaredSleep[start]?.onset, let wk = c.wakeOnset ?? declaredSleep[start]?.wake {
+                add(day, "sleep_onset_ts", on.timeIntervalSince1970); add(day, "wake_onset_ts", wk.timeIntervalSince1970)
+            }
             add(day, "recovery", c.recoveryScore);        add(day, "strain", c.dayStrain)
             add(day, "rhr", c.restingHeartRate);          add(day, "hrv", c.hrvMs)
             add(day, "spo2", c.bloodOxygenPct);           add(day, "skin_temp", c.skinTempCelsius)
