@@ -305,6 +305,8 @@ Format: `file` — purpose. Tests list `Suite(methods)`. Fixtures/resources are 
 
 - 2026-11-13 #15 pre-PR validation: PASS fresh hosted 55 incl. app build, alarm analytics 32 (AlarmHistory/AlarmDelivery/AlarmEngine/SmartWake), diff whitespace and file-index checks. Source unchanged across validation. Notification race blocker resolved; real notifications/strap and remaining visual cases remain unverified as above.
 
+- 2026-11-13 #17 publication validation after merging origin/main: PASS app build + hosted 64; focused package regressions 19 pass. Diff/index checks clean. Initial parallel hosted runs interfered via the shared AlarmControllerTests preferences domain; serial rerun passed. Feature-specific live pilot smoke remains pending. Published as a draft pilot candidate; original issue stays open for the recorded validation follow-ups. No hardware/accuracy claim.
+
 Index check (run after file changes; expects no output):
 
 ```sh
@@ -336,6 +338,7 @@ git ls-files --cached --others --exclude-standard | grep -v -e '^AGENTS.md$' -e 
 
 | Date | Change | Checks / remaining |
 | --- | --- | --- |
+| 2026-11-13 | #17 pilot publication: integrate main, reconcile reference and review implemented fixes. | Build + hosted 64 + focused 19 pass; live pilot gate incomplete; draft PR, issue remains open. |
 | 2026-11-13 | #17 review P2: Recovery HRV and skin temperature resolved per field (`Repository.fieldReading`), so a NOOP value on a partially imported day uses NOOP's baseline/label; single-source sparklines. | Hosted 53 (new FieldProvenanceTests 2) + build pass; pilot smoke not run. |
 | 2026-11-13 | #17 completion guide: fixture-table regression test (alternating 45/55 and flat 60 ms cases); Recovery `DetailTile` is one VoiceOver element. | StrandAnalytics PersonalRangePosition 8 + hosted 51 + build pass; live/keyboard/VoiceOver/Reduce Motion pass not run. |
 | 2026-11-13 | #17 recheck: max-HRV tile context moved from a 2-line caption into wrapping detail lines (`DetailTile.details`, `MaxHRVCaption`). | Hosted 51 + build pass; tiles + HRV sheet rendered offscreen light/dark, narrow/wide; no accessibility pass. |
@@ -343,4 +346,3 @@ git ls-files --cached --others --exclude-standard | grep -v -e '^AGENTS.md$' -e 
 | 2026-11-13 | #17 review: Recovery skin-temp tile no longer shows imported absolute °C as a deviation; shorter max-HRV caption (was truncated). Visual check on a DB copy. | Hosted 44 PASS; visually checked (see §8); no VoiceOver pass. |
 | 2026-11-13 | #15 review: wake notifications get occurrence-scoped ids, are withdrawn on dismissal/skip/edit/delete, and submission races are suppressed/withdrawn (`withdrawn`). | Fresh hosted 55 + alarm analytics 32 + build pass; diff/index clean. No real-notification, narrow/light visual or hardware pass. |
 | 2026-11-12 | #17: HRV near the personal median reads "Typical for you" (shared `PersonalRangePosition` on Health + Recovery detail); nightly maximum HRV in Recovery detail only. | StrandAnalytics new 7 + HealthMonitor 11, hosted 44 + build pass; not visually checked; no real-data review. |
-| 2026-11-12 | #15: skip the next alarm occurrence when already awake (manual, before first ring); strap slot moved/cleared, follow-ups cancelled, `skipped` history status. | Hosted 51 + StrandAnalytics AlarmHistory pass; not run on the strap; Alarms hero not visually checked. |
