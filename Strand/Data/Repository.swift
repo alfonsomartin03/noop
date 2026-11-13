@@ -37,6 +37,8 @@ final class Repository: ObservableObject {
     @Published var official: [String: DailyMetric] = [:]
 
     init(deviceId: String) { self.deviceId = deviceId }
+    /// Tests: read from an already-open (in-memory) store instead of the app database.
+    init(deviceId: String, store: WhoopStore) { self.deviceId = deviceId; self.store = store }
 
     /// The most recent day with data (treated as "today" for the dashboard hero).
     var today: DailyMetric? { days.last }
@@ -122,6 +124,36 @@ final class Repository: ObservableObject {
 
     /// True when `day`'s shown scores come from a WHOOP import rather than a NOOP estimate.
     func isOfficial(_ day: String?) -> Bool { day.map(officialDays.contains) ?? false }
+
+    // MARK: Field-level provenance (issue #17 review)
+    // `mergeDaily` merges field by field (imported value, else NOOP's), so a day with ANY imported metric can still show
+    // a NOOP value for another field. `isOfficial(day)` describes the day, not a field: never use it to pick a field's
+    // baseline, unit or label.
+
+    enum FieldSource: String, Equatable { case imported, noop }
+
+    /// A merged field's value on `day` with the source it came from and that source's own history (oldest first).
+    struct FieldReading: Equatable {
+        let source: FieldSource
+        let value: Double
+        let history: [HealthPoint]
+    }
+
+    /// Mirrors `mergeDaily`'s precedence for one field. nil when neither source has a value that day.
+    static func fieldReading(day: String, imported: [String: DailyMetric], computed: [String: DailyMetric],
+                             _ pick: (DailyMetric) -> Double?) -> FieldReading? {
+        let source: FieldSource, value: Double
+        if let v = imported[day].flatMap(pick) { source = .imported; value = v }
+        else if let v = computed[day].flatMap(pick) { source = .noop; value = v }
+        else { return nil }
+        let rows = source == .imported ? imported : computed
+        let history = rows.values.compactMap { m in pick(m).map { HealthPoint(day: m.day, value: $0) } }.sorted { $0.day < $1.day }
+        return FieldReading(source: source, value: value, history: history)
+    }
+
+    func fieldReading(day: String, _ pick: (DailyMetric) -> Double?) -> FieldReading? {
+        Self.fieldReading(day: day, imported: official, computed: estimates, pick)
+    }
 
     /// Official-vs-estimate comparison for one metric over days that have both.
     func accuracy(_ pick: (DailyMetric) -> Double?) -> EstimateAccuracy.Result? {
@@ -233,6 +265,72 @@ final class Repository: ObservableObject {
         guard let store = await ensureStore() else { return [] }
         return ((try? await store.sleepSessions(deviceId: computedDeviceId, from: from - 86_400, to: to + 86_400, limit: 200)) ?? [])
             .filter { $0.endTs > from && $0.startTs < to }
+    }
+
+    /// The NOOP main sleep a nightly maximum was taken over, so the UI can name its source and bounds.
+    struct NightlyMaxHRVNight: Equatable {
+        let max: NightlyMaxHRV
+        /// First fall-asleep and final wake of the selected main sleep (unix seconds).
+        let sleepStart: Int
+        let sleepEnd: Int
+        /// Episodes of that sleep (an interrupted main sleep has several).
+        let fragments: Int
+    }
+
+    enum NightlyMaxHRVResult: Equatable {
+        case value(NightlyMaxHRVNight)
+        case unavailable(String)
+    }
+
+    /// Everything the Recovery detail's maximum depends on: a change in any field starts a fresh lookup (issue #17).
+    struct NightlyMaxHRVRequest: Hashable {
+        let day: String
+        /// `dataVersion`: bumped after syncs, rescoring, sleep corrections and imports.
+        let dataVersion: Int
+        /// Whether the recovery values beside it come from the WHOOP import.
+        let showingImport: Bool
+    }
+
+    /// Every episode of the NOOP main sleep whose FINAL wake falls on `day`, oldest first. The session is resolved as a
+    /// whole (rows sharing a `sessionId`), so a fragment that ended before midnight still belongs to the wake date's
+    /// night. Uncertain rows and naps are never included. With two main sessions waking that day, the longer one.
+    nonisolated static func mainSleepEpisodes(_ rows: [CachedSleepSession], wakingOn day: String,
+                                              dayOf: (Int) -> String) -> [CachedSleepSession] {
+        let main: Set<String> = [SleepSessionKind.primary.rawValue, SleepSessionKind.interruptedPrimary.rawValue]
+        let sessions = Dictionary(grouping: rows.filter { main.contains($0.kind ?? "") }) { $0.sessionId ?? "row-\($0.startTs)" }
+        let waking = sessions.values.filter { s in s.map(\.endTs).max().map(dayOf) == day }
+        let asleep = { (s: [CachedSleepSession]) in s.reduce(0) { $0 + $1.endTs - $1.startTs } }
+        let chosen = waking.max { (asleep($0), $0.first?.startTs ?? 0) < (asleep($1), $1.first?.startTs ?? 0) } ?? []
+        return chosen.sorted { $0.startTs < $1.startTs }
+    }
+
+    /// Maximum quality-filtered 5-min RMSSD during the NOOP main sleep that ends on `day` (issue #17). Recomputed from
+    /// this Mac's raw beat-to-beat data with the same window gates as nightly HRV; never from imported rows or
+    /// averages. `showingImport` only words the unavailable state: an imported night has no beat-to-beat data, so when
+    /// NOOP has none either there is no maximum (nothing is borrowed from the import).
+    func nightlyMaxHRV(day: String, showingImport: Bool = false) async -> NightlyMaxHRVResult {
+        guard let span = ZoneTimeline.shared.dayRange(day), let store = await ensureStore() else { return .unavailable("No data for this night") }
+        // A main sleep ending today can have begun (and paused) well before midnight: look a full day back.
+        let rows = await noopSleepEpisodes(from: span.from - 86_400, to: span.to)
+        let episodes = Self.mainSleepEpisodes(rows, wakingOn: day, dayOf: ZoneTimeline.shared.dayString)
+        guard let first = episodes.first, let last = episodes.last else {
+            return .unavailable(showingImport ? "WHOOP import has no beat-to-beat data, and NOOP recorded no main sleep for this night"
+                                              : "No NOOP-detected main sleep for this night")
+        }
+        var vitals: [SleepVitals] = []
+        for e in episodes {
+            let hr = (try? await store.hrSamples(deviceId: deviceId, from: e.startTs, to: e.endTs, limit: 200_000)) ?? []
+            let rr = (try? await store.rrIntervals(deviceId: deviceId, from: e.startTs, to: e.endTs, limit: 200_000)) ?? []
+            guard !rr.isEmpty else { continue }
+            let stages = (e.stagesJSON?.data(using: .utf8)).flatMap { try? JSONDecoder().decode([StageSegment].self, from: $0) } ?? []
+            vitals.append(SleepVitalsCalculator.compute(start: e.startTs, end: e.endTs, stages: stages,
+                                                        hr: HRQuality.clean(hr), rr: rr))
+        }
+        guard !vitals.isEmpty else { return .unavailable("No beat-to-beat data stored for this night") }
+        guard let m = NightlyMaxHRV.from(vitals) else {
+            return .unavailable("Too few clean 5-min sleep windows (need \(SleepVitalsCalculator.minValidWindows))")
+        }
+        return .value(NightlyMaxHRVNight(max: m, sleepStart: first.startTs, sleepEnd: last.endTs, fragments: episodes.count))
     }
 
     /// Newest stored heart-rate timestamp (any day): how far synced data reaches.

@@ -196,7 +196,7 @@ private struct MonitorTile: View {
                     .foregroundStyle(reading.latest == nil ? StrandPalette.textTertiary : StrandPalette.textPrimary)
                 Text(m.unit).font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
             }
-            Label(reading.status.label, systemImage: reading.status.symbol).font(.system(size: 12, weight: .semibold)).foregroundStyle(tint)
+            Label(statusText, systemImage: reading.status.symbol).font(.system(size: 12, weight: .semibold)).foregroundStyle(tint)
             Text(caption).font(StrandFont.footnote).foregroundStyle(StrandPalette.textTertiary).lineLimit(2)
         }
         .padding(16)
@@ -204,8 +204,11 @@ private struct MonitorTile: View {
         .strandSurface(cornerRadius: 20)
         .contentShape(Rectangle())
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(m.title): \(reading.latest.map { "\(HealthFormat.value($0.value, m)) \(m.unit)" } ?? "no reading"). \(reading.status.label). \(caption)")
+        .accessibilityLabel("\(m.title): \(reading.latest.map { "\(HealthFormat.value($0.value, m)) \(m.unit)" } ?? "no reading"). \(statusText). \(caption)")
     }
+
+    /// HRV reads against the median first (issue #17): near the median is "Typical for you".
+    private var statusText: String { reading.metric == .hrv ? reading.position?.label ?? reading.status.label : reading.status.label }
 
     private var caption: String {
         guard let l = reading.latest else {
@@ -248,15 +251,19 @@ private struct HealthMetricDetail: View {
             }
             Grid(alignment: .leading, horizontalSpacing: 20, verticalSpacing: 8) {
                 row("Latest", reading.latest.map { "\(HealthFormat.value($0.value, m)) \(m.unit) · night of \(HighlightsContent.long($0.day))" } ?? "None")
-                row("Status", reading.status.label)
+                row("Status", m == .hrv ? reading.position?.label ?? reading.status.label : reading.status.label)
                 row("Source", "\(reading.source) (value and range from this source only)")
                 if let b = reading.baseline {
                     row("Personal range", "\(HealthFormat.value(b.low, m))–\(HealthFormat.value(b.high, m)) \(m.unit), median \(HealthFormat.value(b.median, m))")
+                    if m == .hrv {
+                        let t = PersonalRangePosition.typicalHalfWidth(b, metric: m)
+                        row("Typical for you", "\(HealthFormat.value(b.median - t, m))–\(HealthFormat.value(b.median + t, m)) \(m.unit) (median ± 1 robust spread)")
+                    }
                     row("Range built from", "\(b.count) nights, \(HighlightsContent.long(b.firstDay)) – \(HighlightsContent.long(b.lastDay))" + (b.outliers > 0 ? " · \(b.outliers) outlier\(b.outliers == 1 ? "" : "s") left out" : ""))
                 }
                 row("Coverage", coverage)
             }
-            Text("The range is your median ± 2 robust spreads from earlier nights (never including the night shown). It describes your usual values, not a clinical normal range.")
+            Text("The range is your median ± 2 robust spreads from earlier nights (never including the night shown)." + (m == .hrv ? " Within one spread of the median reads as typical for you; between one and two, higher or lower than usual." : "") + " It describes your usual values, not a clinical normal range.")
                 .font(StrandFont.footnote).foregroundStyle(StrandPalette.textTertiary).fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
         }
@@ -278,6 +285,11 @@ private struct HealthMetricDetail: View {
             if let b = reading.baseline, let f = pts.first?.date, let l = pts.last?.date {
                 RectangleMark(xStart: .value("From", f), xEnd: .value("To", l), yStart: .value("Low", b.low), yEnd: .value("High", b.high))
                     .foregroundStyle(StrandPalette.statusPositive.opacity(0.12))
+                if m == .hrv {
+                    let t = PersonalRangePosition.typicalHalfWidth(b, metric: m)
+                    RectangleMark(xStart: .value("From", f), xEnd: .value("To", l), yStart: .value("Typical low", b.median - t), yEnd: .value("Typical high", b.median + t))
+                        .foregroundStyle(StrandPalette.statusPositive.opacity(0.14))
+                }
                 RuleMark(y: .value("Median", b.median)).foregroundStyle(StrandPalette.statusPositive.opacity(0.5))
                     .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 3]))
             }
