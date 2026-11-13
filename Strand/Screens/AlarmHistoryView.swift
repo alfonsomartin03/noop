@@ -44,7 +44,7 @@ struct AlarmHistorySection: View {
 extension AlarmOccurrenceSummary.Status {
     var tint: Color {
         switch self {
-        case .strapReportedVibration, .strapAlarmRang, .dismissedOnStrap, .dismissedInApp: return StrandPalette.statusPositive
+        case .strapReportedVibration, .strapAlarmRang, .dismissedOnStrap, .dismissedInApp, .skippedAwake: return StrandPalette.statusPositive
         case .buzzRequested, .ringingOnMac, .scheduled: return StrandPalette.accent
         case .deliveryUnconfirmed: return StrandPalette.statusWarning
         case .failed, .missed: return StrandPalette.statusCritical
@@ -252,6 +252,8 @@ struct AlarmOccurrenceDetail: View {
             case AlarmHistoryKind.decision: return (f["trigger"] as? String ?? "") + " · " + (f["reason"] as? String ?? "")
             case AlarmHistoryKind.notification: return f["outcome"] as? String ?? ""
             case AlarmHistoryKind.dismissal: return "by \(f["source"] as? String ?? "?")"
+            case AlarmHistoryKind.skipped:
+                return "already awake · \(f["phase"] as? String ?? "") · strap " + ((f["strapReachable"] as? Bool ?? false) ? "updated" : "not reachable")
             case AlarmHistoryKind.deliveryOutcome: return [f["outcome"] as? String, f["detail"] as? String].compactMap { $0 }.joined(separator: " · ")
             default: return ""
             }
