@@ -3,8 +3,7 @@
 Reconciled 2026-11-16 at `origin/main` `ff1dcb7` against current source, tests, the committed captures, the
 app's undecoded-history archive and the app database (both analysed as **copies**). **No strap interaction**:
 nothing was sent, read or subscribed for this document. Labels as in [README.md](README.md). Hardware claims are
-scoped to the unit last read in E01/E02: WHOOP 5.0, fw `50.43.1.0`, hw `WG50_r52`. The firmware installed today
-has **not been re-read** (needs a Device Information read: a strap contact, so it waits for approval).
+scoped to the unit last read in E01/E02: WHOOP 5.0, fw `50.43.1.0`, hw `WG50_r52`. The app’s cached Device Information read corroborates that firmware as of 2026-11-16; no additional probe contact was made.
 
 Private inputs (stay local, never committed): a SQLite-backup copy of the app DB (events 2026-11-02 → 11-16)
 and a copy of `undecoded-history/*.jsonl` (15 day files, 41,237 frames). Only aggregate structure is recorded
@@ -97,6 +96,8 @@ The periodic 40-s windows are optical sample windows (R26). What they are used f
 not established; no published source documents the ~20-min cadence.
 
 ## 5 · Findings that suggest improvements (ranked)
+
+Finding 1 describes the pre-fix behavior: PR #29 now verifies the stored slot before rewriting it. Fake-link tests pass; the reduction in real strap writes remains unmeasured.
 
 | # | Finding | Evidence | Where the fix belongs | Risk / metric |
 |---|---|---|---|---|
