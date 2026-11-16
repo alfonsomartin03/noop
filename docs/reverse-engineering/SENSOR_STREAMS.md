@@ -10,10 +10,11 @@ assumed to exist here.
 | Gravity / orientation | type-47 payload[37..48] | 3 × float32 g, 1/s | CONFIRMED |
 | Heart rate (standard) | 2A37 | ~1 Hz, BLE HR profile with R-R in 1/1024 s; only while cmd 14 is on | CONFIRMED (NOOP 2026-10-21) |
 | Battery % | 2A19 and cmd 26 | u8 % | CONFIRMED |
-| Battery mV / charging | event 3 BATTERY_LEVEL | ryanbr/noop offsets | SUPPORTED |
+| Battery mV / charging | event 3 BATTERY_LEVEL | soc @1, mV @5, charging byte 9 bit 0; pushed ~every 30 s while charging | CONFIRMED (fw 50.43.1.0) |
 | Connection events | events 11/12 | — | CONFIRMED |
 | Skin temperature | firmware computes it (`skin_temp = 35.01` in console wear-detect log) | where it appears in BLE data is UNKNOWN; Goose has a "debug skin temperature" request on fd4b0007 (not tested) | firmware value CONFIRMED, BLE field UNKNOWN |
 | Wear detection | firmware state machine `SIGPROC-WEAR-DETECT V5` (console) | event numbers for wrist on/off not seen on 5.0 | UNKNOWN |
+| Periodic 40-s burst (type-47 v0x1a) | history, ~every 20 min | 24 × i16 waveform-like samples per 1-s record | structure CONFIRMED, signal UNKNOWN |
 | Optical / PPG | type-47 has undecoded bytes; Goose's capture sequence uses cmds 107/108/153 | not tested | UNKNOWN |
 | Accelerometer raw / gyroscope | Goose: 106 `[1,1]`, 154 persistent R21; ryanbr/noop: R21 IMU 1244 B | not tested (154 is gate C) | UNKNOWN |
 | Realtime HR (type 40) | cmd 3 `[1]` on / `[0]` off, fd4b0005 | 1 Hz, u8 bpm at payload[8], strap-clock unix at payload[2]; no R-R observed | CONFIRMED (E04) |

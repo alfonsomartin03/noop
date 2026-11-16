@@ -15,9 +15,9 @@ This is a convention, not CI: reconcile with the working tree before trusting it
 
 ## 1 · Snapshot
 
-- Refreshed **2026-11-13** (America/New_York). Includes pilot implementations #15–#19; experimental estimates and outstanding manual/hardware/accuracy checks are distinguished in §3/§4/§8.
+- Refreshed **2026-11-16** (America/New_York). Includes pilot implementations #15–#19 and #25 phase 1 research docs; experimental estimates and outstanding manual/hardware/accuracy checks are distinguished in §3/§4/§8.
 - **NOOP**: local-only macOS companion for WHOOP 4.0/5.0 straps. Internal target/scheme/package prefix **Strand**; bundle `com.noopapp.noop`, product `NOOP.app`, v0.1.0 (1).
-- 362 first-party files indexed in §7 (tracked + non-ignored untracked, excluding this file). Source size hotspots: `BLEManager.swift` ~2.0k lines, `SleepStager.swift` ~1.3k, `OnboardingWizard.swift` ~1.1k, `TrendSections.swift` ~0.9k — search, don't read whole.
+- 363 first-party files indexed in §7 (tracked + non-ignored untracked, excluding this file). Source size hotspots: `BLEManager.swift` ~2.0k lines, `SleepStager.swift` ~1.3k, `OnboardingWizard.swift` ~1.1k, `TrendSections.swift` ~0.9k — search, don't read whole.
 - Test inventory (methods in files, not pass results): StrandAnalytics 467, WhoopProtocol 150, WhoopStore 115, StrandImport 61, StrandDesign 40 (2 snapshot tests skip without env), hosted StrandTests 82 (4 render tests skip without `NOOP_RENDER_TRENDS=1`, 1 without `NOOP_RENDER_OVERVIEW=1`), Python 27.
 
 ## 2 · Architecture and routing
@@ -132,6 +132,7 @@ Packages (all Swift tools 5.9, platforms macOS 13 / iOS 16; **only a macOS app t
 - Stage source label shows the current `IntelligenceEngine.scoringVersion`; rows don't store their own version (rescoring replaces them).
 - Overview coverage caption is unit-tested but not visually inspected (card is below the fold in fixture screenshots).
 - Older rows in `ALARM_CAPABILITIES.md` predate H02b/H04/H07.
+- #25 phase 1 (2026-11-16, offline): research docs reconciled with source (fd4b0004 carries live events; event-3 charging bit confirmed; 151 failure = unavailable; v0x1a payload is 76 B). Found: `syncDeviceAlarm` re-sends SET_ALARM_TIME on every clock measurement (each connect + each ~15-min pull) even when the slot already holds the confirmed occurrence (~50 strap writes/day); probe `--commands 67` reads invalid id 0. Neither is fixed yet. Current firmware not re-read; no strap contact.
 - `docs/FEATURES.md`, `DATA_MODEL.md`, `ANALYTICS.md`, `docs/README.md` and `SLEEP_RECOVERY_RESEARCH_2026-10-27.md` still label sleep/alarm/v15 work as uncommitted/in progress; it is committed.
 - Legacy comments mention server/phone/Kotlin or removed screens (`MetricsCache`, `Cursors`, design umbrella, some views). No backend or mobile app ships.
 - Not universal WHOOP compatibility: alarm confirmation is firmware-specific; attached battery-pack reply layout and live charging events are unobserved; unknown history must be archived, not guessed.
@@ -288,10 +289,12 @@ Format: `file` — purpose. Tests list `Suite(methods)`. Fixtures/resources are 
 - `HEALTH_MODELS.md` — Health page inputs, biological-age/stress model review, personal-range and activation methods.
 - Measurement reports: `MEASUREMENT_VALIDITY.md`, `NAP_DETECTION.md` (versioned nap evidence, private label schema, evaluation limits), `SLEEP_SESSIONS.md`, `SLEEP_STRAIN_AUDIT.md`, `SLEEP_RECOVERY_RESEARCH_2026-10-27.md`, `WORKOUT_STRAIN_REPORT.md`, `WORKOUT_STRAIN_RESEARCH_2026-10-30.md`.
 - `assets/` — `banner.svg`, `logo.svg`. `assets/qa/issue-18/2026-11-13/` — synthetic (no personal data) before/after QA renders for #18: `year-strip-760-dark-before.png`, `year-strip-760-dark-after.png`, `vitals-card-rows-1180-light-before.jpg`, `vitals-card-rows-1180-light-after.jpg`, `sparse-sections-sleep-stage-labels-before.jpg`, `sparse-sections-sleep-stage-labels-after.jpg`, `activity-sessions-workout-detail-long-label-760-before.jpg`, `workout-detail-long-label-760-after.jpg`, `vitals-live-recent-cycles-supporting-day.jpg`.
-- `reverse-engineering/` — `README.md`, `AUDIT.md`, `SAFETY_MATRIX.md`, `COMMAND_REGISTRY.md` + `whoop5_commands.json`, `GATT_MAP.md`, `PROTOCOL_SPEC.md`, `PACKET_TYPES.md`, `SENSOR_STREAMS.md`, `STATE_MACHINE.md`, `ALARM_CAPABILITIES.md`, `EXPERIMENT_LOG.md`, `TEST_RESULTS.md`, `UNKNOWN_CAPABILITIES.md`.
+- `reverse-engineering/` — `README.md`, `CAPABILITY_MATRIX.md` (#25 reconciled command/characteristic/event/history inventory, ranked improvements, firmware status; offline only), `AUDIT.md`, `SAFETY_MATRIX.md`, `COMMAND_REGISTRY.md` + `whoop5_commands.json`, `GATT_MAP.md`, `PROTOCOL_SPEC.md`, `PACKET_TYPES.md`, `SENSOR_STREAMS.md`, `STATE_MACHINE.md`, `ALARM_CAPABILITIES.md`, `EXPERIMENT_LOG.md`, `TEST_RESULTS.md`, `UNKNOWN_CAPABILITIES.md`.
 - `reverse-engineering/captures/` — redacted JSONL evidence: `E01-passive-gatt`, `E02-readonly-matrix`, `E04-realtime-hr`, `H01-get-alarm`, `H02-H03-H06-slot0`, `H02b`, `H05-disable`, `H07`.
 
 ## 8 · Verification record
+
+- 2026-11-16 #25 phase 1 (docs only, no strap contact): archive copy (41,237 v0x1a frames) and SQLite-backup DB copy analysed for aggregate structure only; claims in `CAPABILITY_MATRIX.md` checked against `BLEManager.whoop5Allowed`, probe allowlists, `Whoop5Messages` (event 3 bit, `packInfo`), `AlarmController.syncDeviceAlarm` + `AppModel` clock sink. No builds/tests (no code changed). Index check run.
 
 - 2026-11-13 #26 follow-up (legend text removed, coloured insights): PASS app build + hosted 82 (5 env skips). Re-rendered and looked at full day 1180 light and partial 10 am 760 dark: badges/tinted values readable in both themes, insights wrap without clipping. Not done: VoiceOver, live app.
 
@@ -406,6 +409,7 @@ git ls-files --cached --others --exclude-standard | grep -v -e '^AGENTS.md$' -e 
 
 | Date | Change | Checks / remaining |
 | --- | --- | --- |
+| 2026-11-16 | #25 phase 1: `CAPABILITY_MATRIX.md` (offline inventory, ranked improvements, firmware status); stale research docs reconciled. | Docs only; no strap contact; alarm-rewrite finding not fixed. |
 | 2026-11-13 | #26 follow-up 2: resting line takes the moon icon + lavender; asleep-vs-awake line removed. | Build + hosted pass. |
 | 2026-11-13 | #26 follow-up: caveat moved from under the legend to its help/VoiceOver hint; insights gain asleep-vs-awake HR, high-activation time, kcal and coloured badges/values. | Build + hosted 82 pass; renders inspected; VoiceOver/live app not checked. |
 | 2026-11-13 | #26 Overview HR card: one `DayTimeAxis` for HR curve + activation strip (time-based, gaps, no data vs upcoming, DST), visible legend matching Health, activation labels renamed, cleaner summary. | Analytics 467 + hosted 82 + build pass; synthetic renders inspected; hover/VoiceOver/live app not checked. |
@@ -413,4 +417,3 @@ git ls-files --cached --others --exclude-standard | grep -v -e '^AGENTS.md$' -e 
 | 2026-11-13 | #19 pilot publication: integrate main, reconcile reference and review implemented fixes. | Build + hosted 55 + focused 71 pass; live pilot gate incomplete; draft PR, issue remains open. |
 | 2026-11-13 | #19 review: evaluator arrays in reference order + match identities; nap detection labelled experimental (with versions) in the sessions card. | DetectionEvaluation 7 + hosted 44 + build pass; pilot smoke not run. |
 | 2026-11-13 | #19 completion guide: `DetectionEvaluation` medians, duration error, Wilson intervals, duration strata; nap evaluation protocol + label schema in `NAP_DETECTION.md`. | StrandAnalytics full suite pass; no labelled data, so no accuracy result; app workflow not run. |
-| 2026-11-13 | #19 review: low-evidence nap candidates kept as correctable uncertain sessions (`sessions-v2`) so user corrections survive rescoring; nap doc sourced, targets frozen, private timestamps removed. | StrandAnalytics 438 pass; measured-improvement criterion not met (no labelled data); nap UI not checked. |

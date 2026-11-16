@@ -18,8 +18,8 @@ payload offset + 8. Names for type numbers come from NOOP's `whoop_protocol.json
 | 50 | CONSOLE_LOGS | yes (180) | fd4b0005 | 76 | CONFIRMED |
 | 52, 53, 54, 55, 56 | puffin / IMU variants | never | — | — | UNKNOWN on this unit |
 
-All captured history traffic (types 47–50) arrives on fd4b0005, including events: the "events"
-characteristic fd4b0004 was silent.
+All captured history traffic (types 47–50) arrives on fd4b0005, including replayed events. The "events"
+characteristic fd4b0004 was silent in E01/E02 but carried live events during H02b–H07 (ALARM_CAPABILITIES.md).
 
 ## 36 COMMAND_RESPONSE
 
@@ -32,7 +32,7 @@ An UNSUPPORTED or PENDING response has a 3-byte zero body (20-byte frame). CONFI
 | 11 GET_CLOCK | `[unix sec u32][subsec u32][00 00 00]`; subsec unit 1/32768 s is from Goose | CONFIRMED (sec), SUPPORTED (subsec unit) |
 | 26 GET_BATTERY_LEVEL | `[pct u8][00 ×6]`; matched 2A19 = 20 | CONFIRMED (one sample; width u8 vs u16 UNKNOWN) |
 | 34 GET_DATA_RANGE | see below | partly CONFIRMED |
-| 84, 151 | result 0 with body starting `01` | CONFIRMED (failure), meaning UNKNOWN |
+| 84, 151 | result 0 with body starting `01` | CONFIRMED (failure). For 151 the app treats this shape as `unavailable`, never as proof the pack is detached; SUCCESS = `answeredUndecoded` |
 | 145 GET_HELLO | 124-byte body, identity data | redacted, not analysed |
 
 ### GET_DATA_RANGE (34) body, 67 bytes
@@ -63,10 +63,13 @@ Second sample (E04, 11:29): trim page 104162 / block 15, +41 = +49 = 11:26:39 (l
 pull), +57 = 11:28:38 (≈ strap clock), oldest advanced from 10-11 16:12:39 to 10-11 16:27:45 in 15 min:
 the oldest record moves with a rolling ~3-week buffer, independently of acks. CONFIRMED on two samples.
 
-## 47 HISTORICAL_DATA, version 0x1a (payload 80 bytes, frame 88) — E08
+## 47 HISTORICAL_DATA, version 0x1a (payload 76 bytes, frame 88) — E08, archive inventory 2026-11-16
 
-Seen live 2026-11-02 (80 records). Strap unix u32 at payload 7 (80/80 plausible), consecutive 1-s records in runs
-about 20 minutes apart. Nothing else is decoded. NOOP archives these frames verbatim before acking their chunk.
+Seen live 2026-11-02 (80 records). Strap unix u32 at payload 7, consecutive 1-s records. NOOP archives these frames
+verbatim before acking their chunk. Offline inventory of the archive (41k frames, 15 days): bursts of 40 consecutive
+seconds about every 20 min; @3 counter u32 +1 per record; @19–66 = 24 × i16 LE with strong lag-1 correlation
+(waveform-like, ~24 samples/s). Meaning of every field except type/version/counter/time is UNKNOWN; see
+[CAPABILITY_MATRIX.md](CAPABILITY_MATRIX.md) §4.
 
 ## 40 REALTIME_DATA (payload 20 bytes) — E04
 
@@ -108,7 +111,7 @@ all 26 captured events. CONFIRMED (matches ryanbr/noop's "length at frame[18]").
 
 | Event | Name (4.0 enum) | Body bytes seen | Label |
 |---:|---|---|---|
-| 3 | BATTERY_LEVEL | 20 | soc u16/10 @1 and mV u16 @5 CONFIRMED (20.0 %, 3706 mV = 0x2A19); charging @10 unproven |
+| 3 | BATTERY_LEVEL | 20 | soc u16/10 @1 and mV u16 @5 CONFIRMED (20.0 %, 3706 mV = 0x2A19); charging = body byte 9 bit 0, CONFIRMED on 500 stored events incl. two charge sessions (`Whoop5Messages.batteryEvent5`) |
 | 33 / 34 | BLE_REALTIME_HR_ON / OFF | 0 | CONFIRMED (E04, E08) |
 | 63 | EXTENDED_BATTERY_INFORMATION | — | name SUPPORTED; same second as event 3 |
 | 11 / 12 | BLE_CONNECTION_UP / DOWN | 0 | CONFIRMED (appear around connects) |
@@ -118,8 +121,9 @@ all 26 captured events. CONFIRMED (matches ryanbr/noop's "length at frame[18]").
 | 120 | — | 32 | UNKNOWN |
 | 123 | — | 8; byte 4 = 01 at disconnect, 02 at reconnect | HYPOTHESIS: connection state |
 
-The NOOP app logs 5.0 events as "undecoded" and never routes them, because `parseFrame` reads 4.0
-offsets. Wrist on/off and double-tap event numbers have not been observed on 5.0.
+Current NOOP decodes 5.0 events (`Whoop5Event`) and routes charging/alarm events; the old "undecoded" note is
+historical. Event 14 (double tap) is CONFIRMED as the alarm dismissal gesture (H04/H06b) but fires far more often in
+daily use (CAPABILITY_MATRIX.md §3). Wrist on/off events have not been observed on 5.0.
 
 ## 49 METADATA
 
