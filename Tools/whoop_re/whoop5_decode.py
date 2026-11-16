@@ -175,6 +175,10 @@ def decode(frame: bytes, redact: bool = True) -> dict:
                  rr=[x for x in rr if x], tail=p[10 + 2 * n:].hex())
     elif t == 47 and len(p) >= 20:
         d.update(version=p[1], record_ts=u32(p, 7), hr=p[14], rr_count=p[15])
+        if p[1] == 0x12 and len(p) >= 67:
+            # SUPPORTED (#25): skin temperature u16 at payload 65, 1/100 degC; outside 5-45 degC = missing (as the app)
+            raw = struct.unpack_from("<H", p, 65)[0]
+            d["skin_temp_c"] = raw / 100 if 500 <= raw <= 4500 else None
     else:
         d["raw"] = p.hex()
     return d

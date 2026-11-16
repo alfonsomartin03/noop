@@ -122,3 +122,31 @@ final class BiometricStreamTests: XCTestCase {
         XCTAssertEqual(limited.first?.ts, 100)
     }
 }
+
+/// v18: skin-temperature samples carry their unit, so 5.0 1/100 °C values never mix with 4.0 ADC counts.
+final class SkinTempUnitTests: XCTestCase {
+    func testExistingRowsBecomeRawADCAfterV18() throws {
+        let q = try DatabaseQueue()
+        let migrator = WhoopStore.makeMigrator()
+        try migrator.migrate(q, upTo: "v17")
+        try q.write { db in
+            try db.execute(sql: "INSERT INTO skinTempSample (deviceId, ts, raw) VALUES ('d', 100, 900)")
+        }
+        try migrator.migrate(q)
+        let unit = try q.read { db in try String.fetchOne(db, sql: "SELECT unit FROM skinTempSample WHERE ts = 100") }
+        XCTAssertEqual(unit, "raw_adc")
+    }
+
+    func testUnitRoundTripsAndOnlyCentiCelsiusConvertsToCelsius() async throws {
+        let store = try await WhoopStore.inMemory()
+        try await store.upsertDevice(id: "dev1", mac: nil, name: nil)
+        _ = try await store.insert(Streams(skinTemp: [
+            SkinTempSample(ts: 1_700_000_000, raw: 900),                                   // 4.0 ADC counts
+            SkinTempSample(ts: 1_700_000_001, raw: 3508, unit: Whoop5HistoricalRecord.skinTempUnit),
+        ]), deviceId: "dev1")
+        let rows = try await store.skinTempSamples(deviceId: "dev1", from: 0, to: 2_000_000_000, limit: 10)
+        XCTAssertEqual(rows.map(\.unit), ["raw_adc", "centi_celsius"])
+        XCTAssertNil(rows[0].celsius, "no verified conversion for 4.0 ADC counts")
+        XCTAssertEqual(try XCTUnwrap(rows[1].celsius), 35.08, accuracy: 1e-9)
+    }
+}

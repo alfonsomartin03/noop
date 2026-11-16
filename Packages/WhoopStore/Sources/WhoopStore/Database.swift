@@ -401,6 +401,13 @@ extension WhoopStore {
                 t.primaryKey(["localDate", "session", "promptId"])
             }
         }
+        migrator.registerMigration("v18") { db in
+            // Skin-temperature unit per sample: 4.0 rows are ADC counts ("raw_adc", the default for existing rows); 5.0
+            // rows are 1/100 °C ("centi_celsius", type-47 v0x12 payload 65). The two must never be mixed.
+            try db.alter(table: "skinTempSample") { t in
+                t.add(column: "unit", .text).notNull().defaults(to: "raw_adc")
+            }
+        }
         return migrator
     }
 }

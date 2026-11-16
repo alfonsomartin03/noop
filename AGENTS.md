@@ -18,7 +18,7 @@ This is a convention, not CI: reconcile with the working tree before trusting it
 - Refreshed **2026-11-16** (America/New_York). Includes pilot implementations #15–#19, the interrupted-night acceptance fix and #25 phase 1 research docs; experimental estimates and outstanding manual/hardware/accuracy checks are distinguished in §3/§4/§8.
 - **NOOP**: local-only macOS companion for WHOOP 4.0/5.0 straps. Internal target/scheme/package prefix **Strand**; bundle `com.noopapp.noop`, product `NOOP.app`, v0.1.0 (1).
 - 363 first-party files indexed in §7 (tracked + non-ignored untracked, excluding this file). Source size hotspots: `BLEManager.swift` ~2.0k lines, `SleepStager.swift` ~1.3k, `OnboardingWizard.swift` ~1.1k, `TrendSections.swift` ~0.9k — search, don't read whole.
-- Test inventory (methods in files, not pass results): StrandAnalytics 473, WhoopProtocol 150, WhoopStore 115, StrandImport 61, StrandDesign 40 (2 snapshot tests skip without env), hosted StrandTests 88 (4 render tests skip without `NOOP_RENDER_TRENDS=1`, 1 without `NOOP_RENDER_OVERVIEW=1`), Python 27.
+- Test inventory (methods in files, not pass results): StrandAnalytics 473, WhoopProtocol 152, WhoopStore 117, StrandImport 61, StrandDesign 40 (2 snapshot tests skip without env), hosted StrandTests 88 (4 render tests skip without `NOOP_RENDER_TRENDS=1`, 1 without `NOOP_RENDER_OVERVIEW=1`), Python 28.
 
 ## 2 · Architecture and routing
 
@@ -102,9 +102,10 @@ Packages (all Swift tools 5.9, platforms macOS 13 / iOS 16; **only a macOS app t
 
 - `StorePaths`: Application Support `OpenWhoop/whoop.sqlite` (sandbox container in the app); never hard-code a home path. WAL/SHM accompany it; raw archive and UserDefaults are separate.
 - `WhoopStore` is an actor over GRDB; `Repository` and BLE hold separate handles (WAL + busy handling).
-- Schema **v17** (`Database.swift`, migrations v1–v17; v16 alarm history; v17 `checkInEntry` + `checkInAnswer`). Older backups restore by replacement and migrate to v17 with no check-ins. Add migrations; never edit applied ones. v10 RR sequence, v11 provenance, v12 load, v13 training logs, v14 workout labels + incremental state, v15 classified sleep sessions + corrections.
+- Schema **v18** (`Database.swift`, migrations v1–v18; v16 alarm history; v17 `checkInEntry` + `checkInAnswer`; v18 `skinTempSample.unit`, existing rows `raw_adc`). Older backups restore by replacement and migrate to v18 with no check-ins. (`WhoopStoreInfo.schemaVersion` still says 15: pre-existing stale constant, asserted by `MigrationTests`.) Add migrations; never edit applied ones. v10 RR sequence, v11 provenance, v12 load, v13 training logs, v14 workout labels + incremental state, v15 classified sleep sessions + corrections.
 - Tables: `device`, `hrSample`, `rrInterval`, `event`, `battery`, `spo2Sample`, `skinTempSample`, `respSample`, `gravitySample`, `rawBatch`, `cursors`, `dailyMetric`, `sleepSession`, `journal`, `workout`, `appleDaily`, `metricSeries`, `metricProvenance`, `loadRecord`, `sessionEffort`, `strengthSet`, `workoutLabel`, `dayScoreState`, `sleepCorrection`, `alarmEvent`, `alarmAnnotation`, `checkInEntry`, `checkInAnswer`.
 - Raw/import identity and `<device>-noop` computed identity stay distinct. `Repository` merges for display with imported-field precedence; imported values never enter NOOP causal baselines.
+- 5.0 skin temperature (#25): `decodeWhoop5Historical` reads type-47 v0x12 payload 65 u16 as 1/100 °C (`Whoop5HistoricalRecord.skinTempCentiC`; outside 5–45 °C = nil, never 0) and `BLEManager.persistWhoop5Records` stores it in `skinTempSample` with unit `centi_celsius` in the same transaction as HR/RR/gravity (ack order unchanged). 4.0 rows keep `raw_adc`; `SkinTempSample.celsius` converts only `centi_celsius`. Layout SUPPORTED by two external sources + 634 local frames (≈ 35 °C, matches console `skin_temp`); no reference thermometer. **Not read by scoring or UI yet** (`AnalyticsEngine` still writes `skinTempDevC: nil`); off-wrist readings are not separated.
 - `WhoopImporter` → idempotent upserts of cycles, sleeps, workouts, journal, metric series. `DataBackup` exports the DB and restores by replacement (relaunch); not a merge, not preferences or raw archive.
 - `IntelligenceEngine.scoringVersion = 5`; `IncrementalScorer` reuses unchanged days, tracks algorithm/config/source changes, scores in causal order; upgrades archive old derived rows and replace per-day results atomically.
 - `HRQuality`/`SupportedHR` gate supported time; `HRCalibration` gives HR references; `CardioLoad` → `StrainScorer` (versioned 0–21). Confident sleep/naps excluded from load in v5.
@@ -252,14 +253,14 @@ Format: `file` — purpose. Tests list `Suite(methods)`. Fixtures/resources are 
 - `Whoop5Messages.swift` — 5.0 command responses, clock, data range, events, `Whoop5Charging` (`packInfo`; failure ≠ removal), `Whoop5Alarm`. `ChargingModel.swift` — attachment/charging facts, freshness, ordering, "likely" inference. `BatteryPolicy.swift` — readings + alert policy. `DeviceClock.swift` — clock estimator. `SyncCoverage.swift` — sync spans/sessions. `Redaction.swift` — capture redaction. `WhoopProtocol.swift` — module info.
 
 ### `Packages/WhoopProtocol/Tests/WhoopProtocolTests`
-- BiometricStreamsParityTests(1), DeviceFamilyFramingTests(14), DeviceLogicTests = clock/redaction/sync/battery-alert (27), FramingTests(10), HistoricalMetaTests(9), HistoricalStreamsParityTests(1), HistoricalV24Tests(5), InterpreterEnvelopeTests(4), ParityTests(2), PostHooksTests(8), ReassemblerTests incl. 5.0 command/realtime/historical (15), SchemaTests(5), SmokeTests(1), StreamsParityTests(1), StreamsTests(5), ValuesTests(4), Whoop5ChargingTests(3) + ChargingModelTests(17), Whoop5MessagesTests(18).
+- BiometricStreamsParityTests(1), DeviceFamilyFramingTests(14), DeviceLogicTests = clock/redaction/sync/battery-alert (27), FramingTests(10), HistoricalMetaTests(9), HistoricalStreamsParityTests(1), HistoricalV24Tests(5), InterpreterEnvelopeTests(4), ParityTests(2), PostHooksTests(8), ReassemblerTests incl. 5.0 command/realtime/historical + skin temperature (17), SchemaTests(5), SmokeTests(1), StreamsParityTests(1), StreamsTests(5), ValuesTests(4), Whoop5ChargingTests(3) + ChargingModelTests(17), Whoop5MessagesTests(18).
 - `Resources/`: `frames.json`, `golden.json`, `historical_frames.json`, `historical_golden.json`, `streams_golden.json`, `biometric_streams_golden.json`, `whoop5_frames.json` — captured/golden fixtures.
 
 ### `Packages/WhoopStore/Sources/WhoopStore`
-- `WhoopStore.swift` — actor + open/config. `Database.swift` — migrations v1–v17. `StreamStore.swift` — device upsert + stream inserts. `Reads.swift` — stream reads. `Cursors.swift` — cursor/highwater keys.
+- `WhoopStore.swift` — actor + open/config. `Database.swift` — migrations v1–v18. `StreamStore.swift` — device upsert + stream inserts. `Reads.swift` — stream reads. `Cursors.swift` — cursor/highwater keys.
 - `RawOutbox.swift` — raw batch outbox. `MetricsCache.swift` — `DailyMetric`, cached sleep sessions, corrections. `MetricSeriesStore.swift` — imported metric series. `DerivedStore.swift` — provenance, load, day score state, atomic derived batches.
 - `JournalWorkoutAppleCache.swift` — journal, workouts, Apple daily. `TrainingLogStore.swift` — effort, strength sets, workout labels. `AlarmHistoryStore.swift` — append-only alarm events (dedupe) + annotations. `CheckInStore.swift` — check-in entries + answers (v17).
-- Tests: AlarmHistoryStoreTests(3), CheckInStoreTests(4), BiometricStreamTests(8), CursorTests(5), DerivedWriteTests(7), InsertTests(4), JournalWorkoutAppleCacheTests(13), LatestSampleTests(1), MetricSeriesStoreTests(11), MetricsCacheTests(10), MigrationTests(5), PruneTests(5), RRSequenceTests + DerivedIsolation(10), RawOutboxTests(6), ReadTests(5), ScaffoldTests(2), SleepCorrectionTests(3), TrainingLogStoreTests(13). `Package.swift`, `Package.resolved`.
+- Tests: AlarmHistoryStoreTests(3), CheckInStoreTests(4), BiometricStreamTests(8) + SkinTempUnitTests(2), CursorTests(5), DerivedWriteTests(7), InsertTests(4), JournalWorkoutAppleCacheTests(13), LatestSampleTests(1), MetricSeriesStoreTests(11), MetricsCacheTests(10), MigrationTests(5), PruneTests(5), RRSequenceTests + DerivedIsolation(10), RawOutboxTests(6), ReadTests(5), ScaffoldTests(2), SleepCorrectionTests(3), TrainingLogStoreTests(13). `Package.swift`, `Package.resolved`.
 
 ### `Packages/StrandAnalytics/Sources/StrandAnalytics`
 - Orchestration: `AnalyticsEngine` (per-day results), `IncrementalScorer` (reuse/invalidation), `TrendPeriodComparison` (completed-period comparisons), `CausalReplay`, `CausalReference` (causal baselines), `Baselines`, `MetricProvenance` (metric identities/sources).
@@ -282,7 +283,7 @@ Format: `file` — purpose. Tests list `Suite(methods)`. Fixtures/resources are 
 - `ble_probe/` — `Sources/ble_probe/main.swift` scripted BLE research probe; `make_app.sh` wraps it as an app; `bundle/Info.plist`; `Package.swift`.
 - `perf_probe/` — `main.swift` repository/scoring timing on a DB copy (`--sleepperf`: NOOP vs imported sleep performance, nights paired by sleep interval, values from the cycle declaring that sleep); `Package.swift`, `Package.resolved`.
 - `strain_replay/` — `main.swift` replays strain scoring on a DB copy; `Package.swift`, `Package.resolved`.
-- `whoop_re/` — `whoop5_decode.py` standalone 5.0 frame decoder; `test_whoop5_decode.py` (22). `reverse_engineer/analyze_export.py` — export score analysis. `reverse_engineer/sleep_performance_eval.py` — held-out sleep-performance hypotheses on an export (stdlib); `test_sleep_performance_eval.py` (5); joins both export CSVs per sleep, reports eligible/excluded counts.
+- `whoop_re/` — `whoop5_decode.py` standalone 5.0 frame decoder; `test_whoop5_decode.py` (23). `reverse_engineer/analyze_export.py` — export score analysis. `reverse_engineer/sleep_performance_eval.py` — held-out sleep-performance hypotheses on an export (stdlib); `test_sleep_performance_eval.py` (5); joins both export CSVs per sleep, reports eligible/excluded counts.
 
 ### `docs`
 - Guides: `README.md` (index), `ARCHITECTURE.md`, `BUILD.md`, `CONTRIBUTING.md`, `DATA_MODEL.md`, `FEATURES.md`, `LIBRARY.md`, `PRIVACY_SECURITY.md`, `SCREEN_INVENTORY.md`, `ANALYTICS.md`.
@@ -294,6 +295,8 @@ Format: `file` — purpose. Tests list `Suite(methods)`. Fixtures/resources are 
 - `reverse-engineering/captures/` — redacted JSONL evidence: `E01-passive-gatt`, `E02-readonly-matrix`, `E04-realtime-hr`, `H01-get-alarm`, `H02-H03-H06-slot0`, `H02b`, `H05-disable`, `H07`.
 
 ## 8 · Verification record
+
+- 2026-11-16 5.0 skin-temperature decode: PASS WhoopProtocol 152 (2 new: 35.08 °C decode; 0/499/4501/0xFFFF → nil with HR intact), WhoopStore 117 (2 new: v17 row → `raw_adc` after v18; unit round-trip, only `centi_celsius` converts), Python whoop_re 23 (1 new), StrandImport 61, StrandAnalytics 473, app build + hosted 88 (5 env skips). Python decoder over 634 real v0x12 frames from the app's Oct manual-pull files (copies): 634/634 decoded, median 35.1 °C. NOT done: a live pull storing samples (needs the app running against the strap; no new strap commands involved), reference-thermometer check, off-wrist handling, any scoring/UI use.
 
 - 2026-11-16 PR integration review: alarm PR #29 app build + hosted 88 PASS (5 expected skips); inventory probe build PASS. Documentation conflict reconciled; no settings changed. No strap contact or new hardware validation.
 
@@ -417,6 +420,7 @@ git ls-files --cached --others --exclude-standard | grep -v -e '^AGENTS.md$' -e 
 
 | Date | Change | Checks / remaining |
 | --- | --- | --- |
+| 2026-11-16 | 5.0 skin temperature decoded (v0x12 payload 65, 1/100 °C) and stored with an explicit unit (schema v18); Python decoder matches. | All package suites + hosted 88 pass; not yet seen in a live pull; not used by scoring/UI. |
 | 2026-11-16 | #25 desk research: R18 skin temperature + R26 optical layout corroborated on local copies; 151/40/42/44/121/128 payload leads; firmware acquisition no-go. | Docs only; no strap contact; C06/C07 need approval. |
 | 2026-11-16 | #25 phase 1: `CAPABILITY_MATRIX.md` (offline inventory, ranked improvements, firmware status); stale research docs reconciled; probe GET_ALARM_TIME default → id 1. | Docs + probe compile; no strap contact; alarm-rewrite finding not fixed here. |
 | 2026-11-16 | Alarm deadline sync reads before writing: GET verify instead of re-SET on every clock measurement; SET only on mismatch, moved target or NOOP's own overwrite. | Build + hosted 88 pass; not hardware-checked. |
@@ -424,4 +428,3 @@ git ls-files --cached --others --exclude-standard | grep -v -e '^AGENTS.md$' -e 
 | 2026-11-13 | #26 follow-up 2: resting line takes the moon icon + lavender; asleep-vs-awake line removed. | Build + hosted pass. |
 | 2026-11-13 | #26 follow-up: caveat moved from under the legend to its help/VoiceOver hint; insights gain asleep-vs-awake HR, high-activation time, kcal and coloured badges/values. | Build + hosted 82 pass; renders inspected; VoiceOver/live app not checked. |
 | 2026-11-13 | #26 Overview HR card: one `DayTimeAxis` for HR curve + activation strip (time-based, gaps, no data vs upcoming, DST), visible legend matching Health, activation labels renamed, cleaner summary. | Analytics 467 + hosted 82 + build pass; synthetic renders inspected; hover/VoiceOver/live app not checked. |
-| 2026-11-13 | PR #24 integration review, merge-conflict reconciliation; issue #19 accepted for experimental pilot. | App build + hosted suite pass; broad manual/hardware/accuracy work remains unverified. |

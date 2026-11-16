@@ -84,11 +84,11 @@ extension WhoopStore {
     public func skinTempSamples(deviceId: String, from: Int, to: Int, limit: Int) async throws -> [SkinTempSample] {
         try syncRead { db in
             try Row.fetchAll(db, sql: """
-                SELECT ts, raw FROM skinTempSample
+                SELECT ts, raw, unit FROM skinTempSample
                 WHERE deviceId = ? AND ts >= ? AND ts <= ?
                 ORDER BY ts ASC LIMIT ?
                 """, arguments: [deviceId, from, to, limit])
-                .map { SkinTempSample(ts: $0["ts"], raw: $0["raw"]) }
+                .map { SkinTempSample(ts: $0["ts"], raw: $0["raw"], unit: $0["unit"]) }
         }
     }
 
