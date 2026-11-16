@@ -127,6 +127,30 @@ final class Whoop5MessagesTests: XCTestCase {
         XCTAssertEqual(Whoop5EventKind(34), .realtimeHROff)
     }
 
+    func testStrapConditionReportCarriesStateOfCharge() throws {
+        func event(_ n: UInt8, _ hex: String) throws -> Whoop5Event {
+            let body = hexBytes(hex)
+            var p: [UInt8] = [48, 1, n, 0, 0x40, 0xB6, 0xE8, 0x6A, 0x47, 0x61, UInt8(body.count), 0]
+            p += body
+            return try Whoop5Event.decode(buildWhoop5Frame(payload: p)).get()
+        }
+        // Live on fd4b0004 during C02a (2026-11-16): 0x03e2 = 994 → 99.4 %.
+        let e = try event(29, "2d0000000000e2030b000000")
+        XCTAssertEqual(e.kind, .strapConditionReport)
+        XCTAssertEqual(try XCTUnwrap(e.conditionSocPercent), 99.4, accuracy: 1e-9)
+        XCTAssertNil(e.batteryCandidate)
+        XCTAssertNil(try event(29, "2d0000000000e903").conditionSocPercent, "1001 is past 100 %")
+        XCTAssertNil(try event(29, "2d00000000").conditionSocPercent, "short body")
+        XCTAssertNil(try event(110, "2d0000000000e2030b000000").conditionSocPercent, "other event numbers are never read")
+    }
+
+    func testPushedReadingMakesThePeriodicLevelReadRedundant() {
+        XCTAssertTrue(BatteryPollPolicy.needsLevelRead(lastPushedAt: nil, now: 10_000, interval: 900))
+        XCTAssertFalse(BatteryPollPolicy.needsLevelRead(lastPushedAt: 10_000 - 600, now: 10_000, interval: 900))
+        XCTAssertTrue(BatteryPollPolicy.needsLevelRead(lastPushedAt: 10_000 - 900, now: 10_000, interval: 900))
+        XCTAssertTrue(BatteryPollPolicy.needsLevelRead(lastPushedAt: 10_100, now: 10_000, interval: 900), "future stamp is not trusted")
+    }
+
     // MARK: alarms / haptics (live H02–H07 frames)
 
     func testAlarmIdZeroRejectedIdOneAccepted() throws {
