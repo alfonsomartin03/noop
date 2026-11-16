@@ -14,7 +14,7 @@ here: no biometric values, identifiers, bodies of identity responses or timestam
 
 | Characteristic | Current evidence | Label | Open question | Next step (tier) |
 |---|---|---|---|---|
-| 180A DIS 2A24/2A26/2A27 | model `5.0`, fw `50.43.1.0`, hw `WG50_r52` (E01/E02); app caches `noop.deviceInfo` | CONFIRMED (2026-11-02) | Current firmware after any OTA since | Read 180A once (read-only GATT read; needs approval as strap contact) |
+| 180A DIS 2A24/2A26/2A27 | model `5.0`, fw `50.43.1.0`, hw `WG50_r52`: E01/E02, and the app's own cached read (`noop.deviceInfo`, read 2026-11-16 13:46 local) | CONFIRMED, current as of 2026-11-16 | — | C01 closed without probe contact |
 | 2A19 Battery | % equals cmd 26 | CONFIRMED | — | — |
 | 2A37 HR | only while cmd 14 on | CONFIRMED | — | — |
 | fd4b0002 | command input | CONFIRMED | — | — |
@@ -40,14 +40,14 @@ Tier = [SAFETY_MATRIX.md](SAFETY_MATRIX.md). "Probe" = `Tools/ble_probe` allowli
 | 34 | GET_DATA_RANGE | auto | yes | yes | partly CONFIRMED ([PACKET_TYPES.md](PACKET_TYPES.md)) | Words +1/+9/+21/+25: more samples from app logs (offline) |
 | 66–69 | alarm set/get/run/disable | restricted (approved fixed forms) | `--alarm-script` (ids 0/1) | yes, id 1 only | H02b–H07, H04 | See §5 (rewrite cadence) |
 | 67 (probe default) | GET_ALARM_TIME | auto in probe | `READ_ONLY_PAYLOADS` reads id 1 (was id 0 until 2026-11-16) | id 1 | id 0 is invalid (H02) | Fixed in probe source; compiled, not run |
-| 84 | GET_BODY_LOCATION_AND_STATUS | auto | yes | — | FAILURE `01 00…` (E02) | Arguments needed? Desk research (Goose/Asherlc) before any resend |
+| 84 | GET_BODY_LOCATION_AND_STATUS | auto | yes | — | FAILURE `01 00…` (E02) | Goose debug list: no payload, "render-only status command" (E02 already sent that). Cause of FAILURE UNKNOWN; don't resend without a new reason |
 | 141 | GET_ADVERTISING_NAME | auto | yes | — | never sent; response redacted by the probe | Low value (identifier); keep unsent |
 | 145 | GET_HELLO | auto | static hello | yes | CONFIRMED; body redacted | Not required for other commands (E06) |
-| 151 | GET_BATTERY_PACK_INFO | auto | yes | yes (connect + poll) | E02 shape = `unavailable`, **not** "no pack"; SUCCESS = `answeredUndecoded` (`Whoop5Charging.packInfo`) | Reply while a pack is attached: never captured |
+| 151 | GET_BATTERY_PACK_INFO | auto | yes | yes (connect + poll) | E02 shape = `unavailable`, **not** "no pack"; SUCCESS = `answeredUndecoded` (`Whoop5Charging.packInfo`) | **Lead (C06):** Goose's APK-derived default payload is `01` ("revision 01"); NOOP and the probe send `[]`. The FAILURE may be a missing revision byte. Test `[01]` once (read-only per Goose) only with approval |
 | 35, 76 | Harvard hello / name | registry "auto" | **no** | — | none | Identity data; no reason to send |
-| 40, 42, 44 | GET LED drive / TIA gain / bias | registry "auto" | **no** | — | none | Exact arguments unknown; desk research only. Registry R label ≠ authorisation |
-| 121, 128 | GET device config / feature flag | registry "auto" | **no** | — | none | Need a key argument; **no key sweep**. Desk research for documented keys |
-| 132 | GET_RESEARCH_PACKET | registry "auto" | **no** | — | none | Arguments/effects unknown; desk research |
+| 40, 42, 44 | GET LED drive / TIA gain / bias | registry "auto" | **no** | — | none | Goose debug list: no payload, "read". Response layout undocumented anywhere. Their SET pairs (39/41/43) stay prohibited. Candidate C07 (approval) |
+| 121, 128 | GET device config / feature flag | registry "auto" | **no** | — | none | Goose: "keyed read", payload `01` + 32-byte key. No key values are published; Asherlc lists 17 config key **names** (e.g. `enable_r22_v4_packets`), not their 32-byte form. Without a documented key: **not testable** (no sweep, no guessed hashing) |
+| 132 | GET_RESEARCH_PACKET | registry "auto" | **no** | — | none | Goose debug list: no payload, "read". Response undocumented. Its SET (131) is prohibited. Low priority |
 | 10, 16, 20, 33, 63, 77, 79, 81/82, 96/97, 105–108, 123–125, 139, 140 | state-changing | restricted | no | no | SUPPORTED (Goose) only | Each needs a written procedure + approval; none proposed in this phase |
 | 25, 29, 32, 36–39, 41, 43, 45, 52/53, 83, 99, 115–120, 131, 142–144, 153/154 | trim / reboot / firmware / DFU / optical writes / config writes / persistent toggles | **prohibited** | no | no | — | Never sent. Firmware ops say nothing about a dump path |
 
@@ -89,13 +89,12 @@ Not seen: wrist on/off events (UNKNOWN on 5.0).
 
 | Record | Volume | Decoded | Structure found offline | Label |
 |---|---|---|---|---|
-| 47 v0x12 (frame 124, payload 112) | continuous 1 Hz | HR @14, R-R @15/16, gravity floats @37/41/45 | — | CONFIRMED |
-| 47 v0x1a (frame 88, **payload 76**) | 41,237 frames archived (40,754 unique seconds; duplicates = re-sent un-acked chunks) | time @7 only | Bursts of 40 consecutive seconds, median ~19–20 min apart (all 15 days). Constant: @0 type, @1 0x1a, @2 0x80, @6, @10, @75. @3 u32 counter +1 per record. @19–66: 24 × i16 LE per record with lag-1 correlation 0.79 decaying to ~0 by lag 6 and 0.48 across record boundaries → a sampled waveform at ~24 samples/s. @70 a slowly varying byte in a narrow range. @11–18, @67–74 mostly constant within a burst. | Burst cadence and waveform-like layout CONFIRMED as structure; **meaning UNKNOWN** (PPG/optical vs motion vs other is not established; no guessed field names) |
+| 47 v0x12 "R18" (frame 124, payload 112) | continuous 1 Hz | HR @14, R-R @15/16, gravity floats @37/41/45 | **Skin temperature u16 @65 ÷ 100 °C** (ryanbr R18 frame 73; Asherlc payload 65): 544/544 local raw frames (Oct 13–22 manual pulls) in 5–45 °C, median ≈ 35 °C, matching the firmware console's `skin_temp`. Aux thermal i16 @61/@63 ÷ 10 °C also plausible. Other R18 fields per ryanbr (step counter, activity, wear/motion bitfield, optical amplitude) not yet checked | HR/R-R/gravity CONFIRMED; skin-temperature word **SUPPORTED + locally consistent** (no reference thermometer); app does not decode it |
+| 47 v0x1a "R26" (frame 88, **payload 76**) | 41,237 frames archived (40,754 unique seconds; duplicates = re-sent un-acked chunks) | time @7 only | Bursts of 40 consecutive seconds, median ~19–20 min apart (all 15 days). Constant: @0 type, @1 0x1a, @2 0x80, @6, @10, @75. @3 u32 counter +1 per record. @19–66: 24 × i16 LE per record with lag-1 correlation 0.79 decaying to ~0 by lag 6 and 0.48 across record boundaries → a sampled waveform at ~24 samples/s. @70 a slowly varying byte in a narrow range. @11–18, @67–74 mostly constant within a burst. ryanbr's R26 layout (payload = frame − 8): @11 u16 time word, @13 u16 burst counter, @15 u32 absolute first optical code, @19+2i 24 × i16 **deltas** (25-sample window), @67 f32 motion summary, @71 u16 status, @73 on-wrist byte, @74 acceptance byte. Checked locally: burst counter constant inside every run and +1 between runs (1,031/1,033); delta-reconstructed last sample meets the next record's first sample ~8× closer than raw first-to-first (median 624 vs 5,122) | Layout **SUPPORTED + locally consistent**; an optical sample window. Wavelength/channel and SpO₂ meaning **not established** (ryanbr: do not derive SpO₂) |
 | 52 IMU | none archived in this window | — | — | UNKNOWN |
 
-The periodic 40-s windows match a duty-cycled measurement; tying them to SpO₂, skin temperature or optical
-sampling needs a controlled scenario (e.g. a known cool/warm change, a known still period) and is HYPOTHESIS
-until then.
+The periodic 40-s windows are optical sample windows (R26). What they are used for (SpO₂ spot checks or other) is
+not established; no published source documents the ~20-min cadence.
 
 ## 5 · Findings that suggest improvements (ranked)
 
@@ -106,22 +105,36 @@ until then.
 | 3 | v0x1a burst content undecoded | §4 | Offline decoding, then a controlled passive scenario | Decode only with reproducible evidence |
 | 4 | Event 14 frequency vs "double tap" label | §3 | Docs + any future gesture feature | Don't build on it until meaning is settled |
 | 5 | Periodic 29/110/120 reports undecoded | §3 | Offline correlation with battery/charging/wear | — |
+| 6 | **Skin temperature is in every v0x12 record and NOOP ignores it** (`skinTempSample` is empty; Health/Trends skin-temperature change has no 5.0 source) | §4 | NOOP decoder (`Streams.swift` 5.0 historical) → `skinTempSample`; needs fixture tests and a provenance/version label | Offline only, no strap commands. Metric: nightly skin-temperature coverage on 5.0 |
 
-## 6 · Firmware acquisition (status after phase 1)
+## 6 · Firmware acquisition (status after desk research, 2026-11-16)
 
 | Question | Status |
 |---|---|
-| Readback/dump command in any reviewed source | **None found** (registry, Goose table, probe, app). Firmware commands 36–38/83/142–144 and DFU 45 load images; they are not a read path and stay prohibited. |
-| Official update artifact | **Not yet researched** (next phase: desk research only; do not trigger an update). |
-| Hardware readout | **Not yet researched** (desk research on a spare unit only; no teardown/debug attach in this issue). |
-| Custom firmware | **No basis yet**: image format, signing/secure boot, rollback and recovery are all UNKNOWN. |
+| Readback/dump command in any reviewed source | **None found** (registry, Goose table + Swift client, Asherlc, ryanbr, probe, app). ryanbr documents 143 chunk read-back only inside an update load, which is prohibited and is not a dump of the installed image. |
+| Official update artifact | **No public source found.** WHOOP updates are pushed through its app (community guide). ryanbr documents an image container (512-byte header with CRC32s, type 5 = gzip payload) and a WHOOP 4 outer package (Maxim ZBIN + Nordic DFU zip); the 5.0/MG package, download source and signing are undocumented. Do not trigger an update to obtain one. |
+| Hardware readout | MCU: **Ambiq Cortex-M4 with BLE** per the TechInsights WG50 teardown summary (paywalled full report; part number not seen). Other parts per ryanbr: MAX86176 optical AFE, ICM-45686 IMU, DRV2625 haptics, LC709205F fuel gauge, AS6221 skin temperature. Debug-port exposure, readout protection and secure boot: **unknown**. Any attempt is spare-unit-only and out of this issue's scope. |
+| Custom firmware | **No-go for now.** ryanbr lists certificate/authorisation commands 155–159 and "no validated or authorized flashing path"; signing, boot verification, rollback and recovery are unknown; no recovery route exists even on a spare. Revisit only with a spare unit and evidence on boot security. |
+| Decision | **Firmware acquisition: no-go** (no read path, no public package). **Improvements belong in NOOP** (decoding, fewer writes/polls), not firmware. |
 
 ## 7 · Remaining experiments (none run; each needs explicit owner approval)
 
 | ID | What | Touches strap | Why |
 |---|---|---|---|
-| C01 | Read DIS 2A24/2A26/2A27 once | GATT read only | Current firmware identity |
+| C01 | ~~Read DIS once~~ | — | **Closed** from the app's own cached read (2026-11-16) |
 | C02 | Passive subscription capture around connect, charge on/off, wear off/on (bounded, no commands beyond the app's own) | Notifications only | fd4b0004 coverage, event 14/109/117/43 meaning, fd4b0007 framing |
 | C03 | Offline: review existing fd4b0007 fragments in committed captures | No | Diagnostic framing |
-| C04 | Desk research: arguments for 40/42/44/84/121/128/132 in Goose/Asherlc | No | Prerequisite for any new read; no key sweeps |
-| C05 | Desk research: official update manifests, MCU/storage identity | No | Firmware go/no-go |
+| C04 | ~~Desk research: arguments~~ | No | **Done** (§2) |
+| C05 | ~~Desk research: firmware/MCU~~ | No | **Done** (§6): no-go |
+| C06 | 151 GET_BATTERY_PACK_INFO with payload `[01]`, once, pack off and on | One read-only command (Goose gate R), new payload form | Whether the FAILURE was a missing revision byte; pack-attached reply |
+| C07 | 40 / 42 / 44 with empty payload, once each | Three read-only commands (Goose gate R), never sent before | Optical AFE configuration; response layouts undocumented |
+
+## 8 · Sources (desk research, 2026-11-16)
+
+Treated as leads until checked against this strap; nothing below was sent to the strap.
+
+- [b-nnett/goose](https://github.com/b-nnett/goose): `Rust/core/src/commands.rs` (risk gates, no payloads), `GooseSwift/GooseBLEClient.swift` (`debugResearchCommandDefinitions`: payload hints for 40/42/44/84/121/128/132/151).
+- [Asherlc/dofek WHOOP BLE protocol](https://github.com/Asherlc/dofek/blob/main/docs/whoop-ble-protocol.md): config key names, R18 thermal word.
+- [ryanbr/noop PROTOCOL_SENSORS.md](https://github.com/ryanbr/noop/blob/main/docs/PROTOCOL_SENSORS.md) and sibling `PROTOCOL_UPDATES.md` / `PROTOCOL_WHOOP5.md`: R18/R20/R21/R26 layouts, image container, parts list.
+- [TechInsights WHOOP 5.0 (WG50) teardown summary](https://www.techinsights.com/ko/node/60374) and [GlobalSpec summary](https://electronics360.globalspec.com/article/23159/techinsights-teardown-whoop-5-0): Ambiq Cortex-M4 MCU.
+- [WHOOP community: firmware updates](https://www.community.whoop.com/t/how-do-i-update-the-firmware-on-my-whoop-strap/244): updates are app-initiated.

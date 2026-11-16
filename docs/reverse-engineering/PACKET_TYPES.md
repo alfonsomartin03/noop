@@ -102,6 +102,8 @@ No R-R ever arrived on this stream; use 2A37 or type-47 for R-R.
 | 15 | R-R count u8 (≤ 4 seen) | CONFIRMED |
 | 16 | R-R u16 ms × count | CONFIRMED |
 | 37, 41, 45 | gravity x, y, z float32 (g); \|g\| within 0.9–1.1 for 634/634 | CONFIRMED |
+| 61, 63 | auxiliary thermal i16 ÷ 10 °C (ryanbr R18) | SUPPORTED; plausible on 544 local frames |
+| 65 | skin temperature u16 ÷ 100 °C (ryanbr R18 frame 73, Asherlc payload 65); median ≈ 35 °C on 544 local frames, matching console `skin_temp` | SUPPORTED + locally consistent; not decoded by NOOP |
 | others | optical, temperature, SpO2 candidates | UNKNOWN (not decoded; do not guess) |
 
 ## 48 EVENT

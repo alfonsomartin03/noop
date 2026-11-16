@@ -11,7 +11,7 @@
 | Events 110, 120, 123; body of 29 | 29/110 periodic (10 min); 123 HYPOTHESIS connection state; 120 UNKNOWN | E05 and more reconnects. |
 | Type-47 v0x1a records (frame 88, payload 76) | time @7, counter @3, 40-s bursts ~every 20 min, 24 × i16 waveform-like block @19–66 (structure, 2026-11-16 archive inventory); signal meaning UNKNOWN | Controlled passive scenario; no guessed offsets. |
 | Wrist on/off on 5.0; meaning of frequent event 14 | Double tap (14) CONFIRMED as alarm dismissal; ~780 daytime-clustered occurrences in 2 weeks (HYPOTHESIS: also fires on activity); wrist on/off UNKNOWN | Passive C02 with timed physical actions. |
-| Skin temperature over BLE | firmware computes it; BLE location UNKNOWN | Look for a ~35 °C quantity in undecoded type-47 bytes across a warm/cool change; Goose's fd4b0007 debug request is restricted. |
+| Skin temperature over BLE | type-47 v0x12 payload 65 u16 ÷ 100 °C (external layouts; 544/544 local frames plausible, ≈ 35 °C) — SUPPORTED, no reference thermometer | Decode in NOOP (CAPABILITY_MATRIX.md §5 #6). Goose's raw fd4b0007 debug write stays prohibited. |
 | Undecoded type-47 bytes (optical, SpO2, respiration) | UNKNOWN | Correlation only after controlled scenarios; no guessed offsets. |
 | Realtime HR (type 40): R-R slots (payload 9–17) and byte 18 | timestamp/HR CONFIRMED (E04); R-R never seen | Repeat E04 during light movement or after exercise, when R-R is more likely to be reported. |
 | Raw IMU / optical streams on 5.0 | SUPPORTED (Goose commands) | Restricted; 154/153 are persistent toggles, so prohibited. |
