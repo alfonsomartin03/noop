@@ -109,7 +109,7 @@ extension WhoopStore {
     /// Tables replaced by day.
     static let derivedDayTables = ["dailyMetric", "metricSeries", "metricProvenance", "loadRecord", "dayScoreState"]
     /// Decoded streams that feed scoring, all insert-only.
-    static let scoringStreams = ["hrSample", "rrInterval", "respSample", "gravitySample", "skinTempSample"]
+    static let scoringStreams = ["hrSample", "rrInterval", "respSample", "gravitySample", "skinTempSample", "event"]
 
     /// Write a scoring run atomically. Throws (and changes nothing) if any step fails.
     public func writeDerived(_ batch: DerivedBatch, deviceId: String, scope: DerivedWriteScope) async throws {

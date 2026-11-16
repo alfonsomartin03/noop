@@ -79,7 +79,7 @@ public enum IncrementalScorer {
         [String(scoringVersion), String(generation), CardioLoad.loadVersion, CardioLoad.detectorVersion,
          StrainScorer.indexVersion, SupportedHR.policyVersion, HRCalibration.version,
          MetricIdentity.noopVitalsVersion, SleepStager.stagingMethod, SleepStager.napDetectionVersion, SleepStager.fragmentQuietVersion,
-         SleepSessionClassifier.version, SkinTemperature.version].joined(separator: "|")
+         SleepSessionClassifier.version, SkinTemperature.version, WristWear.version].joined(separator: "|")
     }
 
     static func configKey(_ p: UserProfile, maxHROverride: Double?) -> String {
@@ -254,6 +254,9 @@ public enum IncrementalScorer {
                 let resp = try await store.respSamples(deviceId: q.rawId, from: from, to: to, limit: 200_000)
                 let grav = try await store.gravitySamples(deviceId: q.rawId, from: from, to: to, limit: 200_000)
                 let skin = try await store.skinTempSamples(deviceId: q.rawId, from: from, to: to, limit: 200_000)
+                // Strap-reported off-wrist time; an off event up to two days earlier can still be open at `from`.
+                let wristEvents = try await store.events(deviceId: q.rawId, from: from - 2 * 86_400, to: to, limit: 50_000)
+                let offWrist = WristWear.offIntervals(wristEvents, until: day >= today ? min(to, q.now) : to)
                 // Sleep that began this evening only shows in tomorrow's data. A finished day re-reads it for the
                 // awake-time exclusion alone; today has nothing after it yet.
                 var following: AnalyticsEngine.FollowingData?
@@ -264,7 +267,7 @@ public enum IncrementalScorer {
                                       resp: try await store.respSamples(deviceId: q.rawId, from: to, to: tail, limit: 200_000),
                                       gravity: try await store.gravitySamples(deviceId: q.rawId, from: to, to: tail, limit: 200_000))
                 }
-                let res = AnalyticsEngine.analyzeDay(day: day, hr: hr, rr: rr, resp: resp, gravity: grav, skinTemp: skin, profile: q.profile,
+                let res = AnalyticsEngine.analyzeDay(day: day, hr: hr, rr: rr, resp: resp, gravity: grav, skinTemp: skin, offWrist: offWrist, profile: q.profile,
                                                      baselines: baselines, maxHROverride: q.maxHROverride, dayRange: range,
                                                      calibration: frozen[day], knownSessions: sessions, following: following,
                                                      observedUntil: day >= today ? q.now : nil,

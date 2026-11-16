@@ -7,8 +7,8 @@ import WhoopProtocol
 // payload 65; layout SUPPORTED by two external sources and consistent with local frames, not calibrated against a
 // reference thermometer). 4.0 ADC counts have no verified conversion and are never used.
 //
-// Night value  = median of the samples inside the asleep stages of the night's primary sleep (wake, unknown and gap
-//                time excluded), only with enough sleep covered (`minSamples`, `minCoverage`); otherwise unavailable.
+// Night value  = median of the samples inside the asleep stages of the night's primary sleep (wake, unknown, gap and
+//                strap-reported off-wrist time excluded), only with enough sleep covered (`minSamples`, `minCoverage`); otherwise unavailable.
 // Change       = night value − median of earlier nights (CausalReference, identity transform, °C), only while that
 //                reference is provisional or established. Missing is never 0.
 //
@@ -17,7 +17,7 @@ import WhoopProtocol
 
 public enum SkinTemperature {
     /// Bump with any change to the night value or reference; it is part of the scoring `algorithmKey` and identity.
-    public static let version = "skin-temp-night-v1"
+    public static let version = "skin-temp-night-v2"   // v2: off-wrist time (WristWear) excluded
 
     /// Identity of the nightly absolute value (the reference only mixes nights of exactly this identity).
     public static func nightIdentity(hardware: String = MetricIdentity.unknownValue) -> MetricIdentity {
@@ -52,7 +52,7 @@ public enum SkinTemperature {
     }
 
     /// The night value from skin samples and the asleep stage segments of the primary sleep.
-    public static func night(samples: [SkinTempSample], stages: [StageSegment]) -> Night {
+    public static func night(samples: [SkinTempSample], stages: [StageSegment], offWrist: [WristWear.OffInterval] = []) -> Night {
         let asleep = stages.filter { $0.state.isSleep && $0.end > $0.start }.sorted { $0.start < $1.start }
         let asleepS = asleep.reduce(0) { $0 + ($1.end - $1.start) }
         guard asleepS > 0 else {
@@ -69,7 +69,7 @@ public enum SkinTemperature {
             lastTs = s.ts
             while i < asleep.count && asleep[i].end <= s.ts { i += 1 }
             guard i < asleep.count else { break }
-            if s.ts >= asleep[i].start, let c = s.celsius { values.append(c) }
+            if s.ts >= asleep[i].start, !WristWear.contains(offWrist, s.ts), let c = s.celsius { values.append(c) }
         }
         let coverage = min(1, Double(values.count) / Double(asleepS))
         var reasons: [String] = []

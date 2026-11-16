@@ -334,6 +334,16 @@ final class Repository: ObservableObject {
     }
 
     /// Newest stored heart-rate timestamp (any day): how far synced data reaches.
+    /// Strap-reported off-wrist intervals (events 10 → 9) overlapping [from, to), read from two days earlier so an interval
+    /// already open at `from` is found. An interval with no on event yet ends at the newest stored event (the strap keeps
+    /// reporting status every 10 min while off), never past `until`.
+    func offWristIntervals(from: Int, to: Int, until: Int) async -> [WristWear.OffInterval] {
+        guard let store = await ensureStore(),
+              let events = try? await store.events(deviceId: deviceId, from: from - 2 * 86_400, to: to, limit: 50_000) else { return [] }
+        let known = min(until, events.map(\.ts).max() ?? from)
+        return WristWear.offIntervals(events, until: known).filter { $0.end > from && $0.start < to }
+    }
+
     func latestHRTimestamp() async -> Int? {
         guard let store = await ensureStore() else { return nil }
         return try? await store.latestHRSampleTs(deviceId: deviceId)

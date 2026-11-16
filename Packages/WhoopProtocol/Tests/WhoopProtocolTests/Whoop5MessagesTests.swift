@@ -124,6 +124,11 @@ final class Whoop5MessagesTests: XCTestCase {
         XCTAssertEqual(c.millivolts, 3920)
         XCTAssertTrue(c.charging)
         XCTAssertEqual(Whoop5EventKind(33), .realtimeHROn)
+        // C02a (2026-11-16): strap taken off → 10, put back on → 9.
+        XCTAssertEqual(Whoop5EventKind(10), .wristOff)
+        XCTAssertEqual(Whoop5EventKind(9), .wristOn)
+        XCTAssertEqual(Whoop5EventKind(10).name, "WRIST_OFF")
+        XCTAssertEqual(Whoop5EventKind(9).name, "WRIST_ON")
         XCTAssertEqual(Whoop5EventKind(34), .realtimeHROff)
     }
 

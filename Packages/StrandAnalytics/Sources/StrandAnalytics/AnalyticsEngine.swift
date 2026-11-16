@@ -140,6 +140,7 @@ public enum AnalyticsEngine {
                                   resp: [RespSample] = [],
                                   gravity: [GravitySample] = [],
                                   skinTemp: [SkinTempSample] = [],
+                                  offWrist: [WristWear.OffInterval] = [],
                                   profile: UserProfile,
                                   baselines: ProfileBaselines = ProfileBaselines(),
                                   maxHROverride: Double? = nil,
@@ -210,7 +211,8 @@ public enum AnalyticsEngine {
         }()
 
         // Skin temperature over the primary night's asleep time, and its change from earlier nights (see SkinTemperature).
-        let skinNight = matched.isEmpty ? nil : SkinTemperature.night(samples: skinTemp, stages: matched.flatMap(\.stages))
+        let skinNight = matched.isEmpty ? nil : SkinTemperature.night(samples: skinTemp, stages: matched.flatMap(\.stages),
+                                                                                offWrist: offWrist)
         let skinChange = SkinTemperature.change(night: skinNight?.valueC, reference: baselines.skinTempReference)
 
         let sleepStart = matched.map { $0.start }.min()
