@@ -600,3 +600,87 @@ final class AlarmControllerTests: XCTestCase {
     }
 }
 
+
+// MARK: read before write (issue #25: the slot was re-SET on every clock measurement)
+
+@MainActor
+extension AlarmControllerTests {
+    private func sets(_ link: FakeLink) -> Int { link.sent.filter { if case .set = $0.cmd { return true }; return false }.count }
+
+    func testRepeatedClockMeasurementsVerifyInsteadOfRewriting() {
+        let (a, link, _, o) = exactSetup()
+        let target = try! XCTUnwrap(setTargets(link).last)
+        XCTAssertEqual(sets(link), 1)
+        for _ in 0..<4 {                                       // what AppModel does on each connect / history pull
+            a.syncDeviceAlarm()
+            XCTAssertEqual(link.last?.cmd, .get, "a stored occurrence is checked with a read-only GET")
+            respond(a, 67, seq: link.last!.seq, body: readBack(target))
+            XCTAssertEqual(a.states[o.alarmId], .confirmedOnDevice)
+        }
+        XCTAssertEqual(sets(link), 1, "no further writes while the strap holds the stored time")
+        let verify = a.history.filter { AlarmHistory.fields($0.payload)["purpose"] as? String == "verify" }
+        XCTAssertFalse(verify.isEmpty)
+    }
+
+    func testVerifyFindingADifferentTimeWritesTheSlotAgain() {
+        let (a, link, _, o) = exactSetup()
+        let target = try! XCTUnwrap(setTargets(link).last)
+        for stored: [UInt8] in [readBack(0), readBack(target &+ 600)] {   // emptied (reboot / rang) or overwritten by another app
+            a.syncDeviceAlarm()
+            XCTAssertEqual(link.last?.cmd, .get)
+            respond(a, 67, seq: link.last!.seq, body: stored)
+            XCTAssertEqual(link.last?.cmd, .set(strapSeconds: target), "different time on the strap: SET again")
+            respond(a, 66, seq: link.last!.seq)
+            XCTAssertEqual(link.last?.cmd, .get)
+            respond(a, 67, seq: link.last!.seq, body: readBack(target))
+            XCTAssertEqual(a.states[o.alarmId], .confirmedOnDevice)
+        }
+        // Verified again afterwards: back to read-only checks.
+        a.syncDeviceAlarm()
+        XCTAssertEqual(link.last?.cmd, .get)
+    }
+
+    func testFailedVerifyReplyWritesTheSlotAgain() {
+        let (a, link, _, _) = exactSetup()
+        let target = try! XCTUnwrap(setTargets(link).last)
+        a.syncDeviceAlarm()
+        respond(a, 67, seq: link.last!.seq, ok: false, body: [4, 0])
+        XCTAssertEqual(link.last?.cmd, .set(strapSeconds: target))
+    }
+
+    func testReconnectVerifiesBeforeWriting() {
+        let (a, link, _, o) = exactSetup()
+        let target = try! XCTUnwrap(setTargets(link).last)
+        a.linkDropped()
+        a.syncDeviceAlarm()
+        XCTAssertEqual(link.last?.cmd, .get)
+        respond(a, 67, seq: link.last!.seq, body: readBack(target))
+        XCTAssertEqual(a.states[o.alarmId], .confirmedOnDevice)
+        XCTAssertEqual(sets(link), 1)
+    }
+
+    func testMovedClockEstimateWritesTheSlotAgain() {
+        let (a, link, _, _) = exactSetup()
+        let target = try! XCTUnwrap(setTargets(link).last)
+        link.alarmClock = ClockEstimate(offset: 1, uncertainty: 0.5, measuredAt: 1)      // within tolerance
+        a.syncDeviceAlarm()
+        XCTAssertEqual(link.last?.cmd, .get)
+        respond(a, 67, seq: link.last!.seq, body: readBack(target))
+        link.alarmClock = ClockEstimate(offset: 10, uncertainty: 0.5, measuredAt: 2)     // strap target moved 10 s
+        a.syncDeviceAlarm()
+        XCTAssertEqual(link.last?.cmd, .set(strapSeconds: target - 10))
+    }
+
+    func testUnansweredVerifyTimesOutAndDoesNotBlockLaterChecks() {
+        let (a, link, clock, _) = exactSetup()
+        a.syncDeviceAlarm()
+        XCTAssertEqual(link.last?.cmd, .get)
+        let before = link.sent.count
+        clock.now = clock.now.addingTimeInterval(AlarmDeliveryTransaction.responseTimeout + 1)
+        a.tick(now: clock.now)
+        XCTAssertTrue(a.history.contains { $0.kind == AlarmHistoryKind.commandTimedOut })
+        a.syncDeviceAlarm()
+        XCTAssertEqual(link.sent.count, before + 1)
+        XCTAssertEqual(link.last?.cmd, .get)
+    }
+}

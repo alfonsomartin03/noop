@@ -149,12 +149,21 @@ final class AlarmController: ObservableObject {
     private var earlyAttempted: Set<String>
     private var delivery: AlarmDeliveryTransaction?
     /// Arm of the strap's single slot in flight: SET, then GET read-back, bound to one occurrence.
-    private struct PendingArm { let key: String; let alarmId: String; let target: UInt32; let sentAt: Date; var setSeq: UInt8; var getSeq: UInt8? }
+    /// `setSeq == nil`: a read-only verify (GET only) of a slot NOOP already stored for this occurrence.
+    private struct PendingArm { let key: String; let alarmId: String; let target: UInt32; let sentAt: Date; var setSeq: UInt8?; var getSeq: UInt8? }
     private var pendingArm: PendingArm?
     /// The occurrence the strap slot is verified to hold.
     private var armedKey: String?
     /// Strap seconds each recent occurrence was stored for (to attribute STRAP_DRIVEN_ALARM_EXECUTED exactly).
     private var armedTargets: [String: UInt32]
+    /// Occurrence whose last read-only verify found a different time on the strap: the next sync writes it (SET).
+    private var verifyFailedKey: String?
+    /// NOOP itself overwrote or cleared the slot since the deadline was last read back (ring-now SET/RUN, disable):
+    /// the deadline is known to be gone, so restore it with SET at once, without a read first.
+    private var slotOverwritten = false
+    /// A re-measured clock may move the computed strap target by a second or so; within this, the stored time stands
+    /// (same tolerance as strap-ring attribution). Beyond it the slot is written again.
+    static let rearmToleranceSeconds: Int64 = 2
     /// Do not touch the slot before this (the stored deadline may be ringing right now).
     private var slotHoldUntil: Date?
     /// Last strap-driven ring matched to an occurrence (for dismissal attribution).
@@ -457,6 +466,7 @@ final class AlarmController: ObservableObject {
             // Only clear an alarm NOOP itself stored; never touch one set by another app.
             if defaults.bool(forKey: Self.ownsStrapAlarmKey), link.sendAlarmCommand(.disableAll) != nil {
                 defaults.set(false, forKey: Self.ownsStrapAlarmKey)
+                slotOverwritten = true
                 armedKey = nil
                 record(AlarmHistoryKind.slot, nil, ["action": "cleared"])
             }
@@ -470,6 +480,17 @@ final class AlarmController: ObservableObject {
         let key = Self.key(n)
         if pendingArm?.key == key { return }
         let target = UInt32(clamping: Int(c.deviceTime(fromHost: n.deadline.timeIntervalSince1970).rounded()))
+        // Read before write. This runs on every clock measurement (each connect and each history pull), and used to
+        // re-SET the slot each time (~50 strap writes a day, issue #25). If NOOP already stored this occurrence at
+        // (about) this strap time, a read-only GET checks the slot; SET only when the strap no longer holds it, the
+        // clock estimate moved the target, or the last check found a different time.
+        if !slotOverwritten, verifyFailedKey != key, let stored = armedTargets[key],
+           abs(Int64(stored) - Int64(target)) <= Self.rearmToleranceSeconds {
+            guard let g = link.sendAlarmCommand(.get) else { states[n.alarmId] = .unknown; return }
+            pendingArm = PendingArm(key: key, alarmId: n.alarmId, target: stored, sentAt: now(), setSeq: nil, getSeq: g)
+            record(AlarmHistoryKind.commandRequested, key, ["command": "get", "purpose": "verify", "seq": Int(g), "strapTime": Int(stored)])
+            return
+        }
         guard let seq = link.sendAlarmCommand(.set(strapSeconds: target)) else { states[n.alarmId] = .unknown; return }
         defaults.set(true, forKey: Self.ownsStrapAlarmKey)
         armedKey = nil
@@ -508,9 +529,31 @@ final class AlarmController: ObservableObject {
                     return
                 }
             }
+            if kind == .get, r.appSeq == p.getSeq, r.isFinal, p.setSeq == nil {
+                // Read-only check of a slot NOOP already stored: confirm, or write it again.
+                let stored = Whoop5Alarm.storedTime(r)
+                let ok = stored == p.target
+                record(AlarmHistoryKind.commandAcknowledged, p.key,
+                       ["command": "get", "purpose": "verify", "stored": stored.map { Int($0) } ?? 0, "expected": Int(p.target),
+                        "matches": ok])
+                pendingArm = nil
+                // A ring-now (or clear) since the GET went out has replaced what it read: the reply is stale.
+                guard next.map(Self.key) == p.key, !slotOverwritten else { return }
+                if ok {
+                    verifyFailedKey = nil
+                    armedKey = p.key
+                    states[p.alarmId] = .confirmedOnDevice
+                } else {
+                    verifyFailedKey = p.key
+                    armedKey = nil
+                    syncDeviceAlarm()   // the strap no longer holds it: store it again (SET → GET read-back)
+                }
+                return
+            }
             if kind == .get, r.appSeq == p.getSeq, r.isFinal {
                 let stored = Whoop5Alarm.storedTime(r)
                 let ok = stored == p.target
+                if ok { slotOverwritten = false; if verifyFailedKey == p.key { verifyFailedKey = nil } }
                 record(ok ? AlarmHistoryKind.commandAcknowledged : AlarmHistoryKind.commandFailed, p.key,
                        ["command": "get", "stored": stored.map { Int($0) } ?? 0, "expected": Int(p.target)])
                 pendingArm = nil
@@ -727,6 +770,7 @@ final class AlarmController: ObservableObject {
         guard let seq = link.sendAlarmCommand(.set(strapSeconds: target)) else { return false }
         delivery = AlarmDeliveryTransaction(occurrenceId: key, early: early, setSeq: seq, setSentAt: now())
         armedKey = nil
+        slotOverwritten = true
         record(AlarmHistoryKind.commandRequested, key, ["command": "set", "purpose": purpose, "seq": Int(seq), "strapTime": Int(target)])
         return true
     }
