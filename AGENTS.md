@@ -132,7 +132,7 @@ Packages (all Swift tools 5.9, platforms macOS 13 / iOS 16; **only a macOS app t
 - Stage source label shows the current `IntelligenceEngine.scoringVersion`; rows don't store their own version (rescoring replaces them).
 - Overview coverage caption is unit-tested but not visually inspected (card is below the fold in fixture screenshots).
 - Older rows in `ALARM_CAPABILITIES.md` predate H02b/H04/H07.
-- #25 phase 1 (2026-11-16, offline): research docs reconciled with source (fd4b0004 carries live events; event-3 charging bit confirmed; 151 failure = unavailable; v0x1a payload is 76 B). Found: `syncDeviceAlarm` re-sends SET_ALARM_TIME on every clock measurement (each connect + each ~15-min pull) even when the slot already holds the confirmed occurrence (~50 strap writes/day); probe `--commands 67` reads invalid id 0. Neither is fixed yet. Current firmware not re-read; no strap contact.
+- #25 phase 1 (2026-11-16, offline): research docs reconciled with source (fd4b0004 carries live events; event-3 charging bit confirmed; 151 failure = unavailable; v0x1a payload is 76 B). Found: `syncDeviceAlarm` re-sends SET_ALARM_TIME on every clock measurement (each connect + each ~15-min pull) even when the slot already holds the confirmed occurrence (~50 strap writes/day); probe `--commands 67` read invalid id 0 (fixed 2026-11-16: reads id 1; compiled, not run). Alarm rewrite not fixed on this branch. Current firmware not re-read; no strap contact.
 - `docs/FEATURES.md`, `DATA_MODEL.md`, `ANALYTICS.md`, `docs/README.md` and `SLEEP_RECOVERY_RESEARCH_2026-10-27.md` still label sleep/alarm/v15 work as uncommitted/in progress; it is committed.
 - Legacy comments mention server/phone/Kotlin or removed screens (`MetricsCache`, `Cursors`, design umbrella, some views). No backend or mobile app ships.
 - Not universal WHOOP compatibility: alarm confirmation is firmware-specific; attached battery-pack reply layout and live charging events are unobserved; unknown history must be archived, not guessed.
@@ -409,7 +409,7 @@ git ls-files --cached --others --exclude-standard | grep -v -e '^AGENTS.md$' -e 
 
 | Date | Change | Checks / remaining |
 | --- | --- | --- |
-| 2026-11-16 | #25 phase 1: `CAPABILITY_MATRIX.md` (offline inventory, ranked improvements, firmware status); stale research docs reconciled. | Docs only; no strap contact; alarm-rewrite finding not fixed. |
+| 2026-11-16 | #25 phase 1: `CAPABILITY_MATRIX.md` (offline inventory, ranked improvements, firmware status); stale research docs reconciled; probe GET_ALARM_TIME default → id 1. | Docs + probe compile; no strap contact; alarm-rewrite finding not fixed here. |
 | 2026-11-13 | #26 follow-up 2: resting line takes the moon icon + lavender; asleep-vs-awake line removed. | Build + hosted pass. |
 | 2026-11-13 | #26 follow-up: caveat moved from under the legend to its help/VoiceOver hint; insights gain asleep-vs-awake HR, high-activation time, kcal and coloured badges/values. | Build + hosted 82 pass; renders inspected; VoiceOver/live app not checked. |
 | 2026-11-13 | #26 Overview HR card: one `DayTimeAxis` for HR curve + activation strip (time-based, gaps, no data vs upcoming, DST), visible legend matching Health, activation labels renamed, cleaner summary. | Analytics 467 + hosted 82 + build pass; synthetic renders inspected; hover/VoiceOver/live app not checked. |

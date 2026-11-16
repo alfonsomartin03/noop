@@ -39,7 +39,7 @@ Tier = [SAFETY_MATRIX.md](SAFETY_MATRIX.md). "Probe" = `Tools/ble_probe` allowli
 | 26 | GET_BATTERY_LEVEL | auto | yes | yes | CONFIRMED | — |
 | 34 | GET_DATA_RANGE | auto | yes | yes | partly CONFIRMED ([PACKET_TYPES.md](PACKET_TYPES.md)) | Words +1/+9/+21/+25: more samples from app logs (offline) |
 | 66–69 | alarm set/get/run/disable | restricted (approved fixed forms) | `--alarm-script` (ids 0/1) | yes, id 1 only | H02b–H07, H04 | See §5 (rewrite cadence) |
-| 67 (probe default) | GET_ALARM_TIME | auto in probe | `READ_ONLY_PAYLOADS` reads **id 0** | id 1 | id 0 is invalid (H02) | Probe `--commands 67` reads the wrong slot; use `--alarm-script get1`, or change the default (code change, no strap needed) |
+| 67 (probe default) | GET_ALARM_TIME | auto in probe | `READ_ONLY_PAYLOADS` reads id 1 (was id 0 until 2026-11-16) | id 1 | id 0 is invalid (H02) | Fixed in probe source; compiled, not run |
 | 84 | GET_BODY_LOCATION_AND_STATUS | auto | yes | — | FAILURE `01 00…` (E02) | Arguments needed? Desk research (Goose/Asherlc) before any resend |
 | 141 | GET_ADVERTISING_NAME | auto | yes | — | never sent; response redacted by the probe | Low value (identifier); keep unsent |
 | 145 | GET_HELLO | auto | static hello | yes | CONFIRMED; body redacted | Not required for other commands (E06) |
@@ -102,7 +102,7 @@ until then.
 | # | Finding | Evidence | Where the fix belongs | Risk / metric |
 |---|---|---|---|---|
 | 1 | **The alarm slot is rewritten ~every 15 min.** `AppModel` calls `AlarmController.syncDeviceAlarm()` on every new clock measurement (each connect and each ~15-min history pull, which starts with GET_CLOCK); it sends SET + GET even when `armedKey` already equals the next occurrence and was read back. | ~610 event-56 rows, median 15 min apart | NOOP only: skip SET when the confirmed key matches, verify with GET (read-only) instead, re-SET only on mismatch/empty | Fewer persistent strap writes (flash/battery effect UNKNOWN). Metric: event-56 count/day → ~1–2 |
-| 2 | Probe `--commands 67` reads alarm id 0, which is invalid on this firmware | H02, probe source | Probe code | None (read-only either way) |
+| 2 | Probe `--commands 67` read alarm id 0, which is invalid on this firmware | H02, probe source | Probe code — **fixed 2026-11-16** (reads id 1) | None (read-only either way) |
 | 3 | v0x1a burst content undecoded | §4 | Offline decoding, then a controlled passive scenario | Decode only with reproducible evidence |
 | 4 | Event 14 frequency vs "double tap" label | §3 | Docs + any future gesture feature | Don't build on it until meaning is settled |
 | 5 | Periodic 29/110/120 reports undecoded | §3 | Offline correlation with battery/charging/wear | — |

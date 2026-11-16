@@ -46,7 +46,7 @@ Wire differences from 4.0 documented by Goose and not yet tested here: alarm com
 | 53 | FORCE_DP_TYPE | C |  |  |  | UNSAFE | prohibited |  |
 | 63 | SEND_R10_R11_REALTIME | U |  |  |  | SUPPORTED | reversible, approval per experiment | Goose sends [1]/[0]. Not exercised on 5.0 here. |
 | 66 | SET_ALARM_TIME | U | [4,1]+strap time+pattern | SUCCESS (VALID_PATTERN) | 20 | CONFIRMED | restricted: needs reviewed procedure + approval | H02b/H04: id 1 accepted, event 56; rang autonomously at the stored time (event 57). id 0 → INVALID_ALARM_ID. |
-| 67 | GET_ALARM_TIME | R | [4,1] | SUCCESS | 40 | CONFIRMED | auto (read-only) | H03b: returns stored time + pattern; time 0 when the slot is empty. Probe `--commands 67` reads id 0 (invalid); id 1 is the working slot. |
+| 67 | GET_ALARM_TIME | R | [4,1] | SUCCESS | 40 | CONFIRMED | auto (read-only) | H03b: returns stored time + pattern; time 0 when the slot is empty. Probe `--commands 67` reads id 1 (default was id 0 until 2026-11-16). |
 | 68 | RUN_ALARM | U | [2,1] | PENDING→SUCCESS (SUCCESSFUL_PLAY) | 20 | CONFIRMED | restricted: needs reviewed procedure + approval | H06b: plays the stored alarm now (event 58 + 60) and clears the slot. |
 | 69 | DISABLE_ALARM | U | [2,255] | SUCCESS | 20 | CONFIRMED | restricted: needs reviewed procedure + approval | H05: disable-all accepted. |
 | 76 | GET_ADVERTISING_NAME_HARVARD | R |  |  |  | SUPPORTED | auto (read-only) |  |
