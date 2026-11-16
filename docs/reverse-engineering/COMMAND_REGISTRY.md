@@ -5,6 +5,9 @@ Generated from `whoop5_commands.json`. Numbers and names come from Goose's 5.0 t
 except 99 (RESET_FUEL_GAUGE), which only appears in NOOP's 4.0 enum. The **Observed** columns are from this
 strap (fw 50.43.1.0); blank means never sent. Command frames are `[35][seq][cmd][data…]` written to fd4b0002.
 
+"auto (read-only)" in the Safety column is the Goose R gate, not authorisation: only the probe allowlist
+(SAFETY_MATRIX.md) may be sent. See [CAPABILITY_MATRIX.md](CAPABILITY_MATRIX.md) for the reconciled view.
+
 Wire differences from 4.0 documented by Goose and not yet tested here: alarm commands 66–69 take
 `[4, alarmId, …]` / `[2, alarmId]` forms, haptics use 19 not 79, IMU/optical toggles take `[1, on]`.
 
@@ -43,7 +46,7 @@ Wire differences from 4.0 documented by Goose and not yet tested here: alarm com
 | 53 | FORCE_DP_TYPE | C |  |  |  | UNSAFE | prohibited |  |
 | 63 | SEND_R10_R11_REALTIME | U |  |  |  | SUPPORTED | reversible, approval per experiment | Goose sends [1]/[0]. Not exercised on 5.0 here. |
 | 66 | SET_ALARM_TIME | U | [4,1]+strap time+pattern | SUCCESS (VALID_PATTERN) | 20 | CONFIRMED | restricted: needs reviewed procedure + approval | H02b/H04: id 1 accepted, event 56; rang autonomously at the stored time (event 57). id 0 → INVALID_ALARM_ID. |
-| 67 | GET_ALARM_TIME | R | [4,1] | SUCCESS | 40 | CONFIRMED | auto (read-only) | H03b: returns stored time + pattern; time 0 when the slot is empty. |
+| 67 | GET_ALARM_TIME | R | [4,1] | SUCCESS | 40 | CONFIRMED | auto (read-only) | H03b: returns stored time + pattern; time 0 when the slot is empty. Probe `--commands 67` reads id 1 (default was id 0 until 2026-11-16). |
 | 68 | RUN_ALARM | U | [2,1] | PENDING→SUCCESS (SUCCESSFUL_PLAY) | 20 | CONFIRMED | restricted: needs reviewed procedure + approval | H06b: plays the stored alarm now (event 58 + 60) and clears the slot. |
 | 69 | DISABLE_ALARM | U | [2,255] | SUCCESS | 20 | CONFIRMED | restricted: needs reviewed procedure + approval | H05: disable-all accepted. |
 | 76 | GET_ADVERTISING_NAME_HARVARD | R |  |  |  | SUPPORTED | auto (read-only) |  |
@@ -83,6 +86,6 @@ Wire differences from 4.0 documented by Goose and not yet tested here: alarm com
 | 143 | LOAD_FIRMWARE_DATA_NEW | C |  |  |  | UNSAFE | prohibited |  |
 | 144 | PROCESS_FIRMWARE_IMAGE_NEW | C |  |  |  | UNSAFE | prohibited |  |
 | 145 | GET_HELLO | R | [01] | PENDING→SUCCESS | 124 | CONFIRMED | auto (read-only) | static CLIENT_HELLO; two 124-byte responses (result 2 then 1). Body holds identity/session data: redacted, never logged. |
-| 151 | GET_BATTERY_PACK_INFO | R | [] | FAILURE | 48 | CONFIRMED | auto (read-only) | result 0, body 01 + 30 zero bytes; no battery pack attached (E02). Sent by the app on connect and with each battery poll: SUCCESS is read as pack attached (charging), the E02 form as not attached (`Whoop5Charging.packAttached`). The attached reply has not been captured yet. |
+| 151 | GET_BATTERY_PACK_INFO | R | [] | FAILURE | 48 | CONFIRMED | auto (read-only) | result 0, body 01 + 30 zero bytes (E02). Sent by the app on connect and with each battery poll. `Whoop5Charging.packInfo`: the E02 shape = `unavailable` (not proof of detachment), SUCCESS = `answeredUndecoded`; neither changes attachment/activity. The attached reply has not been captured yet. |
 | 153 | TOGGLE_PERSISTENT_R20 | C |  |  |  | UNSAFE | prohibited |  |
 | 154 | TOGGLE_PERSISTENT_R21 | C |  |  |  | UNSAFE | prohibited |  |

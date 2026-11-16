@@ -2,7 +2,7 @@
 
 | Tier | Commands | Policy |
 |---|---|---|
-| **Auto (read-only)** | 1, 2, 7, 11, 26, 34, 80, 84, 98, 141, 151 (all gate R in Goose; 141 response redacted) | `Tools/ble_probe` may send these, one attempt each, ≥ 0.3 s apart, 7 s timeout, 25 s after PENDING. |
+| **Auto (read-only)** | 1, 2, 7, 11, 26, 34, 80, 84, 98, 141, 151 (all gate R in Goose; 141 response redacted) | `Tools/ble_probe` may send these, one attempt each, ≥ 0.3 s apart, 7 s timeout, 25 s after PENDING. The probe also allows 67 GET_ALARM_TIME (fixed payload `[4,1]`; id 0 is invalid on fw 50.43.1.0). Registry R labels on 35/40/42/44/76/121/128/132 do **not** put them in this tier. |
 | **Reversible, per-experiment approval** | 3 toggle realtime HR, 14 HR broadcast, 63 R10/R11 realtime, 22 send historical data (starts a pull) | Bounded window (≤ 60 s), always send the "off" form afterwards, record pre/post state. Only 3 is in the probe's reversible list (`--toggle 3`, approved 2026-11-02 for E04); the probe always sends `[0]` before exiting. |
 | **Restricted: data-affecting** | 23 HISTORICAL_DATA_RESULT | CONFIRMED to advance the strap's trim pointer (firmware log). Send only after the chunk is durably stored (NOOP's safe-trim order). Never from research tools. |
 | **Restricted: state-changing, needs a written procedure + approval** | 10 set clock, 16, 19/79/122 haptics, 20 abort historical, 33 set read pointer, 66–69 alarms, 77/140 set name, 81/82, 96/97, 105–108, 123 select wrist, 124/125/139 Labrador | Behaviour or payloads unverified on 5.0, or persistent. |
@@ -47,9 +47,10 @@ Low (< 20 %): fires once on the first fresh reading below 20 % (a crossing, or t
 connect); re-armed only after a reading ≥ 25 %; never while charging is confirmed; state persists across restarts.
 Charging complete: only when the strap reports charging AND 100 %; once per charging session. Charging comes only from
 what the strap reports (`LiveState.updateCharging`): CHARGING_ON/OFF (7/8) and BATTERY_PACK_CONNECTED/REMOVED (21/22)
-events, the 4.0 BATTERY_LEVEL charging flag, and on 5.0 the read-only GET_BATTERY_PACK_INFO (151) reply, sent on connect
-and with each battery poll. A rising percentage is never read as charging. The 5.0 event 3 charging bit is still unused.
-None of these has yet been captured while a 5.0 charges: confirm with a pack attached.
+events, the 4.0 BATTERY_LEVEL charging flag, and the 5.0 event 3 charging bit (body byte 9 bit 0, CONFIRMED). The 5.0
+GET_BATTERY_PACK_INFO (151) reply never changes attachment or activity: its E02 failure shape is `unavailable`, SUCCESS
+is `answeredUndecoded`. A rising percentage only ever yields "charging likely" (never confirmed, never alerts).
+*Superseded detail: AGENTS.md §3 "BLE, charging and collection" is the current description.*
 Readings older than 10 minutes never trigger an alert. Disabled alerts still advance state (no backlog later).
 
 ## Alarm and haptic commands (verified 2026-11-02, fw 50.43.1.0)

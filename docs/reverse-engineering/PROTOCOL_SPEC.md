@@ -11,7 +11,7 @@ Device: firmware `50.43.1.0`, hardware `WG50_r52`. Labels are defined in [README
 | Command responses | arrive on `fd4b0003` only | CONFIRMED | E02 (11 responses), app log |
 | History, events, console logs | arrive on `fd4b0005` | CONFIRMED | 6 NOOP captures, 890 frames |
 | `fd4b0007` | sends 244-byte fragments right after subscription, before the hello; content not captured | CONFIRMED (traffic) / SUPPORTED (Memfault diagnostics, per Asherlc docs) | app log 2026-11-02 00:03:19 |
-| `fd4b0004` | no traffic in any capture | CONFIRMED (silence) | E01, E02, app logs |
+| `fd4b0004` | silent in E01/E02; live events in real time during H02b–H07 (same events replay on fd4b0005) | CONFIRMED | E01, E02, H02b–H07 |
 | ATT MTU | 247 (firmware console: `mtu = 247`); notifications up to 244 bytes | CONFIRMED | console log 2026-10-13, app log |
 | PHY | 2M both directions (`DM_PHY_UPDATE_IND … RX: 2, TX: 2`) | CONFIRMED | console log 2026-10-13 |
 | Shared link | a second macOS process can attach to the connection NOOP holds (`retrieveConnectedPeripherals`), read, subscribe and send commands; both processes get every notification | CONFIRMED | E01, E02 (NOOP stayed connected) |

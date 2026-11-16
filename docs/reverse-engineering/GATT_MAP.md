@@ -15,7 +15,7 @@ those are not listed.
 | 180D Heart Rate | 2A37 HR Measurement | notify | 2902 | streams only while HR broadcast (cmd 14) is on | standard HR | CONFIRMED (app, 2026-10-21) |
 | fd4b0001 WHOOP | fd4b0002 | write, write-without-response | — | command input | commands | CONFIRMED |
 | | fd4b0003 | notify | 2902 | command responses | responses | CONFIRMED |
-| | fd4b0004 | notify | 2902 | silent in every capture | events? (Asherlc name: EVENTS_FROM_STRAP) | UNKNOWN |
+| | fd4b0004 | notify | 2902 | silent in E01/E02/E04; live events (56–60, 100, 14) arrived here in real time during H02b–H07 | live events (Asherlc name: EVENTS_FROM_STRAP) | CONFIRMED (H02b–H07); coverage of other event kinds UNKNOWN |
 | | fd4b0005 | notify | 2902 | history, events, metadata, console logs | data | CONFIRMED |
 | | fd4b0007 | notify | 2902 | 244-byte fragments at connect, before the hello | diagnostics (Asherlc: MEMFAULT; Goose: "debug") | SUPPORTED |
 

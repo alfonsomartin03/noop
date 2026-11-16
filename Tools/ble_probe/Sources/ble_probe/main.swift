@@ -63,8 +63,9 @@ func parseAlarmScript(_ s: String) -> [ScriptStep]? {
     }
     return out
 }
-/// Read-only commands that need a fixed argument (from Goose's 5.0 client): GET_ALARM_TIME reads alarm slot 0.
-let READ_ONLY_PAYLOADS: [UInt8: [UInt8]] = [67: [4, 0]]
+/// Read-only commands that need a fixed argument (from Goose's 5.0 client): GET_ALARM_TIME reads alarm id 1, the only
+/// id fw 50.43.1.0 accepts (id 0 answers INVALID_ALARM_ID, H02; id 1 read-back CONFIRMED, H03b). Read-only either way.
+let READ_ONLY_PAYLOADS: [UInt8: [UInt8]] = [67: [4, 1]]
 /// Responses whose body may identify the device; logged as length only.
 let REDACTED_RESPONSES: Set<UInt8> = [145, 141, 76]
 /// Device Information characteristics that identify the unit (serial number, system ID).

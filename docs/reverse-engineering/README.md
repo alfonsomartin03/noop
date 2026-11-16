@@ -11,7 +11,8 @@ passive captures. Every claim carries one of these labels:
 | **UNKNOWN** | Not established. |
 | **UNSAFE** | Excluded from testing because of possible side effects. |
 
-Device under test: model `5.0`, firmware `50.43.1.0`, hardware `WG50_r52` (Device Information, E01).
+Device under test: model `5.0`, firmware `50.43.1.0`, hardware `WG50_r52` (Device Information, E01, 2026-11-02; not re-read since).
+Where older prose disagrees with current code or [CAPABILITY_MATRIX.md](CAPABILITY_MATRIX.md), the matrix and code win.
 
 | File | Contents |
 |---|---|
@@ -26,6 +27,7 @@ Device under test: model `5.0`, firmware `50.43.1.0`, hardware `WG50_r52` (Devic
 | [SAFETY_MATRIX.md](SAFETY_MATRIX.md) | Allowed, restricted, prohibited operations |
 | [TEST_RESULTS.md](TEST_RESULTS.md) | Repeatable tests and outcomes |
 | [AUDIT.md](AUDIT.md) | Phase 1 audit of the app's BLE code |
+| [CAPABILITY_MATRIX.md](CAPABILITY_MATRIX.md) | Reconciled capability matrix, event/history inventory, ranked improvements, firmware status (issue #25) |
 | [ALARM_CAPABILITIES.md](ALARM_CAPABILITIES.md) | Haptics/alarm investigation, capability matrix, proposed experiments |
 | [whoop5_commands.json](whoop5_commands.json) | Machine-readable command registry |
 | [captures/](captures/) | Redacted live captures (JSONL) |

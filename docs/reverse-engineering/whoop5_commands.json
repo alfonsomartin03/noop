@@ -527,7 +527,7 @@
    "observed_result": "SUCCESS",
    "response_len": 40,
    "confidence": "CONFIRMED",
-   "notes": "H03b: returns stored time + pattern; time 0 when the slot is empty.",
+   "notes": "H03b: returns stored time + pattern; time 0 when the slot is empty. Probe --commands 67 reads id 1 (default was id 0 until 2026-11-16).",
    "safety": "auto (read-only)",
    "sources": [
     "b-nnett/goose commands.rs",
@@ -1135,7 +1135,7 @@
    "observed_result": "FAILURE",
    "response_len": 48,
    "confidence": "CONFIRMED",
-   "notes": "result 0, body 01 + 30 zero bytes; no battery pack attached (E02).",
+   "notes": "result 0, body 01 + 30 zero bytes (E02). App: this shape = unavailable (not proof of detachment), SUCCESS = answeredUndecoded (Whoop5Charging.packInfo); attached reply not captured.",
    "safety": "auto (read-only)",
    "sources": [
     "b-nnett/goose commands.rs",
