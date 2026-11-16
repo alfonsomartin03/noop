@@ -171,6 +171,10 @@ public enum SleepStager {
     public static let napMinHRCoverage: Double = 0.5
     /// Versioned nap-evidence rules; part of the scoring algorithm key so stored days re-score when it changes.
     public static let napDetectionVersion = "nap-evidence-v2"
+    /// Versioned main-sleep acceptance: the motion (quiet-minute) statistic of a bridged span is the observed-minute
+    /// weighted quiet fraction of its constituent fragments, excluding the wake/missing gaps between them. Part of the
+    /// scoring algorithm key so stored days (including stored "no sleep" results) re-score without new raw data.
+    public static let fragmentQuietVersion = "sleep-core-fragments-v1"
     /// Final-wake extension: after the strict (quiet) core of a night, sleep continues through restless 5-min blocks
     /// while HR stays at sleeping level (+ `edgeHR` tolerance) and ≥ `extendMinQuietFrac` of minutes are quiet.
     /// Light morning sleep is physically restless (position changes, brief arousals), so motion alone ends nights too soon.
@@ -394,6 +398,21 @@ public enum SleepStager {
         func movingFraction(_ startTs: Int, _ endTs: Int) -> Double {
             1.0 - (quietFraction(startTs, endTs) ?? 1.0)
         }
+        /// Quiet share of the observed minutes inside `parts` only (union of their minutes, each counted once): the
+        /// time between parts is excluded, and every part weighs by its observed minutes. nil if no part has data.
+        func quietFraction(over parts: [Period]) -> Double? {
+            var q = 0, n = 0, last = Int.min
+            for p in parts.sorted(by: { $0.start < $1.start }) {
+                let lo = max(p.start / 60, last == Int.min ? Int.min : last + 1), hi = p.end / 60
+                guard lo <= hi else { continue }
+                for m in lo...hi {
+                    let v = at(m)
+                    if v >= 0 { n += 1; if v == 1 { q += 1 } }
+                }
+                last = hi
+            }
+            return n > 0 ? Double(q) / Double(n) : nil
+        }
         /// Fraction of minutes with data in [startTs, endTs] that are quiet; nil if none.
         func quietFraction(_ startTs: Int, _ endTs: Int) -> Double? {
             var q = 0, n = 0
@@ -447,8 +466,10 @@ public enum SleepStager {
     /// changes whether a span is sleep (it used to: a 3.5-h day sleep had to pass the stricter nap bars, which hid
     /// shift workers' main sleep). Short spans need stronger evidence because brief quiet rest mimics them.
     /// The returned kind is only a length hint; SleepSessionClassifier assigns the real label with context.
-    static func classifyCandidate(start: Int, end: Int, ev: Evidence) -> SleepKind? {
-        let durMin = (end - start) / 60
+    /// `excludedS` is wake/missing time between constituent fragments: it does not make a span long enough for the
+    /// lenient night bar (otherwise excluding gaps from the quiet statistic would let two short rests plus a walk pass).
+    static func classifyCandidate(start: Int, end: Int, ev: Evidence, excludedS: Int = 0) -> SleepKind? {
+        let durMin = (end - start - max(0, excludedS)) / 60
         if durMin < candidateMinMin { return nil }
         let isShort = durMin < mainMinMin
         let minQuiet = isShort ? napMinQuietFrac : mainMinQuietFrac
@@ -575,7 +596,10 @@ public enum SleepStager {
 
         // 1) Fragments that clear the lenient (night) bars; 2) join fragments split by a short wake (bathroom,
         // phone) into one span; 3) judge each joined span with the strict bars for its length / time of day.
-        var coreQuietMerged: [Double?] = []
+        // Each span keeps its constituent fragments (`parts`): the motion acceptance statistic is measured over their
+        // observed minutes only. Judging the whole enclosing span let the wake BETWEEN fragments dilute the quiet
+        // fraction, so a night with a 30–45 min active interruption lost the main sleep it had already shown
+        // (`fragmentQuietVersion`). The gaps themselves stay in the span and are staged as wake / unknown below.
         var fragments: [Period] = []
         for p in runs where p.stage == "sleep" && (p.end - p.start) >= candidateMinMin * 60 {
             let ev = evidence(p.start, p.end)
@@ -584,35 +608,47 @@ public enum SleepStager {
             }
         }
         var spans: [Period] = []
+        var parts: [[Period]] = []
         for f in fragments {
             if let l = spans.last, canBridge(l.end, f.start, grid: grid) {
                 spans[spans.count - 1] = Period(stage: "sleep", start: l.start, end: f.end)
-            } else { spans.append(f) }
+                parts[parts.count - 1].append(f)
+            } else { spans.append(f); parts.append([f]) }
         }
-        // The strict core is judged on motion; remember its quiet fraction, then let the night run on through
-        // restless-but-sleeping blocks (HR still at sleep level) so late light sleep is not cut off.
+        // The strict core is judged on motion (its fragments); then let the night run on through restless-but-sleeping
+        // blocks (HR still at sleep level) so late light sleep is not cut off. The extended tail is not a part: it
+        // passed its own HR/quiet block rule and must not fail (or pass) the core motion test.
         let dataEnd = grav.last!.ts
-        let coreQuiet = spans.map { grid.quietFraction($0.start, $0.end) }
         if spans.count > 0 {
             for i in spans.indices where spans[i].end - spans[i].start >= mainMinMin * 60 / 2 {
                 spans[i] = extendFinalWake(spans[i], hr: hrS, grid: grid, dataEnd: dataEnd)
             }
-            // Extension can reach the next span: merge any that now touch or overlap.
-            var m: [Period] = [], q: [Double?] = []
+            // Extension can reach the next span: merge any that now touch or overlap, keeping both spans' parts.
+            var m: [Period] = [], mp: [[Period]] = []
             for (i, sp) in spans.enumerated() {
-                if let l = m.last, sp.start <= l.end { m[m.count - 1] = Period(stage: "sleep", start: l.start, end: max(l.end, sp.end)); q[q.count - 1] = max(q.last! ?? 0, coreQuiet[i] ?? 0) }
-                else { m.append(sp); q.append(coreQuiet[i]) }
+                if let l = m.last, sp.start <= l.end {
+                    m[m.count - 1] = Period(stage: "sleep", start: l.start, end: max(l.end, sp.end))
+                    mp[mp.count - 1] += parts[i]
+                } else { m.append(sp); mp.append(parts[i]) }
             }
             spans = m
-            coreQuietMerged = q
+            parts = mp
         }
         // Lying awake before the first / after the last real sleep is not sleep: trim to the HR-supported span.
         spans = spans.map { refineEdges($0, hr: hrS) }
         var joined: [(p: Period, kind: SleepKind)] = spans.enumerated().compactMap { i, sp in
             var ev = evidence(sp.start, sp.end)
-            // The strict core already passed the motion test; the restless tail must not fail it.
-            if i < coreQuietMerged.count, let cq = coreQuietMerged[i] { ev.quietFrac = max(ev.quietFrac ?? 0, cq) }
-            return classifyCandidate(start: sp.start, end: sp.end, ev: ev).map { (sp, $0) }
+            // Motion acceptance from the constituent fragments, clipped to the trimmed span (a part trimmed away as
+            // lying awake no longer vouches for it); if trimming left none, the untrimmed fragments.
+            let clipped = parts[i].compactMap { f -> Period? in
+                let a = max(f.start, sp.start), b = min(f.end, sp.end)
+                return b > a ? Period(stage: "sleep", start: a, end: b) : nil
+            }
+            if let q = grid.quietFraction(over: clipped) ?? grid.quietFraction(over: parts[i]) { ev.quietFrac = q }
+            // Gap time between parts, less the stillness window's erosion of the fragment edges (as in `canBridge`).
+            let sorted = clipped.sorted { $0.start < $1.start }
+            let gapS = zip(sorted, sorted.dropFirst()).reduce(0) { $0 + max(0, $1.1.start - $1.0.end - quietWindowMin * 60) }
+            return classifyCandidate(start: sp.start, end: sp.end, ev: ev, excludedS: gapS).map { (sp, $0) }
         }
         // Naps must look like THIS wearer's sleep. Quiet couch time after a workout can pass the motion and
         // waking-HR-dip tests, but its HR sits well above their sleeping HR.

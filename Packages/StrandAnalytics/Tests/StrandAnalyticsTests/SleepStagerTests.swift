@@ -356,4 +356,131 @@ final class SleepStagerTests: XCTestCase {
         XCTAssertEqual(SleepStager.hrMinuteCoverage(hr, start: 1_000, end: 1_000 + 60 * 60), 0.5, accuracy: 1e-9)
         XCTAssertEqual(SleepStager.hrMinuteCoverage([], start: 0, end: 3600), 0)
     }
+
+    // MARK: interrupted nights (sleep-core-fragments-v1)
+
+    /// Near-threshold sleep: still except one moving minute in every 8 → 7/8 = 0.875 quiet (bar 0.85).
+    private func restlessGravity(start: Int, durationS: Int) -> [GravitySample] {
+        (0..<durationS).map { GravitySample(ts: start + $0, x: ($0 % 480 == 240) ? 0.05 : 0, y: 0, z: 1.0) }
+    }
+
+    private enum Interruption { case active, missing }
+
+    /// Active local evening, fragment A, interruption, fragment B, active morning. Sleep has RR for HRV (±5 ms → 10 ms).
+    private func interruptedNight(fragmentMin: Int = 210, gapMin: Int, gap: Interruption, sleepHR: Int = 52)
+        -> (hr: [HRSample], rr: [RRInterval], grav: [GravitySample], gapStart: Int, gapEnd: Int, wake: Int) {
+        let cal = Calendar.current
+        let bed = Int(cal.date(from: DateComponents(year: 2021, month: 7, day: 1, hour: 23))!.timeIntervalSince1970)
+        let evening = bed - 4 * 3600, frag = fragmentMin * 60, g = gapMin * 60
+        var grav = activeGravity(start: evening, durationS: 4 * 3600)
+        var hr = hrStream(start: evening, durationS: 4 * 3600, bpm: 85)
+        var rr: [RRInterval] = []
+        func sleep(_ a: Int) {
+            grav += restlessGravity(start: a, durationS: frag)
+            hr += hrStream(start: a, durationS: frag, bpm: sleepHR)
+            rr += stride(from: a, to: a + frag, by: 2).map { RRInterval(ts: $0, rrMs: ($0 / 2) % 2 == 0 ? 1195 : 1205) }
+        }
+        sleep(bed)
+        let gapStart = bed + frag
+        if gap == .active {
+            grav += activeGravity(start: gapStart, durationS: g)
+            hr += hrStream(start: gapStart, durationS: g, bpm: 85)
+        }
+        let bStart = gapStart + g
+        sleep(bStart)
+        let wake = bStart + frag
+        grav += activeGravity(start: wake, durationS: 2 * 3600)
+        hr += hrStream(start: wake, durationS: 2 * 3600, bpm: 85)
+        return (hr, rr, grav, gapStart, bStart, wake)
+    }
+
+    private func sleepSeconds(_ stages: [StageSegment], _ a: Int, _ b: Int) -> Int {
+        stages.filter { $0.state.isSleep }.reduce(0) { $0 + max(0, min($1.end, b) - max($1.start, a)) }
+    }
+
+    func testFragmentQuietFractionWeighsObservedMinutesAndSkipsGaps() {
+        // Minutes 0–9 quiet, 10–39 alternating moving/quiet, 40–79 moving (the gap), 80–89 no data, 90–99 quiet.
+        var state = [Int8](repeating: 1, count: 100)
+        for m in 10..<40 where m % 3 == 0 { state[m] = 0 }      // 10 moving of 30
+        for m in 40..<80 { state[m] = 0 }
+        for m in 80..<90 { state[m] = -1 }
+        let grid = SleepStager.MinuteGrid(first: 0, state: state)
+        let a = SleepStager.Period(stage: "sleep", start: 0, end: 39 * 60), b = SleepStager.Period(stage: "sleep", start: 80 * 60, end: 99 * 60)
+        // Observed minutes only: (10 + 20 + 10) / 50 = 0.8 — not the best part (1.0), not the part mean (0.89),
+        // and not the enclosing span with its moving gap (40 / 90).
+        XCTAssertEqual(grid.quietFraction(over: [a, b])!, 0.8, accuracy: 1e-9)
+        XCTAssertEqual(grid.quietFraction(0, 99 * 60)!, 40.0 / 90.0, accuracy: 1e-9)
+        // Overlapping / duplicated parts count each minute once; a part with no data at all gives nil.
+        XCTAssertEqual(grid.quietFraction(over: [a, a, b])!, 0.8, accuracy: 1e-9)
+        XCTAssertNil(grid.quietFraction(over: [SleepStager.Period(stage: "sleep", start: 81 * 60, end: 88 * 60)]))
+    }
+
+    func testActiveInterruptionKeepsMainSleepAndRecovery() throws {
+        // Reported failure: two qualifying near-threshold fragments around a 40-min walk. The walk diluted the joined
+        // span's quiet fraction to ~0.80 and the whole night was dropped (no sleep, no recovery).
+        let n = interruptedNight(gapMin: 40, gap: .active)
+        let s = SleepStager.detectSleep(hr: n.hr, rr: n.rr, gravity: n.grav)
+        let main = try XCTUnwrap(s.first { $0.kind == .main && !$0.lowEvidence })
+        XCTAssertLessThanOrEqual(main.start, n.gapStart - 3 * 3600)
+        XCTAssertGreaterThanOrEqual(main.end, n.gapEnd + 3 * 3600)
+        // The walk stays wake: no sleep inside it beyond the stillness window's edge blur.
+        XCTAssertLessThanOrEqual(sleepSeconds(main.stages, n.gapStart + 300, n.gapEnd - 300), 0)
+        XCTAssertGreaterThan(main.stages.filter { $0.state == .wake && $0.start < n.gapEnd && $0.end > n.gapStart }
+            .reduce(0) { $0 + min($1.end, n.gapEnd) - max($1.start, n.gapStart) }, 30 * 60)
+
+        let day = AnalyticsEngine.dayString(n.wake)
+        let hrvBase = Baselines.foldHistory(Array(repeating: 10.0, count: 14), cfg: Baselines.hrvCfg)
+        let rhrBase = Baselines.foldHistory(Array(repeating: 52.0, count: 14), cfg: Baselines.restingHRCfg)
+        let r = AnalyticsEngine.analyzeDay(day: day, hr: n.hr, rr: n.rr, gravity: n.grav, profile: UserProfile(age: 30),
+                                           baselines: AnalyticsEngine.ProfileBaselines(hrv: hrvBase, restingHR: rhrBase))
+        XCTAssertEqual(r.classifiedSleep.filter(\.isPrimary).count, 1)
+        let total = try XCTUnwrap(r.daily.totalSleepMin)
+        XCTAssertLessThanOrEqual(total, 2.0 * 210 + 5, "the interruption must not count as sleep")
+        XCTAssertGreaterThan(total, 5.0 * 60)
+        XCTAssertEqual(r.daily.restingHr, 52)
+        XCTAssertNotNil(r.daily.avgHrv)
+        let rec = try XCTUnwrap(r.recovery)
+        XCTAssertTrue((0...100).contains(rec))
+    }
+
+    func testActiveInterruptionVersusOldWholeSpanStatistic() {
+        // Guard on the fixture: the whole span (gap included) is below the bar, each fragment is above it.
+        let n = interruptedNight(gapMin: 40, gap: .active)
+        let grav = n.grav.sorted { $0.ts < $1.ts }
+        let grid = SleepStager.buildMinuteGrid(grav, SleepStager.gravityDeltas(grav))
+        let a = n.gapStart - 210 * 60
+        XCTAssertLessThan(grid.quietFraction(a, n.wake)!, SleepStager.mainMinQuietFrac)
+        XCTAssertGreaterThanOrEqual(grid.quietFraction(a, n.gapStart)!, SleepStager.mainMinQuietFrac)
+    }
+
+    func testMissingDataGapStaysUnknown() throws {
+        // A 10-min strap-off gap inside the night: bridged (mostly observed), but its minutes are unknown, not sleep.
+        let n = interruptedNight(gapMin: 10, gap: .missing)
+        let s = SleepStager.detectSleep(hr: n.hr, rr: n.rr, gravity: n.grav)
+        let main = try XCTUnwrap(s.first { $0.kind == .main })
+        XCTAssertLessThan(main.start, n.gapStart); XCTAssertGreaterThan(main.end, n.gapEnd)
+        XCTAssertEqual(sleepSeconds(main.stages, n.gapStart + 60, n.gapEnd - 60), 0)
+        XCTAssertTrue(main.stages.contains { $0.state == .unknown && $0.start < n.gapEnd && $0.end > n.gapStart })
+        // A 45-min strap-off gap is not bridged as a wake (too little data); the final-wake extension may still carry
+        // the night across it, but its minutes are never sleep and the night's sleep stays ≤ the two fragments.
+        let long = interruptedNight(gapMin: 45, gap: .missing)
+        let found = SleepStager.detectSleep(hr: long.hr, rr: long.rr, gravity: long.grav)
+        XCTAssertFalse(found.filter { $0.kind == .main }.isEmpty)
+        XCTAssertEqual(found.reduce(0) { $0 + sleepSeconds($1.stages, long.gapStart + 60, long.gapEnd - 60) }, 0)
+        XCTAssertLessThanOrEqual(found.reduce(0) { $0 + sleepSeconds($1.stages, $1.start, $1.end) }, 2 * 210 * 60)
+    }
+
+    func testQuietWakingFragmentsAroundAnInterruptionStayRejected() {
+        // Quiet evening rest with waking HR (82 vs 85 moving): each fragment fails the HR dip, bridging can't rescue it.
+        let wakeful = interruptedNight(gapMin: 40, gap: .active, sleepHR: 82)
+        XCTAssertTrue(SleepStager.detectSleep(hr: wakeful.hr, gravity: wakeful.grav).isEmpty)
+        // Two 75-min near-threshold rests around a walk: the joined span is shorter than a night, so the nap bar (0.90)
+        // applies to the fragments' own 0.875 — excluding the gap must not turn quiet rest into sleep.
+        let short = interruptedNight(fragmentMin: 75, gapMin: 40, gap: .active, sleepHR: 60)
+        XCTAssertTrue(SleepStager.detectSleep(hr: short.hr, gravity: short.grav).isEmpty)
+    }
+
+    func testFragmentAcceptanceIsPartOfTheAlgorithmKey() {
+        XCTAssertTrue(IncrementalScorer.algorithmKey(scoringVersion: 5, generation: 0).contains(SleepStager.fragmentQuietVersion))
+    }
 }
