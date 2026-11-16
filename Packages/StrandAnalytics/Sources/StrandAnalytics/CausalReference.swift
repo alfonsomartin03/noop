@@ -1,4 +1,5 @@
 import Foundation
+import WhoopStore
 
 // CausalReference.swift — personal references that only look backwards.
 //
@@ -230,6 +231,21 @@ extension Baselines {
 }
 
 public enum CausalBaselines {
+    /// Skin-temperature reference for `day` from earlier nights' values (day → °C) whose persisted provenance has the
+    /// current night identity; anything else (older version, unknown provenance, excluded night) never enters it.
+    public static func skinTempReference(nights: [String: Double], provenance: [String: [ProvenanceRecord]], before day: String,
+                                         hardware: String = MetricIdentity.unknownValue) -> ReferenceSnapshot? {
+        let identity = SkinTemperature.nightIdentity(hardware: hardware)
+        let history = nights.compactMap { d, v -> MetricObservation? in
+            guard let p = provenance[d]?.first(where: { $0.key == ProvenanceKey.skinTempNight }) else { return nil }
+            return MetricObservation(identity: MetricIdentity(record: p) ?? MetricIdentity(definition: .skinTemperature, unit: "°C",
+                                                                                          source: .noopComputed, context: .unknown,
+                                                                                          aggregation: .vendorUnspecified),
+                                     day: d, value: v, coverage: p.coverage, exclusionReasons: p.exclusionReasons)
+        }
+        return CausalReference.reference(for: day, history: history, identity: identity, cfg: SkinTemperature.reference)
+    }
+
     /// Legacy-model baselines for scoring `day`: NOOP's own nightly RMSSD / sleeping resting HR from strictly earlier
     /// days of the same identity. Respiration is deliberately absent (inferred, experimental; see RespiratoryRate).
     public static func legacyProfile(rmssd: [MetricObservation], restingHR: [MetricObservation], before day: String,
