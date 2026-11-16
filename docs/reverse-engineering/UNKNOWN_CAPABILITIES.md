@@ -8,7 +8,7 @@
 | fd4b0007 content (Memfault chunks?) | SUPPORTED name only | E07: capture at connect, redact, check for Memfault chunk header. |
 | fd4b0004 coverage | Live alarm/haptic events CONFIRMED (H02b–H07); which other kinds go live is UNKNOWN | Passive capture C02 (CAPABILITY_MATRIX.md). |
 | Header bytes 4–5 meaning (`00 01` / `01 00`) | HYPOTHESIS: direction or source/destination | Already consistent on 900+ frames; no active test needed. |
-| Events 110, 120, 123; body of 29 | 29/110 periodic (10 min); 123 HYPOTHESIS connection state; 120 UNKNOWN | E05 and more reconnects. |
+| Events 110, 120, 123; body of 29 | 29/110 periodic (10 min), 29 u16 @6 = soc × 10 (locally CONFIRMED); 109 charge-current-like, 117 charger state (HYPOTHESES, CAPABILITY_MATRIX.md §3); 123 HYPOTHESIS connection state; 120 UNKNOWN | C02 passive capture with timed actions. |
 | Type-47 v0x1a records (frame 88, payload 76) | time @7, counter @3, 40-s bursts ~every 20 min, 24 × i16 waveform-like block @19–66 (structure, 2026-11-16 archive inventory); signal meaning UNKNOWN | Controlled passive scenario; no guessed offsets. |
 | Wrist on/off on 5.0; meaning of frequent event 14 | Double tap (14) CONFIRMED as alarm dismissal; ~780 daytime-clustered occurrences in 2 weeks (HYPOTHESIS: also fires on activity); wrist on/off UNKNOWN | Passive C02 with timed physical actions. |
 | Skin temperature over BLE | type-47 v0x12 payload 65 u16 ÷ 100 °C (external layouts; 544/544 local frames plausible, ≈ 35 °C) — SUPPORTED, no reference thermometer | Decode in NOOP (CAPABILITY_MATRIX.md §5 #6). Goose's raw fd4b0007 debug write stays prohibited. |

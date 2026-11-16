@@ -68,15 +68,15 @@ because older builds stored unnamed kinds.
 | 14 (labelled DOUBLE_TAP) | ~780 | 0 | almost only during waking hours, often clustered (gaps ≤ 60 s); also after alarm dismissal (H04/H06b) | Dismissal use CONFIRMED; that every 14 is a deliberate double tap is **HYPOTHESIS** (daytime clustering suggests a motion/gesture detector firing in activity) |
 | 21 / 22 pack connected/removed | few | — | | CONFIRMED |
 | 25 HR profile disabled | ~430 | — | near connects (NOOP keeps broadcast off) | CONFIRMED |
-| 29 STRAP_CONDITION_REPORT | ~2k | 12 | every 10 min, same second as 110; bytes 0, 6 vary widely, 1/4 moderately | name SUPPORTED, fields UNKNOWN |
+| 29 STRAP_CONDITION_REPORT | ~2k | 12 | every 10 min, same second as 110. **Body u16 @6 = battery state of charge × 10** (0.1 %): equals event 3's soc within 2 min in 128/248 pairs, the rest off by a few tenths as the battery moved; correlation 1.0 (2026-11-16). Byte 0 / u16 @0, bytes 1, 4 unrelated to battery | soc field **locally CONFIRMED**; rest UNKNOWN |
 | 33 / 34 realtime on/off | ~400 / ~30 | 0 | | CONFIRMED |
 | 43 | 18 | 0 | always with a connection down/up and 123 | UNKNOWN (connection-related) |
 | 56 STRAP_DRIVEN_ALARM_SET | ~610 | 24 | median gap 15 min; ~50/day | CONFIRMED meaning; cadence = §5 finding |
 | 57 / 58 / 60 / 100 | few | | alarm execution / haptics | CONFIRMED |
 | 63 EXTENDED_BATTERY_INFORMATION | ~1k | | same second as 3 | name SUPPORTED, body UNKNOWN |
-| 109 | 66 | 28 | 10-min spacing during charging sessions; only bytes 23–24 vary | UNKNOWN (charging-related HYPOTHESIS) |
+| 109 | 66 | 28 | only while charging, 10-min spacing; only u16 @23 varies: ≈ 994 flat to ~34 % soc, then tapering to ≈ 300 by ~95 % (correlation with soc −0.95) | **HYPOTHESIS: charge current** (constant-current then constant-voltage taper); units unknown |
 | 110 | ~2k | 8 | every 10 min with 29; nearly constant body | UNKNOWN |
-| 117 | 88 | 4 | seconds apart, around charging on/off and battery events; byte 1 takes 4 values | UNKNOWN (charging-state HYPOTHESIS) |
+| 117 | 88 | 4 | byte 1: 2 at every CHARGING_ON, 0 at every CHARGING_OFF, 3 only at 88–92 % soc (alternating with 2), 4 only at 100 % just before the pack is removed | **HYPOTHESIS (strong): charger state** — 0 idle, 2 charging, 3 top-off, 4 full |
 | 120 | ~180 | 32 | ~every 2 h; every body distinct | UNKNOWN (periodic report) |
 | 121 | 6 | 4 | with alarm set / double tap / haptics terminated | UNKNOWN (alarm/haptics-related) |
 | 123 | ~2.1k | 8 | at connects/disconnects | HYPOTHESIS connection state |
@@ -88,7 +88,7 @@ Not seen: wrist on/off events (UNKNOWN on 5.0).
 
 | Record | Volume | Decoded | Structure found offline | Label |
 |---|---|---|---|---|
-| 47 v0x12 "R18" (frame 124, payload 112) | continuous 1 Hz | HR @14, R-R @15/16, gravity floats @37/41/45 | **Skin temperature u16 @65 ÷ 100 °C** (ryanbr R18 frame 73; Asherlc payload 65): 544/544 local raw frames (Oct 13–22 manual pulls) in 5–45 °C, median ≈ 35 °C, matching the firmware console's `skin_temp`. Aux thermal i16 @61/@63 ÷ 10 °C also plausible. Other R18 fields per ryanbr (step counter, activity, wear/motion bitfield, optical amplitude) not yet checked | HR/R-R/gravity CONFIRMED; skin-temperature word **SUPPORTED + locally consistent** (no reference thermometer); app does not decode it |
+| 47 v0x12 "R18" (frame 124, payload 112) | continuous 1 Hz | HR @14, R-R @15/16, gravity floats @37/41/45 | **Skin temperature u16 @65 ÷ 100 °C** (ryanbr R18 frame 73; Asherlc payload 65): 544/544 local raw frames (Oct 13–22 manual pulls) in 5–45 °C, median ≈ 35 °C, matching the firmware console's `skin_temp`. Aux thermal i16 @61/@63 ÷ 10 °C also plausible. Further R18 fields (payload = ryanbr frame − 8), checked on the same 544 seconds: step counter u16 @49 increments only within 5 s of activity code @55 = 1 (walk; 7/7); dynamic acceleration f32 @33 median 0.139 g on walk seconds vs 0.010 g still. Band-state bits @73 and optical bytes @98–101 present but too little data to interpret | HR/R-R/gravity CONFIRMED; skin-temperature word **SUPPORTED + locally consistent** (no reference thermometer); app does not decode it |
 | 47 v0x1a "R26" (frame 88, **payload 76**) | 41,237 frames archived (40,754 unique seconds; duplicates = re-sent un-acked chunks) | time @7 only | Bursts of 40 consecutive seconds, median ~19–20 min apart (all 15 days). Constant: @0 type, @1 0x1a, @2 0x80, @6, @10, @75. @3 u32 counter +1 per record. @19–66: 24 × i16 LE per record with lag-1 correlation 0.79 decaying to ~0 by lag 6 and 0.48 across record boundaries → a sampled waveform at ~24 samples/s. @70 a slowly varying byte in a narrow range. @11–18, @67–74 mostly constant within a burst. ryanbr's R26 layout (payload = frame − 8): @11 u16 time word, @13 u16 burst counter, @15 u32 absolute first optical code, @19+2i 24 × i16 **deltas** (25-sample window), @67 f32 motion summary, @71 u16 status, @73 on-wrist byte, @74 acceptance byte. Checked locally: burst counter constant inside every run and +1 between runs (1,031/1,033); delta-reconstructed last sample meets the next record's first sample ~8× closer than raw first-to-first (median 624 vs 5,122) | Layout **SUPPORTED + locally consistent**; an optical sample window. Wavelength/channel and SpO₂ meaning **not established** (ryanbr: do not derive SpO₂) |
 | 52 IMU | none archived in this window | — | — | UNKNOWN |
 
@@ -106,7 +106,9 @@ Finding 1 describes the pre-fix behavior: PR #29 now verifies the stored slot be
 | 3 | v0x1a burst content undecoded | §4 | Offline decoding, then a controlled passive scenario | Decode only with reproducible evidence |
 | 4 | Event 14 frequency vs "double tap" label | §3 | Docs + any future gesture feature | Don't build on it until meaning is settled |
 | 5 | Periodic 29/110/120 reports undecoded | §3 | Offline correlation with battery/charging/wear | — |
-| 6 | **Skin temperature is in every v0x12 record and NOOP ignores it** (`skinTempSample` is empty; Health/Trends skin-temperature change has no 5.0 source) | §4 | NOOP decoder (`Streams.swift` 5.0 historical) → `skinTempSample`; needs fixture tests and a provenance/version label | Offline only, no strap commands. Metric: nightly skin-temperature coverage on 5.0 |
+| 6 | ~~Skin temperature in every v0x12 record ignored~~ | §4 | **Done** on `feature/whoop5-skin-temp`: decoded + stored (schema v18), nightly change `skin-temp-night-v1` | Not yet seen in a live pull |
+| 7 | **Charger state and battery are in events NOOP doesn't use**: 117 (charger state incl. *full*), 29 (soc every 10 min), 109 (charge-current-like taper) | §3 | NOOP: event 117 = 4 as a "fully charged" signal; 29 as a passive soc source between polls (could replace some 15-min pack/battery polls) | Offline decode only; metric: fewer battery commands/day, earlier full-charge notice |
+| 8 | Steps and activity are in every v0x12 record | §4 | NOOP decoder (R18 @49 step counter, @55 activity code) | Needs a validation walk with counted steps before showing anything |
 
 ## 6 · Firmware acquisition (status after desk research, 2026-11-16)
 
@@ -114,7 +116,7 @@ Finding 1 describes the pre-fix behavior: PR #29 now verifies the stored slot be
 |---|---|
 | Readback/dump command in any reviewed source | **None found** (registry, Goose table + Swift client, Asherlc, ryanbr, probe, app). ryanbr documents 143 chunk read-back only inside an update load, which is prohibited and is not a dump of the installed image. |
 | Official update artifact | **No public source found.** WHOOP updates are pushed through its app (community guide). ryanbr documents an image container (512-byte header with CRC32s, type 5 = gzip payload) and a WHOOP 4 outer package (Maxim ZBIN + Nordic DFU zip); the 5.0/MG package, download source and signing are undocumented. Do not trigger an update to obtain one. |
-| Hardware readout | MCU: **Ambiq Cortex-M4 with BLE** per the TechInsights WG50 teardown summary (paywalled full report; part number not seen). Other parts per ryanbr: MAX86176 optical AFE, ICM-45686 IMU, DRV2625 haptics, LC709205F fuel gauge, AS6221 skin temperature. Debug-port exposure, readout protection and secure boot: **unknown**. Any attempt is spare-unit-only and out of this issue's scope. |
+| Hardware readout | MCU: **Ambiq Cortex-M4 with BLE** per the TechInsights WG50 teardown summary (paywalled full report; part number not seen). Consistent with the firmware console's `DM_PHY_UPDATE_IND` line (ARM Cordio BLE host naming, which Ambiq's SDK ships) — supporting, not proof. Other parts per ryanbr: MAX86176 optical AFE, ICM-45686 IMU, DRV2625 haptics, LC709205F fuel gauge, AS6221 skin temperature. Debug-port exposure, readout protection and secure boot: **unknown**. Any attempt is spare-unit-only and out of this issue's scope. |
 | Custom firmware | **No-go for now.** ryanbr lists certificate/authorisation commands 155–159 and "no validated or authorized flashing path"; signing, boot verification, rollback and recovery are unknown; no recovery route exists even on a spare. Revisit only with a spare unit and evidence on boot security. |
 | Decision | **Firmware acquisition: no-go** (no read path, no public package). **Improvements belong in NOOP** (decoding, fewer writes/polls), not firmware. |
 
@@ -124,11 +126,24 @@ Finding 1 describes the pre-fix behavior: PR #29 now verifies the stored slot be
 |---|---|---|---|
 | C01 | ~~Read DIS once~~ | — | **Closed** from the app's own cached read (2026-11-16) |
 | C02 | Passive subscription capture around connect, charge on/off, wear off/on (bounded, no commands beyond the app's own) | Notifications only | fd4b0004 coverage, event 14/109/117/43 meaning, fd4b0007 framing |
-| C03 | Offline: review existing fd4b0007 fragments in committed captures | No | Diagnostic framing |
+| C03 | ~~Offline fd4b0007 review~~ | No | **Closed, no data**: committed captures hold only fd4b0007 descriptors and one redacted empty fragment; no local file kept its payload. Needs C02. Firmware console text (type 50, 124 local frames) summarised instead: hello/fuel-gauge, history trim/PullStats, bond, PHY update, AFE reconfiguration, wear-detect state lines; no build id or crash record seen |
 | C04 | ~~Desk research: arguments~~ | No | **Done** (§2) |
 | C05 | ~~Desk research: firmware/MCU~~ | No | **Done** (§6): no-go |
 | C06 | 151 GET_BATTERY_PACK_INFO with payload `[01]`, once, pack off and on | One read-only command (Goose gate R), new payload form | Whether the FAILURE was a missing revision byte; pack-attached reply |
 | C07 | 40 / 42 / 44 with empty payload, once each | Three read-only commands (Goose gate R), never sent before | Optical AFE configuration; response layouts undocumented |
+
+### Procedures for the approval-gated tests (nothing below has been run)
+
+Common rules: NOOP running and connected, not mid-pull (no `History:` lines), no alarm within 30 min; the probe attaches to NOOP's
+link (`Tools/ble_probe`, rebuilt with the change below); one attempt per command, ≥ 0.3 s apart, 7 s timeout, 25 s after
+PENDING; seq 200–255; responses for 141/145/76 stay redacted; stop at the first unexpected result (no retries); captures
+redacted before commit.
+
+| ID | Probe change needed | Exact request | Expected | Stop / restore |
+|---|---|---|---|---|
+| C06 | Allow payload `[01]` for 151 behind a new `--pack-rev1` flag (read-only allowlist entry already exists) | `151 [01]` with the pack **off**, then again with the pack **on** and charging | SUCCESS with a body (then decode offline), or the same FAILURE (then the revision byte is not the cause) | Read-only; nothing to restore. If anything other than a 36 response arrives, stop |
+| C07 | Add 40, 42, 44 to `READ_ONLY_ALLOWLIST` with empty payloads | `40 []`, `42 []`, `44 []` once each | SUCCESS + body, or UNSUPPORTED (3-byte body) | Read-only per Goose; their SET twins (39/41/43) stay prohibited and are not added. Stop on any AFE console line other than the usual |
+| C02 | None (passive: subscribe only, no commands beyond NOOP's own) | Capture 10 min each: (a) wear → remove strap → replace; (b) pack attach → charge → remove; wearer notes times by hand | Live events on fd4b0004 for 14/43/117/123; fd4b0007 fragments at connect | Passive; no restoration |
 
 ## 8 · Sources (desk research, 2026-11-16)
 
