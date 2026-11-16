@@ -63,7 +63,7 @@ because older builds stored unnamed kinds.
 |---:|---|---:|---|---|
 | 3 BATTERY_LEVEL | ~1k | 20 | soc @1, mV @5, charging = byte 9 bit 0 | CONFIRMED (charging bit on 500 stored events) |
 | 7 / 8 CHARGING_ON/OFF | ~15 each | — | around charging | CONFIRMED |
-| 9 / 10 | 2 each | 0 | always together, ~26 s apart, beside 120 and 123 | UNKNOWN |
+| 9 / 10 | 2 each (DB); 1 each (C02a) | 0 | **10 = wrist off, 9 = wrist on**: C02a, strap removed 14:58 → event 10 live on fd4b0004 at 14:58:12; replaced 15:00 → event 9 at 15:00:15 (wearer-timed). Rare in the DB because the strap is seldom taken off | **CONFIRMED** (one timed off/on, fw 50.43.1.0) |
 | 11 / 12 connection up/down | ~680 each | 0 | | CONFIRMED |
 | 14 (labelled DOUBLE_TAP) | ~780 | 0 | almost only during waking hours, often clustered (gaps ≤ 60 s); also after alarm dismissal (H04/H06b) | Dismissal use CONFIRMED; that every 14 is a deliberate double tap is **HYPOTHESIS** (daytime clustering suggests a motion/gesture detector firing in activity) |
 | 21 / 22 pack connected/removed | few | — | | CONFIRMED |
@@ -82,7 +82,7 @@ because older builds stored unnamed kinds.
 | 123 | ~2.1k | 8 | at connects/disconnects | HYPOTHESIS connection state |
 | 1 | 1 | 12 | isolated | UNKNOWN |
 
-Not seen: wrist on/off events (UNKNOWN on 5.0).
+Wrist on/off: events 10/9 (C02a, CONFIRMED once). The live stream also carried event 29 (soc field 994 = 99.4 %, matching 2A19 = 99).
 
 ## 4 · Stored history
 
@@ -108,6 +108,7 @@ Finding 1 describes the pre-fix behavior: PR #29 now verifies the stored slot be
 | 5 | Periodic 29/110/120 reports undecoded | §3 | Offline correlation with battery/charging/wear | — |
 | 6 | ~~Skin temperature in every v0x12 record ignored~~ | §4 | **Done** on `feature/whoop5-skin-temp`: decoded + stored (schema v18), nightly change `skin-temp-night-v1` | Not yet seen in a live pull |
 | 7 | **Charger state and battery are in events NOOP doesn't use**: 117 (charger state incl. *full*), 29 (soc every 10 min), 109 (charge-current-like taper) | §3 | NOOP: event 117 = 4 as a "fully charged" signal; 29 as a passive soc source between polls (could replace some 15-min pack/battery polls) | Offline decode only; metric: fewer battery commands/day, earlier full-charge notice |
+| 9 | **Wrist on/off events (9/10) are ignored by NOOP** | §3 | NOOP: route 9/10 to an off-wrist interval stream; use it to keep off-wrist time out of skin temperature, coverage captions and sleep (AGENTS says NOOP never claims the strap was off — this would be the first evidence for it) | Offline decode; needs more than one timed off/on before relying on it |
 | 8 | Steps and activity are in every v0x12 record | §4 | NOOP decoder (R18 @49 step counter, @55 activity code) | Needs a validation walk with counted steps before showing anything |
 
 ## 6 · Firmware acquisition (status after desk research, 2026-11-16)
@@ -125,7 +126,7 @@ Finding 1 describes the pre-fix behavior: PR #29 now verifies the stored slot be
 | ID | What | Touches strap | Why |
 |---|---|---|---|
 | C01 | ~~Read DIS once~~ | — | **Closed** from the app's own cached read (2026-11-16) |
-| C02 | Passive subscription capture around connect, charge on/off, wear off/on (bounded, no commands beyond the app's own) | Notifications only | fd4b0004 coverage, event 14/109/117/43 meaning, fd4b0007 framing |
+| C02 | Passive capture (owner-approved 2026-11-16) | Notifications + standard reads only | **(a) done**: wrist off/on = events 10/9, live on fd4b0004; probe wrote 0 frames; fresh probe-only connect (NOOP was not connected) produced **no** fd4b0007 data. **(b) charging: deferred** (no pack at hand) |
 | C03 | ~~Offline fd4b0007 review~~ | No | **Closed, no data**: committed captures hold only fd4b0007 descriptors and one redacted empty fragment; no local file kept its payload. Needs C02. Firmware console text (type 50, 124 local frames) summarised instead: hello/fuel-gauge, history trim/PullStats, bond, PHY update, AFE reconfiguration, wear-detect state lines; no build id or crash record seen |
 | C04 | ~~Desk research: arguments~~ | No | **Done** (§2) |
 | C05 | ~~Desk research: firmware/MCU~~ | No | **Done** (§6): no-go |
@@ -143,7 +144,7 @@ redacted before commit.
 |---|---|---|---|---|
 | C06 | Allow payload `[01]` for 151 behind a new `--pack-rev1` flag (read-only allowlist entry already exists) | `151 [01]` with the pack **off**, then again with the pack **on** and charging | SUCCESS with a body (then decode offline), or the same FAILURE (then the revision byte is not the cause) | Read-only; nothing to restore. If anything other than a 36 response arrives, stop |
 | C07 | Add 40, 42, 44 to `READ_ONLY_ALLOWLIST` with empty payloads | `40 []`, `42 []`, `44 []` once each | SUCCESS + body, or UNSUPPORTED (3-byte body) | Read-only per Goose; their SET twins (39/41/43) stay prohibited and are not added. Stop on any AFE console line other than the usual |
-| C02 | None (passive: subscribe only, no commands beyond NOOP's own) | Capture 10 min each: (a) wear → remove strap → replace; (b) pack attach → charge → remove; wearer notes times by hand | Live events on fd4b0004 for 14/43/117/123; fd4b0007 fragments at connect | Passive; no restoration |
+| C02 | `ble_probe --passive` (added 2026-11-16; refuses every command option, `write` guarded; fd4b0007 fragments logged raw, private) | Capture 10 min each: (a) wear → remove strap → replace; (b) pack attach → charge → remove; wearer notes times by hand | Live events on fd4b0004 for 14/43/117/123; fd4b0007 fragments at connect | Passive; no restoration |
 
 ## 8 · Sources (desk research, 2026-11-16)
 

@@ -127,7 +127,7 @@ all 26 captured events. CONFIRMED (matches ryanbr/noop's "length at frame[18]").
 
 Current NOOP decodes 5.0 events (`Whoop5Event`) and routes charging/alarm events; the old "undecoded" note is
 historical. Event 14 (double tap) is CONFIRMED as the alarm dismissal gesture (H04/H06b) but fires far more often in
-daily use (CAPABILITY_MATRIX.md §3). Wrist on/off events have not been observed on 5.0.
+daily use (CAPABILITY_MATRIX.md §3). Wrist off = event 10, wrist on = event 9, both live on fd4b0004 with empty bodies (C02a, 2026-11-16, CONFIRMED once).
 
 ## 49 METADATA
 
