@@ -118,14 +118,16 @@ all 26 captured events. CONFIRMED (matches ryanbr/noop's "length at frame[18]").
 | 63 | EXTENDED_BATTERY_INFORMATION | — | name SUPPORTED; same second as event 3 |
 | 11 / 12 | BLE_CONNECTION_UP / DOWN | 0 | CONFIRMED (appear around connects) |
 | 25 | BLE_HR_PROFILE_DISABLED | — | CONFIRMED (2026-10-31, after cmd 14 [0]) |
-| 29 | STRAP_CONDITION_REPORT | 12 | name SUPPORTED, body UNKNOWN |
+| 29 | STRAP_CONDITION_REPORT | 12 | body u16 @6 = soc × 10 (locally CONFIRMED 2026-11-16); rest UNKNOWN |
 | 110 | — | 8, constant `0101000000000000` | UNKNOWN; every 10 min |
+| 109 | — | 28 | only while charging; u16 @23 tapers as soc rises (HYPOTHESIS: charge current) |
+| 117 | — | 4 | byte 1: 0 idle / 2 charging / 3 top-off / 4 full (HYPOTHESIS, strong) |
 | 120 | — | 32 | UNKNOWN |
 | 123 | — | 8; byte 4 = 01 at disconnect, 02 at reconnect | HYPOTHESIS: connection state |
 
 Current NOOP decodes 5.0 events (`Whoop5Event`) and routes charging/alarm events; the old "undecoded" note is
 historical. Event 14 (double tap) is CONFIRMED as the alarm dismissal gesture (H04/H06b) but fires far more often in
-daily use (CAPABILITY_MATRIX.md §3). Wrist on/off events have not been observed on 5.0.
+daily use (CAPABILITY_MATRIX.md §3). Wrist off = event 10, wrist on = event 9, both live on fd4b0004 with empty bodies (C02a, 2026-11-16, CONFIRMED once).
 
 ## 49 METADATA
 

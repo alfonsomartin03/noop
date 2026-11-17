@@ -39,6 +39,7 @@ Where older prose disagrees with current code or [CAPABILITY_MATRIX.md](CAPABILI
   `open -W -n --stdout OUT.txt NOOPBLEProbe.app --args --seconds 30 --commands 11,34 --exp E03 --out /tmp/E03.jsonl`.
   It can only send the read-only allowlist in `main.swift`; any other number is refused at argument parsing.
   It attaches to the link NOOP already holds (macOS shares one connection between processes).
+  `--passive` listens only (subscribe + standard reads; refuses every command option, and its write path is guarded).
   `--toggle 3` (the only reversible entry) sends `[1]`, captures, and always sends `[0]` before exiting.
   Each rebuild gets a new ad-hoc signature, so macOS asks for Bluetooth permission again; the probe waits 90 s.
 - `Tools/whoop_re/whoop5_decode.py` — standalone decoder for saved captures (no dependencies).

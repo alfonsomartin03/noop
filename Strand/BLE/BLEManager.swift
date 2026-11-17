@@ -84,7 +84,8 @@ public final class BLEManager: NSObject, ObservableObject {
     private var keepAliveTimer: DispatchSourceTimer?
     static let keepAliveIntervalSeconds = 30
     /// GET_BATTERY_LEVEL / pack info are asked on connect and then at most once per history-pull interval (15 min). The
-    /// strap pushes BATTERY_LEVEL itself (every ~30 s while charging, per ~1 % step otherwise), so nothing polls faster.
+    /// strap pushes BATTERY_LEVEL itself (every ~30 s while charging, per ~1 % step otherwise) and a soc in
+    /// STRAP_CONDITION_REPORT every 10 min, so nothing polls faster and a fresh push skips the level read.
     static let batteryPollIntervalSeconds = TimeInterval(backfillIntervalSeconds)
     /// Reconnect watchdog: while the app is open and the strap link is lost (not a user Disconnect), restart the
     /// scan every `BluetoothChoice.reconnectIntervalSeconds`. Runs for the life of the central, not just a connection.
@@ -99,6 +100,8 @@ public final class BLEManager: NSObject, ObservableObject {
     var onRealtimeHR: ((HRObservation) -> Void)?
     /// When battery / pack info was last requested; a poll skipped during a history download runs as soon as it ends.
     private var lastBatteryPollAt = Date.distantPast
+    /// Receipt time of the last LIVE pushed state of charge (5.0 events 3 / 29); makes a periodic level read redundant.
+    private var lastPushedSocAt: Date?
     /// Pack-info requests by app sequence number: when sent and on which connection (a reply describes that moment).
     private var packInfoRequests: [UInt8: (at: Date, connection: UUID)] = [:]
     /// Charging events that arrived before the strap clock was known; judged once it is (see `PendingChargingEvents`).
@@ -823,10 +826,17 @@ public final class BLEManager: NSObject, ObservableObject {
 
     /// Battery level + pack info. Read-only; never sent mid-offload (callers check).
     private func pollBattery() {
-        lastBatteryPollAt = Date()
-        send(.getBatteryLevel, payload: [])
+        let now = Date()
+        lastBatteryPollAt = now
+        // A live pushed percentage (event 3 or 29) newer than one interval already answers the level question.
+        if BatteryPollPolicy.needsLevelRead(lastPushedAt: lastPushedSocAt?.timeIntervalSince1970,
+                                            now: now.timeIntervalSince1970, interval: Self.batteryPollIntervalSeconds) {
+            send(.getBatteryLevel, payload: [])
+            if let c = batteryCharacteristic { peripheral?.readValue(for: c) }   // standard 0x2A19 (also covers 5.0)
+        } else {
+            log("Battery: level pushed by the strap \(Int(now.timeIntervalSince(lastPushedSocAt ?? now))) s ago — not asking")
+        }
         if family == .whoop5 { requestPackInfo() }
-        if let c = batteryCharacteristic { peripheral?.readValue(for: c) }   // standard 0x2A19 (also covers 5.0)
     }
 
     /// GET_BATTERY_PACK_INFO, remembering when and on which connection it was asked.
@@ -1478,6 +1488,12 @@ extension BLEManager {
             state.applyCharging5(b.charging, eventAt: eventAt)
             state.updateBattery(BatteryReading(percent: Int(b.socPercent.rounded(.down)), charging: nil,
                                                at: eventAt.timeIntervalSince1970, source: .event))
+            lastPushedSocAt = Date()
+        } else if let soc = e.conditionSocPercent {
+            // STRAP_CONDITION_REPORT (29), every 10 min: the percentage only (no charging flag), stamped like event 3.
+            state.updateBattery(BatteryReading(percent: Int(soc.rounded(.down)), charging: nil,
+                                               at: eventAt.timeIntervalSince1970, source: .event))
+            lastPushedSocAt = Date()
         }
         switch e.kind {
         case .hrProfileEnabled: state.hrBroadcast = true
@@ -1570,6 +1586,7 @@ extension BLEManager: CBCentralManagerDelegate {
         lastRealtimeSecond = nil
         lastRealtimeAt = nil
         packInfoRequests.removeAll()
+        lastPushedSocAt = nil
         pendingChargingEvents.clear()
         onLinkDropped?()
         clockRequestSentAt.removeAll()

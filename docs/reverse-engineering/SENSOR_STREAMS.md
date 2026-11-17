@@ -13,7 +13,7 @@ assumed to exist here.
 | Battery mV / charging | event 3 BATTERY_LEVEL | soc @1, mV @5, charging byte 9 bit 0; pushed ~every 30 s while charging | CONFIRMED (fw 50.43.1.0) |
 | Connection events | events 11/12 | — | CONFIRMED |
 | Skin temperature | type-47 v0x12 payload 65 u16 ÷ 100 °C | 1/s with every history record; ≈ 35 °C on 544 local frames, matching console `skin_temp = 35.01` | SUPPORTED + locally consistent (not decoded by NOOP) |
-| Wear detection | firmware state machine `SIGPROC-WEAR-DETECT V5` (console) | event numbers for wrist on/off not seen on 5.0 | UNKNOWN |
+| Wear detection | firmware state machine `SIGPROC-WEAR-DETECT V5` (console); events 10 (off) / 9 (on), live on fd4b0004 | ~14 s after removal / ~15 s after replacing in C02a (wearer-timed to the minute) | CONFIRMED once (C02a) |
 | Optical window (type-47 v0x1a "R26") | history, 40-s bursts ~every 20 min | u32 base + 24 × i16 deltas per record (25 samples); burst counter @13 | layout SUPPORTED + locally consistent; channel/SpO₂ meaning UNKNOWN |
 | Optical / PPG | type-47 has undecoded bytes; Goose's capture sequence uses cmds 107/108/153 | not tested | UNKNOWN |
 | Accelerometer raw / gyroscope | Goose: 106 `[1,1]`, 154 persistent R21; ryanbr/noop: R21 IMU 1244 B | not tested (154 is gate C) | UNKNOWN |

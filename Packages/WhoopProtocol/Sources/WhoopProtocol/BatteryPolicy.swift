@@ -40,7 +40,8 @@ public struct BatteryAlertPolicy: Sendable {
 
     public var lowPercent = 20
     public var rearmPercent = 25
-    /// Longer than the 15-min battery poll: between polls the strap pushes a reading only on a ~1 % step.
+    /// Longer than the 15-min battery poll: between polls a 5.0 strap pushes a reading on a ~1 % step (event 3) and
+    /// every 10 min (event 29); 4.0 straps only on the step.
     public var staleAfter: Double = 20 * 60
     public init() {}
 
@@ -64,5 +65,15 @@ public struct BatteryAlertPolicy: Sendable {
             }
         }
         return out
+    }
+}
+
+/// Whether a periodic battery poll still needs to ASK for the level. A 5.0 strap pushes its state of charge itself (event 3
+/// per ~1 % step / every ~30 s on the charger, event 29 every 10 min), so a live pushed reading newer than one poll
+/// interval makes GET_BATTERY_LEVEL redundant. Connect-time polls always ask.
+public enum BatteryPollPolicy {
+    public static func needsLevelRead(lastPushedAt: Double?, now: Double, interval: Double) -> Bool {
+        guard let t = lastPushedAt, t <= now else { return true }
+        return now - t >= interval
     }
 }

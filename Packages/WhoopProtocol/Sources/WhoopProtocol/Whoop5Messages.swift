@@ -168,7 +168,7 @@ public enum Whoop5EventKind: Equatable, Sendable {
     case connectionDown              // 12 BLE_CONNECTION_DOWN
     case hrProfileEnabled            // 24 BLE_HR_PROFILE_ENABLED
     case hrProfileDisabled           // 25 BLE_HR_PROFILE_DISABLED
-    case strapConditionReport        // 29 (body meaning UNKNOWN; sent every 10 min)
+    case strapConditionReport        // 29 (every 10 min; u16 @6 = battery soc × 10, rest UNKNOWN)
     case realtimeHROn                // 33 BLE_REALTIME_HR_ON — CONFIRMED: matched both TOGGLE_REALTIME_HR [1] sends
     case realtimeHROff               // 34 BLE_REALTIME_HR_OFF — CONFIRMED: matched both [0] sends
     case extendedBatteryInformation  // 63 (name SUPPORTED; arrives with event 3)
@@ -265,6 +265,17 @@ public struct Whoop5Event: Equatable, Sendable {
         let soc = Double(le16(body, 1)) / 10, mv = le16(body, 5)
         guard (0...100).contains(soc), (2500...5000).contains(mv) else { return nil }
         return (soc, mv, body[9] & 1 == 1)
+    }
+
+    /// STRAP_CONDITION_REPORT (29) body: u16 @6 = battery state of charge in 0.1 % (issue #25, fw 50.43.1.0). Locally
+    /// CONFIRMED: equal to event 3's soc within 2 min in 128/248 stored pairs, the rest a few tenths apart as the battery
+    /// moved (correlation 1.0); arrived live on fd4b0004 in C02a (994 = 99.4 %). Sent every 10 min whatever the charge
+    /// state. The other bytes are UNKNOWN and not read. Carries no charging flag.
+    public var conditionSocPercent: Double? {
+        guard kind == .strapConditionReport, body.count >= 8 else { return nil }
+        let raw = le16(body, 6)
+        guard raw <= 1000 else { return nil }
+        return Double(raw) / 10
     }
 }
 
