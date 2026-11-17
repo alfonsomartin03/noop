@@ -164,6 +164,8 @@ public enum Whoop5EventKind: Equatable, Sendable {
     case chargingOff                 // 8 CHARGING_OFF
     case batteryPackConnected        // 21 BATTERY_PACK_CONNECTED
     case batteryPackRemoved          // 22 BATTERY_PACK_REMOVED
+    case wristOn                     // 9 — CONFIRMED once (C02a): strap put back on, ~15 s later, live on fd4b0004
+    case wristOff                    // 10 — CONFIRMED once (C02a): strap taken off, ~14 s later, live on fd4b0004
     case connectionUp                // 11 BLE_CONNECTION_UP
     case connectionDown              // 12 BLE_CONNECTION_DOWN
     case hrProfileEnabled            // 24 BLE_HR_PROFILE_ENABLED
@@ -188,6 +190,8 @@ public enum Whoop5EventKind: Equatable, Sendable {
         case 8: self = .chargingOff
         case 21: self = .batteryPackConnected
         case 22: self = .batteryPackRemoved
+        case 9: self = .wristOn
+        case 10: self = .wristOff
         case 11: self = .connectionUp
         case 12: self = .connectionDown
         case 24: self = .hrProfileEnabled
@@ -214,6 +218,8 @@ public enum Whoop5EventKind: Equatable, Sendable {
         case .chargingOff: return "CHARGING_OFF"
         case .batteryPackConnected: return "BATTERY_PACK_CONNECTED"
         case .batteryPackRemoved: return "BATTERY_PACK_REMOVED"
+        case .wristOn: return "WRIST_ON"
+        case .wristOff: return "WRIST_OFF"
         case .connectionUp: return "BLE_CONNECTION_UP"
         case .connectionDown: return "BLE_CONNECTION_DOWN"
         case .hrProfileEnabled: return "BLE_HR_PROFILE_ENABLED"

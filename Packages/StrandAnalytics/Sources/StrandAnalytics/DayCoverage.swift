@@ -4,7 +4,8 @@ import Foundation
 // scoring. The relevant span is the day's real length (23/25 h on DST days) clipped to now: future time is never
 // missing. Supported intervals are clipped and unioned to that span. Missing time splits into recording gaps (inside
 // data the store already has) and the trailing stretch still awaiting a sync. A gap only means no heart rate was
-// stored; it does not prove the strap was off.
+// stored; it does not prove the strap was off. Only the strap's own wrist-off/on events (WristWear) are reported as
+// off-wrist time, labelled as strap-reported.
 
 public struct DayCoverage: Equatable, Sendable {
     public struct Gap: Equatable, Sendable { public let start: Int; public let end: Int; public var seconds: Int { end - start } }
@@ -25,6 +26,10 @@ public struct DayCoverage: Equatable, Sendable {
     public let awaitingSyncSeconds: Int
     /// The day has an imported summary but no raw heart rate.
     public let importedSummaryOnly: Bool
+    /// Elapsed seconds the strap reported itself off the wrist (events 10 → 9), overlaps counted once.
+    public var offWristSeconds: Int = 0
+    /// Gap seconds NOT covered by strap-reported off-wrist time: the unexplained missing data.
+    public var unexplainedGapSeconds: Int = 0
 
     public var elapsedSeconds: Int { max(0, elapsedEnd - dayStart) }
     public var daySeconds: Int { dayEnd - dayStart }
@@ -39,8 +44,10 @@ public struct DayCoverage: Equatable, Sendable {
     /// - Parameters:
     ///   - intervals: supported HR intervals (any order, may overlap or extend past the day).
     ///   - syncedThrough: newest HR timestamp the store holds overall (from any day); nil = unknown.
+    ///   - offWrist: strap-reported off-wrist intervals (WristWear); explains gaps, never adds recorded time.
     public static func compute(dayStart: Int, dayEnd: Int, now: Int, intervals: [(start: Int, end: Int)],
-                               syncedThrough: Int?, hasImportedSummary: Bool = false) -> DayCoverage {
+                               syncedThrough: Int?, hasImportedSummary: Bool = false,
+                               offWrist: [WristWear.OffInterval] = []) -> DayCoverage {
         let isFuture = now < dayStart
         let elapsedEnd = max(dayStart, min(dayEnd, now))
         let isToday = now >= dayStart && now < dayEnd
@@ -67,15 +74,20 @@ public struct DayCoverage: Equatable, Sendable {
         let syncedEdge = min(elapsedEnd, max(trailingStart, syncedThrough ?? (isToday ? trailingStart : elapsedEnd)))
         if syncedEdge - trailingStart >= minGapSeconds { gaps.append(Gap(start: trailingStart, end: syncedEdge)) }
         let awaiting = max(0, elapsedEnd - syncedEdge)
-        return DayCoverage(dayStart: dayStart, dayEnd: dayEnd, elapsedEnd: elapsedEnd, isToday: isToday, isFuture: isFuture,
-                           recordedSeconds: recorded, dataThrough: through, gaps: gaps, awaitingSyncSeconds: awaiting,
-                           importedSummaryOnly: merged.isEmpty && hasImportedSummary)
+        var out = DayCoverage(dayStart: dayStart, dayEnd: dayEnd, elapsedEnd: elapsedEnd, isToday: isToday, isFuture: isFuture,
+                              recordedSeconds: recorded, dataThrough: through, gaps: gaps, awaitingSyncSeconds: awaiting,
+                              importedSummaryOnly: merged.isEmpty && hasImportedSummary)
+        out.offWristSeconds = WristWear.seconds(offWrist, from: dayStart, to: elapsedEnd)
+        let explained = gaps.reduce(0) { $0 + WristWear.seconds(offWrist, from: $1.start, to: $1.end) }
+        out.unexplainedGapSeconds = max(0, out.gapSeconds - explained)
+        return out
     }
 
     /// Worth a warning: real missing elapsed time (not the normal sync delay).
     public var warrantsWarning: Bool {
         guard !isFuture, elapsedSeconds > 0, !importedSummaryOnly else { return false }
-        let meaningfulGap = gapSeconds >= 3600 && Double(gapSeconds) >= 0.1 * Double(elapsedSeconds)
+        // Time the strap itself reported as off the wrist is explained, not missing.
+        let meaningfulGap = unexplainedGapSeconds >= 3600 && Double(unexplainedGapSeconds) >= 0.1 * Double(elapsedSeconds)
         return meaningfulGap || awaitingSyncSeconds > Self.staleSyncSeconds
     }
 
@@ -88,13 +100,16 @@ public struct DayCoverage: Equatable, Sendable {
         return "\(duration(recordedSeconds)) recorded of \(duration(daySeconds))."
     }
 
-    /// Secondary details: data-through time, gaps, sync lag. Never says the strap was off.
+    /// Secondary details: data-through time, gaps, sync lag. Says the strap was off only when the strap reported it.
     public func details(clock: (Int) -> String, duration: (Int) -> String = DayCoverage.duration) -> [String] {
         guard !isFuture, !importedSummaryOnly else { return [] }
         var out: [String] = []
         if let t = dataThrough, awaitingSyncSeconds > 0 || !isToday && t < elapsedEnd { out.append("Data through \(clock(t)).") }
         if !gaps.isEmpty {
             out.append("\(gaps.count) stretch\(gaps.count == 1 ? "" : "es") without heart rate, \(duration(gapSeconds)) in total.")
+        }
+        if offWristSeconds >= 60 {
+            out.append("Strap reported off the wrist for \(duration(offWristSeconds)).")
         }
         if awaitingSyncSeconds > Self.syncGraceSeconds {
             out.append("\(duration(awaitingSyncSeconds)) not synced yet\(awaitingSyncSeconds > Self.staleSyncSeconds ? " — check the strap connection" : "").")

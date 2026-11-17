@@ -24,6 +24,7 @@ struct TodayView: View {
     @State private var steps: Int?
     /// The picked day's strap heart-rate samples, summarised once per load.
     @State private var dayStats: DayHRStats?
+    @State private var offWrist: [WristWear.OffInterval] = []
     /// Newest stored HR anywhere (how far synced data reaches), for the coverage caption.
     @State private var syncedThrough: Int?
     /// The night's main sleep session (longest one ending on the picked day), for the stage graph.
@@ -88,7 +89,7 @@ struct TodayView: View {
         VStack(alignment: .leading, spacing: NoopMetrics.gap) {
             // A plain row (not the packing grid) so the gap to the heart-rate card below is exactly one card gap.
             ScoreCardRow(first: { recoveryWidget(d) }, second: { sleepWidget(d) }, third: { strainWidget(d) })
-            HeartRateDayCard(day: activeDay, metric: d, days: repo.days, stats: dayStats, syncedThrough: syncedThrough,
+            HeartRateDayCard(day: activeDay, metric: d, days: repo.days, stats: dayStats, syncedThrough: syncedThrough, offWrist: offWrist,
                              importedSummary: repo.isOfficial(activeDay)) { navigate(.live) }
         }
         .redacted(reason: repo.loaded ? [] : .placeholder)
@@ -208,6 +209,8 @@ struct TodayView: View {
             let scoredMax = await repo.dayLoad(key)?.calibration.hrMax
             dayStats = await DayHRStats.build(hr: samples, profile: profile, restingHR: byDay[key]?.restingHr, maxHR: scoredMax)
             syncedThrough = await repo.latestHRTimestamp()
+            offWrist = await repo.offWristIntervals(from: r.from, to: r.to,
+                                                    until: min(r.to, Int(Date().timeIntervalSince1970)))
             night = SleepTimeline.pick(repo.sleeps, range: r, day: byDay[key])
         }
         let apple = await repo.appleDailyRows().first { $0.day == key }
@@ -475,6 +478,8 @@ struct HeartRateDayCard: View {
     let days: [DailyMetric]
     let stats: DayHRStats?
     var syncedThrough: Int? = nil
+    /// Strap-reported off-wrist time for the day (coverage details only).
+    var offWrist: [WristWear.OffInterval] = []
     var importedSummary = false
     let openLive: () -> Void
     /// Render fixtures only: a fixed clock and activation instead of the live clock and a store load.
@@ -513,7 +518,7 @@ struct HeartRateDayCard: View {
         guard let r = DayMath.range(day) else { return nil }
         return DayCoverage.compute(dayStart: r.from, dayEnd: r.to, now: Int(now.timeIntervalSince1970),
                                    intervals: stats?.supportedIntervals ?? [], syncedThrough: syncedThrough,
-                                   hasImportedSummary: importedSummary && (stats?.isEmpty ?? true))
+                                   hasImportedSummary: importedSummary && (stats?.isEmpty ?? true), offWrist: offWrist)
     }
 
     // MARK: Chart column
