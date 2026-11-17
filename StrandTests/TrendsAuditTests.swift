@@ -18,12 +18,15 @@ enum TrendsFixture {
         let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX"); f.timeZone = TimeZone(identifier: "UTC"); f.dateFormat = "yyyy-MM-dd"
         return f.string(from: anchor.addingTimeInterval(-Double(back) * 86_400))
     }
-    /// Yesterday (UTC midnight): every fixture day is a completed day.
+    /// Yesterday (UTC midnight): every fixture day is a completed day. Render tests only; `TrendWindowTests` use
+    /// `fixedAnchor` so their results don't depend on the clock or the machine's time zone.
     static var anchor: Date { utc.startOfDay(for: Date()).addingTimeInterval(-86_400) }
+    /// A fixed completed day (2026-03-20, UTC key) for clock-independent window tests.
+    static let fixedAnchor = Date(timeIntervalSince1970: 1_773_964_800)
 
     /// `count` days ending at the anchor. Days in `missing` (days back) have no row; every 9th row lacks SpO₂/skin
     /// temperature and every 23rd lacks the scores, so "missing field" and "missing day" both occur.
-    static func days(_ count: Int, missing: Set<Int> = [], noop: Bool = false) -> [DailyMetric] {
+    static func days(_ count: Int, missing: Set<Int> = [], noop: Bool = false, anchor: Date = anchor) -> [DailyMetric] {
         (0..<count).reversed().compactMap { back -> DailyMetric? in
             if missing.contains(back) { return nil }
             let p = Double(count - back)
@@ -78,8 +81,11 @@ enum TrendsFixture {
 }
 
 final class TrendWindowTests: XCTestCase {
-    private let anchor = TrendsFixture.anchor
-    private var days: [DailyMetric] { TrendsFixture.days(420, missing: TrendsFixture.gaps) }
+    // Fixed clock inputs: the anchor is a completed day and "today" (the in-progress local day) is the day after it,
+    // whatever the wall clock or time zone of the machine running the tests (they failed west of UTC in the evening).
+    private let anchor = TrendsFixture.fixedAnchor
+    private var today: Date { anchor.addingTimeInterval(86_400) }
+    private var days: [DailyMetric] { TrendsFixture.days(420, missing: TrendsFixture.gaps, anchor: anchor) }
 
     func testEveryRangePlotsExactlyTheStoredDaysInItsWindow() {
         let all = days
@@ -127,7 +133,7 @@ final class TrendWindowTests: XCTestCase {
         let all = days
         for range in TrendRange.allCases {
             let s = TrendWindow.series(all, { $0.avgHrv }, range: range, anchor: anchor)
-            let c = TrendWindow.change(all, { $0.avgHrv }, series: s, anchor: anchor, unit: "ms", tolerance: 1) { String(format: "%.0f", $0) }
+            let c = TrendWindow.change(all, { $0.avgHrv }, series: s, anchor: anchor, today: today, unit: "ms", tolerance: 1) { String(format: "%.0f", $0) }
             guard let n = range.days else { XCTAssertNil(c, "all history has nothing to compare with"); continue }
             let cmp = try! XCTUnwrap(c).comparison
             XCTAssertEqual(cmp.days, n)
@@ -141,26 +147,67 @@ final class TrendWindowTests: XCTestCase {
         }
         // 420 days of history: the 1Y comparison's previous year is mostly absent → insufficient, not a zero baseline.
         let year = TrendWindow.series(all, { $0.avgHrv }, range: .year, anchor: anchor)
-        let c = TrendWindow.change(all, { $0.avgHrv }, series: year, anchor: anchor, unit: "ms", tolerance: 1) { "\($0)" }
+        let c = TrendWindow.change(all, { $0.avgHrv }, series: year, anchor: anchor, today: today, unit: "ms", tolerance: 1) { "\($0)" }
         XCTAssertEqual(c?.comparison.direction, .insufficient)
         XCTAssertEqual(c?.text, "Not enough data to compare")
     }
 
     func testInProgressTodayIsLeftOutOfTheComparison() {
-        let today = TrendsFixture.utc.startOfDay(for: Date())
+        // The latest stored row is "today" (in progress): it must not be averaged into the current period.
         var all = days
         all.append(DailyMetric(day: TrendsFixture.day(0, from: today), totalSleepMin: nil, efficiency: nil, deepMin: nil, remMin: nil, lightMin: nil,
                                disturbances: nil, restingHr: nil, avgHrv: 500, recovery: nil, strain: nil, exerciseCount: nil))
-        // `TrendWindow.change` takes "today" from the local calendar; only assert when it is the same date as UTC's.
-        try? XCTSkipUnless(AnalyticsEngine.dayString(Int(Date().timeIntervalSince1970)) == TrendsFixture.day(0, from: today))
         let s = TrendWindow.series(all, { $0.avgHrv }, range: .week, anchor: today)
-        let c = TrendWindow.change(all, { $0.avgHrv }, series: s, anchor: today, unit: "ms", tolerance: 1) { "\($0)" }
+        let c = TrendWindow.change(all, { $0.avgHrv }, series: s, anchor: today, today: today, unit: "ms", tolerance: 1) { "\($0)" }
         XCTAssertEqual(c?.comparison.currentEnd, today.addingTimeInterval(-86_400))
         XCTAssertLessThan(c?.comparison.currentMean ?? 999, 100, "today's partial value is not averaged in")
+        // The same rows a day later: that day is complete and counts.
+        let later = TrendWindow.change(all, { $0.avgHrv }, series: s, anchor: today, today: today.addingTimeInterval(86_400),
+                                       unit: "ms", tolerance: 1) { "\($0)" }
+        XCTAssertEqual(later?.comparison.currentEnd, today)
+    }
+
+    /// "Today" is the LOCAL calendar day, keyed at UTC midnight like the rows — including when the UTC date is already
+    /// ahead (evenings west of UTC: the case that broke these tests) or behind (mornings east of UTC), and across DST.
+    func testLocalDayFollowsTheLocalCalendarNotUTC() throws {
+        let ny = try XCTUnwrap(TimeZone(identifier: "America/New_York"))
+        let tokyo = try XCTUnwrap(TimeZone(identifier: "Asia/Tokyo"))
+        func key(_ s: String) -> Date { TrendWindow.date(s)! }
+        // 2026-11-17 22:30 EST = 2026-11-18 03:30 UTC.
+        XCTAssertEqual(TrendWindow.localDay(at: 1_794_972_600, in: ny), key("2026-11-17"))
+        XCTAssertEqual(TrendWindow.localDay(at: 1_794_972_600, in: TimeZone(identifier: "UTC")!), key("2026-11-18"))
+        // 2026-11-18 08:00 JST = 2026-11-17 23:00 UTC.
+        XCTAssertEqual(TrendWindow.localDay(at: 1_794_956_400, in: tokyo), key("2026-11-18"))
+        // DST, New York: 2026-03-08 01:59:59 EST and 03:00:00 EDT are the same day; 23:59:59 EDT still is.
+        XCTAssertEqual(TrendWindow.localDay(at: 1_772_953_199, in: ny), key("2026-03-08"))
+        XCTAssertEqual(TrendWindow.localDay(at: 1_772_953_200, in: ny), key("2026-03-08"))
+        XCTAssertEqual(TrendWindow.localDay(at: 1_773_028_799, in: ny), key("2026-03-08"))
+        XCTAssertEqual(TrendWindow.localDay(at: 1_773_028_800, in: ny), key("2026-03-09"))
+        // Fall back: 2026-11-01 has 25 h; both 01:30s belong to it, 23:59:59 EST too.
+        XCTAssertEqual(TrendWindow.localDay(at: 1_793_511_000, in: ny), key("2026-11-01"))
+        XCTAssertEqual(TrendWindow.localDay(at: 1_793_514_600, in: ny), key("2026-11-01"))
+        XCTAssertEqual(TrendWindow.localDay(at: 1_793_595_599, in: ny), key("2026-11-01"))
+        XCTAssertEqual(TrendWindow.localDay(at: 1_793_595_600, in: ny), key("2026-11-02"))
+    }
+
+    /// A west-of-UTC evening: UTC says the anchor's next day has begun, the local calendar says the anchor IS today.
+    /// The comparison must follow the local day it is given, not UTC.
+    func testComparisonFollowsTheGivenLocalDayWhenUTCDisagrees() throws {
+        let ny = try XCTUnwrap(TimeZone(identifier: "America/New_York"))
+        // 2026-03-20 22:00 EDT = 2026-03-21 02:00 UTC; the fixed anchor is 2026-03-20.
+        let evening = 1_774_058_400
+        let localToday = try XCTUnwrap(TrendWindow.localDay(at: evening, in: ny))
+        XCTAssertEqual(localToday, anchor)
+        XCTAssertEqual(TrendWindow.localDay(at: evening, in: TimeZone(identifier: "UTC")!), today)
+        let s = TrendWindow.series(days, { $0.avgHrv }, range: .week, anchor: anchor)
+        let local = TrendWindow.change(days, { $0.avgHrv }, series: s, anchor: anchor, today: localToday, unit: "ms", tolerance: 1) { "\($0)" }
+        XCTAssertEqual(local?.comparison.currentEnd, anchor.addingTimeInterval(-86_400), "the anchor is still in progress locally")
+        let utc = TrendWindow.change(days, { $0.avgHrv }, series: s, anchor: anchor, today: today, unit: "ms", tolerance: 1) { "\($0)" }
+        XCTAssertEqual(utc?.comparison.currentEnd, anchor)
     }
 
     func testSparseAndEmptyDataWidenOrStayEmpty() {
-        let sparse = TrendsFixture.days(200, missing: Set(0..<200).subtracting([40, 41, 90, 150, 199]))
+        let sparse = TrendsFixture.days(200, missing: Set(0..<200).subtracting([40, 41, 90, 150, 199]), anchor: anchor)
         let last = TrendWindow.date(sparse.last!.day)
         let week = TrendWindow.series(sparse, { $0.totalSleepMin }, range: .week, anchor: last)
         XCTAssertEqual(week.points.count, 2); XCTAssertFalse(week.widened)
