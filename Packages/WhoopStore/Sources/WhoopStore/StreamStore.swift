@@ -110,11 +110,11 @@ extension WhoopStore {
             }
             if !streams.skinTemp.isEmpty {
                 let stmt = try db.cachedStatement(sql: """
-                    INSERT INTO skinTempSample (deviceId, ts, raw) VALUES (?, ?, ?)
+                    INSERT INTO skinTempSample (deviceId, ts, raw, unit) VALUES (?, ?, ?, ?)
                     ON CONFLICT(deviceId, ts) DO NOTHING
                     """)
                 for s in streams.skinTemp {
-                    try stmt.execute(arguments: [deviceId, s.ts, s.raw])
+                    try stmt.execute(arguments: [deviceId, s.ts, s.raw, s.unit])
                     skin += db.changesCount
                 }
             }

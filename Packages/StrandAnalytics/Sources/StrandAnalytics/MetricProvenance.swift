@@ -27,6 +27,8 @@ public enum MetricDefinition: String, Codable, Sendable {
     case vendorRecovery           // a vendor's proprietary composite, 0–100
     case cardioLoadZone           // fitted zone load integrated over supported seconds, AU
     case strainIndex              // versioned display mapping of cardio load, 0–21
+    case skinTemperature          // wrist skin temperature, °C (not core temperature)
+    case skinTemperatureDeviation // skin temperature minus a causal personal reference, °C
 }
 
 public enum MetricSource: String, Codable, Sendable {
@@ -48,6 +50,7 @@ public enum MetricAggregation: String, Codable, Sendable {
     case intervalUnion            // union of sleep intervals (SleepAccounting)
     case intervalSum              // sum over unique supported intervals (CardioLoad)
     case modelOutput              // output of a named model (see algorithmVersion)
+    case medianOverAsleep         // median of samples inside asleep stages (SkinTemperature)
     case vendorUnspecified        // the exporter does not say
 }
 
@@ -193,6 +196,20 @@ public enum ProvenanceKey {
     public static let restingHRz = "noop.resting_hr_z"
     public static let strain = "strain"
     public static let cardioLoad = "noop.cardio_load"
+    /// Nightly absolute skin temperature (°C), stored as a series point so later nights can build their reference.
+    public static let skinTempNight = "noop.skin_temp_night_c"
+    public static let skinTempDevC = "skinTempDevC"
+
+    /// Provenance for the night's skin temperature and its change. Unavailable values record why.
+    public static func records(forSkin n: SkinTemperature.Night?, day: String, change: Double?,
+                               hardware: String = MetricIdentity.unknownValue, scoringVersion: Int) -> [ProvenanceRecord] {
+        let nightReasons = n.map { $0.valueC != nil ? [] : ["unavailable"] + $0.exclusionReasons } ?? ["unavailable", "no primary sleep"]
+        let changeReasons = change != nil ? [] : (nightReasons.isEmpty ? ["unavailable", "no usable reference"] : nightReasons)
+        return [SkinTemperature.nightIdentity(hardware: hardware).record(day: day, key: skinTempNight, coverage: n?.coverage,
+                                                                          exclusionReasons: nightReasons, scoringVersion: scoringVersion),
+                SkinTemperature.changeIdentity(hardware: hardware).record(day: day, key: skinTempDevC, coverage: n?.coverage,
+                                                                           exclusionReasons: changeReasons, scoringVersion: scoringVersion)]
+    }
 
     /// Provenance for a day's load and index. Coverage travels with the value; a withheld value records why.
     public static func records(forLoad l: DayLoadRecord, hardware: String = MetricIdentity.unknownValue,

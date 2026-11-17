@@ -24,15 +24,21 @@ public enum CausalReplay {
     ///   - reuse: true keeps a plan day's stored row instead of analyzing it, given the baselines it would see now.
     ///   - analyze: scores one day against baselines from strictly earlier days; nil = no data for that day.
     ///   - daily / assessment / load: extract the stored row, assessment and load record from a result.
+    ///   - seedSkinNights: stored nightly skin temperatures (day → °C, `ProvenanceKey.skinTempNight`); a day's value
+    ///     counts only with matching persisted provenance, like the rows.
+    ///   - skinNight: extracts a result's night skin temperature (feeds later nights' reference and provenance).
     public static func run<R>(days: [String], seed: [DailyMetric], seedProvenance: [ProvenanceRecord],
                               scoringVersion: Int,
                               reuse: (String, AnalyticsEngine.ProfileBaselines) -> Bool = { _, _ in false },
                               analyze: (String, AnalyticsEngine.ProfileBaselines) async throws -> R?,
                               daily: (R) -> DailyMetric,
                               assessment: (R) -> RecoveryAssessment?,
-                              load: (R) -> DayLoadRecord? = { _ in nil }) async rethrows -> Output<R> {
+                              load: (R) -> DayLoadRecord? = { _ in nil },
+                              seedSkinNights: [String: Double] = [:],
+                              skinNight: (R) -> SkinTemperature.Night? = { _ in nil }) async rethrows -> Output<R> {
         var rows: [String: DailyMetric] = [:]
         for r in seed { rows[r.day] = r }
+        var skin = seedSkinNights
         var prov: [String: [ProvenanceRecord]] = Dictionary(grouping: seedProvenance, by: \.day)
         var processed: [String] = []
         var results: [(day: String, result: R)] = []
@@ -40,16 +46,20 @@ public enum CausalReplay {
         for day in days.sorted() {
             let prior = rows.values.filter { $0.day < day }.sorted { $0.day < $1.day }
             let obs = MetricObservation.noopNightly(prior, provenance: prior.flatMap { prov[$0.day] ?? [] })
-            let baselines = CausalBaselines.legacyProfile(rmssd: obs.rmssd, restingHR: obs.restingHR, before: day)
+            var baselines = CausalBaselines.legacyProfile(rmssd: obs.rmssd, restingHR: obs.restingHR, before: day)
+            baselines.skinTempReference = CausalBaselines.skinTempReference(
+                nights: skin.filter { $0.key < day }, provenance: prov, before: day)
             if reuse(day, baselines) { continue }
             processed.append(day)
             // Replaced or removed either way: this day's stored row must not reach its successors.
-            rows[day] = nil; prov[day] = nil
+            rows[day] = nil; prov[day] = nil; skin[day] = nil
             guard let res = try await analyze(day, baselines) else { continue }
             let d = daily(res)
+            let night = skinNight(res)
             let p = ProvenanceKey.records(for: d, assessment: assessment(res), scoringVersion: scoringVersion)
                 + (load(res).map { ProvenanceKey.records(forLoad: $0, scoringVersion: scoringVersion) } ?? [])
-            rows[day] = d; prov[day] = p
+                + ProvenanceKey.records(forSkin: night, day: day, change: d.skinTempDevC, scoringVersion: scoringVersion)
+            rows[day] = d; prov[day] = p; skin[day] = night?.valueC
             results.append((day, res)); outProv.append(contentsOf: p)
         }
         return Output(results: results, provenance: outProv, processed: processed)

@@ -1102,7 +1102,11 @@ public final class BLEManager: NSObject, ObservableObject {
         let hr = recs.filter { (30...220).contains($0.heartRate) }.map { HRSample(ts: $0.timestamp, bpm: $0.heartRate) }
         let rr = recs.flatMap { r in r.rr.map { RRInterval(ts: r.timestamp, rrMs: $0) } }
         let grav = recs.compactMap { r in r.gravity.map { GravitySample(ts: r.timestamp, x: $0.x, y: $0.y, z: $0.z) } }
-        guard let n = await collector?.persistDecodedHistory(Streams(hr: hr, rr: rr, gravity: grav, events: events)) else {
+        // Wrist skin temperature, 1/100 °C, stored with its unit (never mixed with 4.0 ADC counts). Not read by scoring yet.
+        let skin = recs.compactMap { r in
+            r.skinTempCentiC.map { SkinTempSample(ts: r.timestamp, raw: $0, unit: Whoop5HistoricalRecord.skinTempUnit) }
+        }
+        guard let n = await collector?.persistDecodedHistory(Streams(hr: hr, rr: rr, skinTemp: skin, gravity: grav, events: events)) else {
             return nil
         }
         state.syncSavedRows += n

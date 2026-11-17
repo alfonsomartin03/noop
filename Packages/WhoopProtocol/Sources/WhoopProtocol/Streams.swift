@@ -52,7 +52,9 @@ public struct SpO2Sample: Equatable, Codable {
 public struct SkinTempSample: Equatable, Codable {
     public let ts: Int
     public let raw: Int
-    public let unit: String     // "raw_adc"
+    public let unit: String     // "raw_adc" (4.0 ADC counts) or "centi_celsius" (5.0, 1/100 °C)
+    /// °C when the unit is known to be temperature; nil for 4.0 ADC counts (no verified conversion).
+    public var celsius: Double? { unit == "centi_celsius" ? Double(raw) / 100 : nil }
     public init(ts: Int, raw: Int, unit: String = "raw_adc") {
         self.ts = ts; self.raw = raw; self.unit = unit
     }
@@ -222,17 +224,34 @@ public func decodeWhoop5Realtime(_ frame: [UInt8]) -> Whoop5Realtime? {
 ///
 /// Payload offsets (payload = frame[8 ..< len-4]):
 ///   0 type 47 · 1 version 0x12 · 3 counter · 7 timestamp u32 (unix s) · 14 heart_rate u8 · 15 rr_count u8
-///   16 rr[i] u16 ms · 37/41/45 gravity x/y/z float32 (g)
-/// Other bytes (optical / temperature / SpO2 candidates) are NOT decoded: their meaning is unverified.
+///   16 rr[i] u16 ms · 37/41/45 gravity x/y/z float32 (g) · 65 skin temperature u16, 1/100 °C
+/// Skin temperature (issue #25): offset and scale from two independent layouts (ryanbr/noop R18 frame byte 73,
+/// Asherlc payload 65), consistent on 544/544 local raw frames (≈ 35 °C, matching the firmware console's
+/// `skin_temp`). SUPPORTED, not calibrated against a reference thermometer; wrist skin, not core temperature.
+/// Other bytes (optical / SpO2 candidates, auxiliary thermal channels) are NOT decoded: their meaning is unverified.
 public struct Whoop5HistoricalRecord: Equatable, Sendable {
     public let timestamp: Int
     public let heartRate: Int          // 0 when the strap had no reading
     public let rr: [Int]               // ms
     public let gravity: (x: Double, y: Double, z: Double)?
+    /// Wrist skin temperature in 1/100 °C, nil outside the accepted 5–45 °C (`skinTempCentiCRange`): missing, never 0.
+    public let skinTempCentiC: Int?
+
+    /// Plausibility gate for the skin-temperature word (5–45 °C, as in ryanbr/noop). Off-wrist ambient readings can
+    /// fall inside it; telling them apart is left to analysis.
+    public static let skinTempCentiCRange = 500...4500
+    /// `SkinTempSample.unit` for these values (4.0 samples are "raw_adc").
+    public static let skinTempUnit = "centi_celsius"
+
+    public init(timestamp: Int, heartRate: Int, rr: [Int], gravity: (x: Double, y: Double, z: Double)?, skinTempCentiC: Int? = nil) {
+        self.timestamp = timestamp; self.heartRate = heartRate; self.rr = rr; self.gravity = gravity
+        self.skinTempCentiC = skinTempCentiC
+    }
 
     public static func == (a: Self, b: Self) -> Bool {
         a.timestamp == b.timestamp && a.heartRate == b.heartRate && a.rr == b.rr
             && a.gravity?.x == b.gravity?.x && a.gravity?.y == b.gravity?.y && a.gravity?.z == b.gravity?.z
+            && a.skinTempCentiC == b.skinTempCentiC
     }
 }
 
@@ -254,5 +273,7 @@ public func decodeWhoop5Historical(_ frame: [UInt8]) -> Whoop5HistoricalRecord? 
     let g = (f32(37), f32(41), f32(45))
     let norm = (g.0 * g.0 + g.1 * g.1 + g.2 * g.2).squareRoot()
     let gravity = (0.7...1.3).contains(norm) ? g : nil
-    return Whoop5HistoricalRecord(timestamp: ts, heartRate: hr, rr: rr, gravity: gravity)
+    let skin = Int(p[65]) | Int(p[66]) << 8
+    let skinTemp = Whoop5HistoricalRecord.skinTempCentiCRange.contains(skin) ? skin : nil
+    return Whoop5HistoricalRecord(timestamp: ts, heartRate: hr, rr: rr, gravity: gravity, skinTempCentiC: skinTemp)
 }

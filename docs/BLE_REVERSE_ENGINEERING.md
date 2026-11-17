@@ -357,7 +357,7 @@ measures:
 | **PPG optical** (green + red/IR LEDs, ambient) | type-47 `ppg_green` / `ppg_red_ir` / `ambient` / `led_drive_1/2`; type-43 optical variant (single AC-coupled green waveform @ ~437 Hz). Drives HR, SpO₂, respiratory rate. |
 | **3-axis accelerometer** | type-47 `gravity_x/y/z` (f32, g); type-43 IMU `accelX/Y/Z` (i16 @ ~100 Hz, `1/4096` g/LSB). |
 | **Gyroscope / IMU** | type-43 IMU `gyroX/Y/Z` (i16, `0.06104` deg/s/LSB, ±2000 dps). |
-| **Skin temperature** | type-47 `skin_temp_raw` (u16 ADC); event `TEMPERATURE_LEVEL`. |
+| **Skin temperature** | 4.0: type-47 `skin_temp_raw` (u16 ADC); event `TEMPERATURE_LEVEL`. 5.0: type-47 v0x12 payload 65 u16, 1/100 °C, stored as `skinTempSample` unit `centi_celsius` (2026-11-16). |
 | **Capacitive double-tap** | event `DOUBLE_TAP` (14) → `FrameRouter` fires `onDoubleTap`. |
 | **Wrist detection** | events `WRIST_ON` (9) / `WRIST_OFF` (10); type-47 `skin_contact` (0 = off-wrist). |
 | **Haptic motor** | `RUN_HAPTICS_PATTERN` / `STOP_HAPTICS`; events `HAPTICS_FIRED` (60), `HAPTICS_TERMINATED` (100). |

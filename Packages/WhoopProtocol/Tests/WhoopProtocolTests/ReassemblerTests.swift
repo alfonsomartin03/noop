@@ -127,8 +127,9 @@ final class Whoop5RealtimeTests: XCTestCase {
 
 // Checks the decoded stored-record layout and its sanity filters.
 final class Whoop5HistoricalTests: XCTestCase {
-    private func record(ts: UInt32, hr: UInt8, rr: [UInt16], g: (Float, Float, Float)) -> [UInt8] {
+    private func record(ts: UInt32, hr: UInt8, rr: [UInt16], g: (Float, Float, Float), skin: UInt16 = 0) -> [UInt8] {
         var p = [UInt8](repeating: 0, count: 112)
+        p[65] = UInt8(skin & 0xFF); p[66] = UInt8(skin >> 8)
         p[0] = 47; p[1] = 0x12
         for i in 0..<4 { p[7 + i] = UInt8((ts >> (8 * UInt32(i))) & 0xFF) }
         p[14] = hr; p[15] = UInt8(rr.count)
@@ -157,6 +158,24 @@ final class Whoop5HistoricalTests: XCTestCase {
         var g = record(ts: 1_791_574_000, hr: 70, rr: [], g: (0, 0, 1)); g[30] ^= 0xFF
         XCTAssertNil(decodeWhoop5Historical(g))
         XCTAssertNil(decodeWhoop5Historical(record(ts: 5, hr: 70, rr: [], g: (0, 0, 1))))
+    }
+
+    func testDecodesSkinTemperatureInCentiCelsius() throws {
+        let r = try XCTUnwrap(decodeWhoop5Historical(record(ts: 1_791_574_000, hr: 58, rr: [], g: (0, 0, 1), skin: 3508)))
+        XCTAssertEqual(r.skinTempCentiC, 3508)                     // 35.08 °C
+        XCTAssertEqual(r.heartRate, 58)
+        XCTAssertEqual(Whoop5HistoricalRecord.skinTempUnit, "centi_celsius")
+    }
+
+    func testImplausibleSkinTemperatureIsMissingNotZero() throws {
+        for raw: UInt16 in [0, 499, 4501, 0xFFFF] {
+            let r = try XCTUnwrap(decodeWhoop5Historical(record(ts: 1_791_574_000, hr: 60, rr: [], g: (0, 0, 1), skin: raw)))
+            XCTAssertNil(r.skinTempCentiC, "raw \(raw)")
+            XCTAssertEqual(r.heartRate, 60, "other fields still decode")
+        }
+        for raw: UInt16 in [500, 4500] {
+            XCTAssertEqual(decodeWhoop5Historical(record(ts: 1_791_574_000, hr: 60, rr: [], g: (0, 0, 1), skin: raw))?.skinTempCentiC, Int(raw))
+        }
     }
 
     func testDropsImplausibleGravityButKeepsHeartRate() throws {

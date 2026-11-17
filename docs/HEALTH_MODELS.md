@@ -9,7 +9,7 @@ What the Health page computes, from which inputs, and why some estimates stay of
 | Resting HR, HRV (RMSSD) | nightly, `DailyMetric.restingHr`/`avgHrv` | nightly | |
 | Respiratory rate | nightly `respRateBpm` | nightly | |
 | SpO₂ | nightly `spo2Pct` where the strap reports it | nightly | wrist SpO₂ is less precise than a fingertip oximeter |
-| Skin temperature | nightly **deviation** from baseline (`skinTempDevC`) | **absolute °C** | different quantities; imported skin temp is not compared with NOOP's |
+| Skin temperature | nightly **change** from baseline (`skinTempDevC`, WHOOP 5.0 only, `skin-temp-night-v1`) | **absolute °C** | different quantities; imported skin temp is not compared with NOOP's |
 | Continuous HR | yes (`hrSample`) | no | used for the activation timeline |
 | Accelerometer | raw gravity samples (no validated activity model) | no | |
 | Age, sex, height, weight | profile (user-entered) | — | |
@@ -80,6 +80,25 @@ Issue #16 re-review: still unavailable. The VO₂max estimate below is a *fitnes
 ## Overview activation strip (issue #16)
 
 The Overview heart-rate card shows the latest known activation state (15-min bin), a thin day strip and coverage, from the same `HRActivation.timeline` as the Stress Monitor (`ActivationViews.swift`). Labelled "not a stress score"; no-data bins stay empty. Only confirmed NOOP sessions (main, interrupted main, nap) are drawn as Asleep; an **uncertain** episode is not sleep — its bins show activation where readings exist and no data where they don't, and it adds nothing to coverage (`ActivationLoad.sleepIntervals`, hosted `ActivationLoadTests`).
+
+## Nightly skin-temperature change (`skin-temp-night-v1`, implemented 2026-11-16, **not validated**)
+
+Source: WHOOP 5.0 history records (type 47 v0x12, payload 65, u16 in 1/100 °C), decoded since 2026-11-16 and stored
+with unit `centi_celsius`. The field layout comes from two external reverse-engineering projects and is consistent
+with local frames (≈ 35 °C, matching the firmware console's `skin_temp`); it has not been checked against a
+reference thermometer. 4.0 ADC counts have no verified conversion and are never used.
+
+- **Night value:** median of the samples inside the asleep stages (light/deep/REM/asleep) of the night's primary
+  sleep. Wake, unknown and gap time are excluded. Needs ≥ 1,800 samples (30 min at 1 Hz) and samples for ≥ 50 % of
+  asleep seconds; otherwise the night is unavailable with the reason recorded. Stored as `noop.skin_temp_night_c`
+  with its own provenance identity.
+- **Change (`skinTempDevC`):** night value − median of earlier nights with the same identity, from the last 30 days
+  only (`CausalReference`, identity transform). Needs ≥ 5 earlier nights (provisional; established at 14); none after
+  21 days without a night. Nights outside 25–40 °C are excluded as implausible. The current night never enters its own
+  reference.
+- **Limits:** off-wrist or loose-strap time is not detected separately beyond the sleep and plausibility gates; room
+  temperature, bedding and strap fit move wrist temperature. A change is not a fever, illness, ovulation or core
+  temperature reading. Imported WHOOP skin temperature is an absolute °C and is never mixed with this value.
 
 ## Health Monitor — personal ranges (implemented)
 

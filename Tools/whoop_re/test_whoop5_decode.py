@@ -131,6 +131,21 @@ class Decoding(unittest.TestCase):
         d = w.decode(frame)
         self.assertEqual((d["kind"], d["rt_ts"], d["hr"], d["rr_count"], d["rr"]), (2, 1793636929, 69, 0, []))
 
+    def test_historical_skin_temperature(self):
+        # Synthetic v0x12 record (real type-47 frames are biometric and not committed): skin temp u16 @65, 1/100 degC.
+        def record(skin):
+            p = bytearray(112)
+            p[0], p[1] = 47, 0x12
+            p[7:11] = (1791574000).to_bytes(4, "little")
+            p[14] = 58
+            p[65:67] = skin.to_bytes(2, "little")
+            return w.decode(w.build_frame(bytes(p)))
+        d = record(3508)
+        self.assertEqual((d["record_ts"], d["hr"]), (1791574000, 58))
+        self.assertAlmostEqual(d["skin_temp_c"], 35.08)
+        for raw in (0, 499, 4501, 0xFFFF):
+            self.assertIsNone(record(raw)["skin_temp_c"])
+
 
 if __name__ == "__main__":
     unittest.main()

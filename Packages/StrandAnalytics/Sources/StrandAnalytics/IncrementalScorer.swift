@@ -79,7 +79,7 @@ public enum IncrementalScorer {
         [String(scoringVersion), String(generation), CardioLoad.loadVersion, CardioLoad.detectorVersion,
          StrainScorer.indexVersion, SupportedHR.policyVersion, HRCalibration.version,
          MetricIdentity.noopVitalsVersion, SleepStager.stagingMethod, SleepStager.napDetectionVersion, SleepStager.fragmentQuietVersion,
-         SleepSessionClassifier.version].joined(separator: "|")
+         SleepSessionClassifier.version, SkinTemperature.version].joined(separator: "|")
     }
 
     static func configKey(_ p: UserProfile, maxHROverride: Double?) -> String {
@@ -88,7 +88,8 @@ public enum IncrementalScorer {
 
     static func baselineKey(_ b: AnalyticsEngine.ProfileBaselines) -> String {
         fingerprint("\(String(describing: b.hrv))|\(String(describing: b.restingHR))|\(String(describing: b.resp))|"
-            + "\(String(describing: b.lnRMSSDReference))|\(String(describing: b.restingHRReference))|\(b.sleepTargetMin)")
+            + "\(String(describing: b.lnRMSSDReference))|\(String(describing: b.restingHRReference))|\(b.sleepTargetMin)|"
+            + "\(String(describing: b.skinTempReference))")
     }
 
     static func knownSessionsKey(_ sessions: [TimeSpan]) -> String {
@@ -206,6 +207,9 @@ public enum IncrementalScorer {
 
         let seed = try await store.dailyMetrics(deviceId: computedId, from: "0000-00-00", to: "9999-99-99")
         let seedProv = try await store.provenance(deviceId: computedId, from: "0000-00-00", to: "9999-99-99")
+        let seedSkin = Dictionary((try await store.metricSeries(deviceId: computedId, key: ProvenanceKey.skinTempNight,
+                                                                from: "0000-00-00", to: "9999-99-99")).map { ($0.day, $0.value) },
+                                  uniquingKeysWith: { _, b in b })
 
         // A finished day keeps the calibration it was scored with. Today stays open, since tonight's sleep is not in yet.
         // A stale algorithm or generation is the explicit re-score: its days resolve calibration again.
@@ -249,6 +253,7 @@ public enum IncrementalScorer {
                 let rr = try await store.rrIntervals(deviceId: q.rawId, from: from, to: to, limit: 200_000)
                 let resp = try await store.respSamples(deviceId: q.rawId, from: from, to: to, limit: 200_000)
                 let grav = try await store.gravitySamples(deviceId: q.rawId, from: from, to: to, limit: 200_000)
+                let skin = try await store.skinTempSamples(deviceId: q.rawId, from: from, to: to, limit: 200_000)
                 // Sleep that began this evening only shows in tomorrow's data. A finished day re-reads it for the
                 // awake-time exclusion alone; today has nothing after it yet.
                 var following: AnalyticsEngine.FollowingData?
@@ -259,7 +264,7 @@ public enum IncrementalScorer {
                                       resp: try await store.respSamples(deviceId: q.rawId, from: to, to: tail, limit: 200_000),
                                       gravity: try await store.gravitySamples(deviceId: q.rawId, from: to, to: tail, limit: 200_000))
                 }
-                let res = AnalyticsEngine.analyzeDay(day: day, hr: hr, rr: rr, resp: resp, gravity: grav, profile: q.profile,
+                let res = AnalyticsEngine.analyzeDay(day: day, hr: hr, rr: rr, resp: resp, gravity: grav, skinTemp: skin, profile: q.profile,
                                                      baselines: baselines, maxHROverride: q.maxHROverride, dayRange: range,
                                                      calibration: frozen[day], knownSessions: sessions, following: following,
                                                      observedUntil: day >= today ? q.now : nil,
@@ -267,7 +272,8 @@ public enum IncrementalScorer {
                 newStates.append(state(res))
                 return res
             },
-            daily: { $0.daily }, assessment: { $0.assessment }, load: { $0.load })
+            daily: { $0.daily }, assessment: { $0.assessment }, load: { $0.load },
+            seedSkinNights: seedSkin, skinNight: { $0.skinTempNight })
 
         batch.provenance = output.provenance
         for (day, res) in output.results {
@@ -299,9 +305,12 @@ public enum IncrementalScorer {
     /// The separate recovery dimensions as long-format points under the "-noop" id (keys prefixed "noop."), so they
     /// persist with the day and can be compared with outcomes later. Not in MetricCatalog, so not yet shown in the UI.
     static func componentPoints(day: String, res: AnalyticsEngine.DayResult, scoringVersion: Int) -> [MetricPoint] {
-        guard let a = res.assessment else { return [] }
-        var p: [MetricPoint] = [MetricPoint(day: day, key: "noop.scoring_version", value: Double(scoringVersion))]
+        var p: [MetricPoint] = []
         func add(_ k: String, _ v: Double?) { if let v, v.isFinite { p.append(MetricPoint(day: day, key: k, value: v)) } }
+        // The night's absolute skin temperature: later nights build their reference from it (with its provenance).
+        add(ProvenanceKey.skinTempNight, res.skinTempNight?.valueC)
+        guard let a = res.assessment else { return p }
+        p.append(MetricPoint(day: day, key: "noop.scoring_version", value: Double(scoringVersion)))
         add("noop.sleep_24h_min", a.sleep.shortfall.sleepMin)
         add("noop.sleep_target_min", a.sleep.shortfall.targetMin)
         add("noop.sleep_shortfall_min", a.sleep.shortfall.shortfallMin)

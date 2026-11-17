@@ -26,10 +26,14 @@ public enum AnalyticsEngine {
         public let restingHRReference: ReferenceSnapshot?
         /// Declared 24-h sleep target (minutes) for sleep sufficiency.
         public let sleepTargetMin: Double
+        /// Causal reference of earlier nights' skin temperature (°C, `SkinTemperature.reference`).
+        public var skinTempReference: ReferenceSnapshot?
         public init(hrv: BaselineState? = nil, restingHR: BaselineState? = nil,
                     resp: BaselineState? = nil, lnRMSSDReference: ReferenceSnapshot? = nil,
                     restingHRReference: ReferenceSnapshot? = nil,
-                    sleepTargetMin: Double = SleepAccounting.defaultAdultTargetMin) {
+                    sleepTargetMin: Double = SleepAccounting.defaultAdultTargetMin,
+                    skinTempReference: ReferenceSnapshot? = nil) {
+            self.skinTempReference = skinTempReference
             self.hrv = hrv; self.restingHR = restingHR; self.resp = resp
             self.lnRMSSDReference = lnRMSSDReference; self.restingHRReference = restingHRReference
             self.sleepTargetMin = sleepTargetMin
@@ -65,6 +69,8 @@ public enum AnalyticsEngine {
         public let load: DayLoadRecord?
         /// Every sleep session ending on this day with its label (primary / nap / uncertain), episodes and gaps kept.
         public var classifiedSleep: [ClassifiedSleepSession] = []
+        /// The primary night's skin temperature (nil without a primary sleep). Its change is `daily.skinTempDevC`.
+        public var skinTempNight: SkinTemperature.Night?
 
         public init(daily: DailyMetric, sleepSessions: [SleepSession],
                     cachedSleep: [CachedSleepSession], workouts: [ExerciseSession],
@@ -133,6 +139,7 @@ public enum AnalyticsEngine {
                                   rr: [RRInterval] = [],
                                   resp: [RespSample] = [],
                                   gravity: [GravitySample] = [],
+                                  skinTemp: [SkinTempSample] = [],
                                   profile: UserProfile,
                                   baselines: ProfileBaselines = ProfileBaselines(),
                                   maxHROverride: Double? = nil,
@@ -201,6 +208,10 @@ public enum AnalyticsEngine {
             let weight = pairs.reduce(0.0) { $0 + $1.1 }
             return weight > 0 ? pairs.reduce(0.0) { $0 + $1.0 * $1.1 } / weight : nil
         }()
+
+        // Skin temperature over the primary night's asleep time, and its change from earlier nights (see SkinTemperature).
+        let skinNight = matched.isEmpty ? nil : SkinTemperature.night(samples: skinTemp, stages: matched.flatMap(\.stages))
+        let skinChange = SkinTemperature.change(night: skinNight?.valueC, reference: baselines.skinTempReference)
 
         let sleepStart = matched.map { $0.start }.min()
         let sleepEnd = matched.map { $0.end }.max()
@@ -298,7 +309,7 @@ public enum AnalyticsEngine {
             strain: strain,
             exerciseCount: workouts.count,
             spo2Pct: nil,
-            skinTempDevC: nil,
+            skinTempDevC: skinChange,
             respRateBpm: respDaily)
         _ = sleepStart; _ = sleepEnd  // available for callers wiring sleep_start/end columns
 
@@ -322,6 +333,7 @@ public enum AnalyticsEngine {
                                workouts: workouts, recovery: recovery, strain: strain, assessment: assessment,
                                napSessions: napSessions, load: load)
         result.classifiedSleep = dayClassified
+        result.skinTempNight = skinNight
         return result
     }
 }
