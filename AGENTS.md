@@ -295,6 +295,8 @@ Format: `file` — purpose. Tests list `Suite(methods)`. Fixtures/resources are 
 
 ## 8 · Verification record
 
+- 2026-11-17 PR integration: research probe build + passive/hello refusal PASS; event-29 battery WhoopProtocol 152 PASS, app build + hosted suite PASS. Documentation conflicts reconciled and index checked; no new strap interaction or drain measurement.
+
 - 2026-11-16 event-29 battery: PASS WhoopProtocol 152 (2 new: C02a live event 29 body → 99.4 %, out-of-range/short/other-number nil; poll policy fresh/old/future push), app build + hosted 88 (5 env skips). NOT done: on the strap — expect "level pushed … not asking" log lines and fewer GET_BATTERY_LEVEL commands/day; battery display not re-checked.
 - 2026-11-16 #25 C02a passive capture (owner-approved): probe rebuilt with `--passive` (refusal of `--commands`/`--hello` checked, exit 2); 300 s capture wrote 0 frames; events 10/9 at the wearer's off/on minutes. Capture committed redacted (serial `<redacted>`, no addresses, no fd4b0007 data). C02b not run (no pack). No app code changed.
 
