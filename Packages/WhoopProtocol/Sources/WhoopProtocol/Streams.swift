@@ -87,12 +87,15 @@ public struct StepCounterSample: Equatable, Codable {
         public let resets: Int
         /// False when no row at/before `from` exists: the first increase can't be measured.
         public let hasStartReference: Bool
-        /// Seconds whose activity code was 1 (as recorded by change points).
+        /// Seconds whose activity code was 1 (walking; SUPPORTED, walks W01–W03) as recorded by change points.
         public let activityOneSeconds: Int
+        /// Seconds whose activity code was 2 (running; CONFIRMED on two runs, W02/W03).
+        public let activityTwoSeconds: Int
     }
 
-    /// Steps counted by the strap in [from, to). `samples` are change points (or every second) in any order.
-    public static func window(_ samples: [StepCounterSample], from: Int, to: Int) -> Window {
+    /// Steps counted by the strap in [from, to). `samples` are change points (or every second) in any order. Activity
+    /// time is clipped at `until` (the end of known data): change points say nothing about time past the last sync.
+    public static func window(_ samples: [StepCounterSample], from: Int, to: Int, until: Int? = nil) -> Window {
         let s = samples.sorted { $0.ts < $1.ts }
         let start = s.last { $0.ts <= from }
         let inside = s.filter { $0.ts > from && $0.ts < to }
@@ -101,13 +104,16 @@ public struct StepCounterSample: Equatable, Codable {
             if let p = prev { if r.counter >= p { steps += r.counter - p } else { resets += 1 } }
             prev = r.counter
         }
-        var active = 0
+        var walk = 0, run = 0
+        let end = min(to, until ?? to)
         let chain = (start.map { [$0] } ?? []) + inside
-        for (i, r) in chain.enumerated() where r.activity == 1 {
-            let a = max(r.ts, from), b = i + 1 < chain.count ? chain[i + 1].ts : to
-            if b > a { active += b - a }
+        for (i, r) in chain.enumerated() where r.activity == 1 || r.activity == 2 {
+            let a = max(r.ts, from), b = min(i + 1 < chain.count ? chain[i + 1].ts : end, end)
+            guard b > a else { continue }
+            if r.activity == 1 { walk += b - a } else { run += b - a }
         }
-        return Window(steps: steps, resets: resets, hasStartReference: start != nil, activityOneSeconds: active)
+        return Window(steps: steps, resets: resets, hasStartReference: start != nil, activityOneSeconds: walk,
+                      activityTwoSeconds: run)
     }
 }
 

@@ -344,6 +344,17 @@ final class Repository: ObservableObject {
         return WristWear.offIntervals(events, until: known).filter { $0.end > from && $0.start < to }
     }
 
+    /// The strap's own step counter over [from, to) (5.0 only; nil with no step rows in the range). Experimental: the
+    /// counter tracked walking and running to the second in walks W01–W03; no accuracy figure. Counts increases, so the
+    /// strap's daily reset (time unknown) never subtracts; activity time stops at the newest synced heart-rate second.
+    func strapSteps(from: Int, to: Int) async -> StepCounterSample.Window? {
+        guard let store = await ensureStore(),
+              let rows = try? await store.stepCounterSamples(deviceId: deviceId, from: from - 86_400, to: to),
+              rows.contains(where: { $0.ts >= from && $0.ts < to }) else { return nil }
+        let until = (try? await store.latestHRSampleTs(deviceId: deviceId)) ?? nil
+        return StepCounterSample.window(rows, from: from, to: to, until: until.map { $0 + 1 })
+    }
+
     func latestHRTimestamp() async -> Int? {
         guard let store = await ensureStore() else { return nil }
         return try? await store.latestHRSampleTs(deviceId: deviceId)

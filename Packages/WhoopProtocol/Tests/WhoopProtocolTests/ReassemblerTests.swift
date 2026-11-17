@@ -197,13 +197,26 @@ final class Whoop5HistoricalTests: XCTestCase {
         let cp = StepCounterSample.changePoints(raw)
         XCTAssertEqual(cp, [s(0, 100), s(2, 100, 1), s(3, 106, 1), s(4, 107, 1), s(5, 109, 1), s(6, 109)])
         let w = StepCounterSample.window(cp, from: 1, to: 10)
-        XCTAssertEqual(w, .init(steps: 9, resets: 0, hasStartReference: true, activityOneSeconds: 4))
+        XCTAssertEqual(w, .init(steps: 9, resets: 0, hasStartReference: true, activityOneSeconds: 4, activityTwoSeconds: 0))
         XCTAssertEqual(StepCounterSample.window(cp, from: 3, to: 5).steps, 1, "increase at `from` belongs before the window")
         XCTAssertFalse(StepCounterSample.window(cp, from: -5, to: 10).hasStartReference)
         // A drop is a reset: counted as a reset, never as negative or as the new total.
         let reset = StepCounterSample.window([s(0, 10_000), s(5, 10_010), s(6, 3), s(9, 8)], from: 0, to: 10)
         XCTAssertEqual(reset.steps, 15)
         XCTAssertEqual(reset.resets, 1)
+    }
+
+    func testRunningTimeAndClippingAtTheEndOfKnownData() {
+        func s(_ ts: Int, _ c: Int, _ a: Int) -> StepCounterSample { StepCounterSample(ts: ts, counter: c, activity: a) }
+        // Walk 100 s, run 60 s, still; the day runs to 1000 but data is known only to 300.
+        let rows = [s(0, 0, 0), s(100, 0, 1), s(200, 150, 2), s(260, 320, 0)]
+        let w = StepCounterSample.window(rows, from: 0, to: 1000, until: 300)
+        XCTAssertEqual(w.steps, 320)
+        XCTAssertEqual(w.activityOneSeconds, 100)
+        XCTAssertEqual(w.activityTwoSeconds, 60)
+        // Still running at the last sync: running time stops at the end of known data, never at the end of the day.
+        let open = StepCounterSample.window(Array(rows.prefix(3)), from: 0, to: 1000, until: 230)
+        XCTAssertEqual(open.activityTwoSeconds, 30)
     }
 
     func testDropsImplausibleGravityButKeepsHeartRate() throws {
