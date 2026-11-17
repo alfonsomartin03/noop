@@ -18,7 +18,7 @@ This is a convention, not CI: reconcile with the working tree before trusting it
 - Refreshed **2026-11-16** (America/New_York). Includes pilot implementations #15–#19, the interrupted-night acceptance fix and #25 phase 1 research docs; experimental estimates and outstanding manual/hardware/accuracy checks are distinguished in §3/§4/§8.
 - **NOOP**: local-only macOS companion for WHOOP 4.0/5.0 straps. Internal target/scheme/package prefix **Strand**; bundle `com.noopapp.noop`, product `NOOP.app`, v0.1.0 (1).
 - 358 first-party files indexed in §7 (tracked + non-ignored untracked, excluding this file). Source size hotspots: `BLEManager.swift` ~2.0k lines, `SleepStager.swift` ~1.3k, `OnboardingWizard.swift` ~1.1k, `TrendSections.swift` ~0.9k — search, don't read whole.
-- Test inventory (methods in files, not pass results): StrandAnalytics 489, WhoopProtocol 155, WhoopStore 117, StrandImport 61, StrandDesign 40 (2 snapshot tests skip without env), hosted StrandTests 88 (4 render tests skip without `NOOP_RENDER_TRENDS=1`, 1 without `NOOP_RENDER_OVERVIEW=1`), Python 28.
+- Test inventory (methods in files, not pass results): StrandAnalytics 489, WhoopProtocol 154, WhoopStore 117, StrandImport 61, StrandDesign 40 (2 snapshot tests skip without env), hosted StrandTests 88 (4 render tests skip without `NOOP_RENDER_TRENDS=1`, 1 without `NOOP_RENDER_OVERVIEW=1`), Python 28.
 
 ## 2 · Architecture and routing
 
