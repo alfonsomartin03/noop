@@ -28,7 +28,7 @@ final class StrapStepsTests: XCTestCase {
         XCTAssertEqual(w.resets, 1)
         XCTAssertEqual(w.activityOneSeconds, 120)
         XCTAssertEqual(w.activityTwoSeconds, 60)
-        XCTAssertEqual(StrainDetailView.stepDetails(w), ["Walking 2m · Running 1m"])
+        XCTAssertEqual(StrainDetailView.stepDetails(w), ["Walking 2m · Running 1m", "Counter reset detected; steps at the reset are not included.", "Reset timing and accuracy are unverified; this may be an incomplete daily count."])
     }
 
     func testNoStepRowsMeansNoTileAndMissingReferenceIsSaid() async throws {
@@ -37,10 +37,11 @@ final class StrapStepsTests: XCTestCase {
         let none = await repo.strapSteps(from: r.from, to: r.to)
         XCTAssertNil(none, "no counter rows (4.0 strap, older data): no tile, never 0")
         _ = try await store.insert(Streams(steps: [StepCounterSample(ts: r.from + 3600, counter: 50, activity: 0),
-                                                   StepCounterSample(ts: r.from + 3700, counter: 80, activity: 0)]), deviceId: device)
+                                                   StepCounterSample(ts: r.from + 3700, counter: 80, activity: 2)]), deviceId: device)
         let some = await repo.strapSteps(from: r.from, to: r.to)
         let w = try XCTUnwrap(some)
         XCTAssertEqual(w.steps, 30)
-        XCTAssertEqual(StrainDetailView.stepDetails(w), ["Counted from the first synced step of the day."])
+        XCTAssertEqual(w.activityTwoSeconds, 1, "without HR, activity stops at the last known step second")
+        XCTAssertEqual(StrainDetailView.stepDetails(w), ["Counted from the first synced step of the day.", "Reset timing and accuracy are unverified; this may be an incomplete daily count."])
     }
 }

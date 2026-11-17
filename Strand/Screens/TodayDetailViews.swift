@@ -646,7 +646,7 @@ struct StrainDetailView: View {
                                caption: "Weights, gym and functional sessions", tint: StrandPalette.metricRose)
                 }
                 if let s = strapSteps {
-                    DetailTile(title: "Steps", value: s.steps.formatted(), caption: "Strap step counter · experimental",
+                    DetailTile(title: "Steps", value: s.steps.formatted(), caption: "Recorded strap increases · experimental",
                                tint: StrandPalette.statusPositive, details: Self.stepDetails(s))
                 }
                 if let steps {
@@ -680,6 +680,8 @@ struct StrainDetailView: View {
         if s.activityTwoSeconds >= 60 { motion.append("Running \(DayMath.hm(Double(s.activityTwoSeconds) / 60))") }
         if !motion.isEmpty { out.append(motion.joined(separator: " · ")) }
         if !s.hasStartReference { out.append("Counted from the first synced step of the day.") }
+        if s.resets > 0 { out.append("Counter reset detected; steps at the reset are not included.") }
+        out.append("Reset timing and accuracy are unverified; this may be an incomplete daily count.")
         return out
     }
 

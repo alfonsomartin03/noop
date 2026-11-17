@@ -36,11 +36,11 @@ Wire differences from 4.0 documented by Goose and not yet tested here: alarm com
 | 37 | LOAD_FIRMWARE_DATA | C |  |  |  | UNSAFE | prohibited |  |
 | 38 | PROCESS_FIRMWARE_IMAGE | C |  |  |  | UNSAFE | prohibited |  |
 | 39 | SET_LED_DRIVE | C |  |  |  | UNSAFE | prohibited |  |
-| 40 | GET_LED_DRIVE | R |  |  |  | SUPPORTED | auto (read-only) |  |
+| 40 | GET_LED_DRIVE | R | [] | UNSUPPORTED | 20 | CONFIRMED | probe only (C07) | C07 2026-11-17: result 3, body 000000. |
 | 41 | SET_TIA_GAIN | C |  |  |  | UNSAFE | prohibited |  |
-| 42 | GET_TIA_GAIN | R |  |  |  | SUPPORTED | auto (read-only) |  |
+| 42 | GET_TIA_GAIN | R | [] | UNSUPPORTED | 20 | CONFIRMED | probe only (C07) | C07 2026-11-17: result 3, body 000000. |
 | 43 | SET_BIAS_OFFSET | C |  |  |  | UNSAFE | prohibited |  |
-| 44 | GET_BIAS_OFFSET | R |  |  |  | SUPPORTED | auto (read-only) |  |
+| 44 | GET_BIAS_OFFSET | R | [] | UNSUPPORTED | 20 | CONFIRMED | probe only (C07) | C07 2026-11-17: result 3, body 000000. |
 | 45 | ENTER_BLE_DFU | C |  |  |  | UNSAFE | prohibited |  |
 | 52 | SET_DP_TYPE | C |  |  |  | UNSAFE | prohibited |  |
 | 53 | FORCE_DP_TYPE | C |  |  |  | UNSAFE | prohibited |  |
@@ -86,6 +86,6 @@ Wire differences from 4.0 documented by Goose and not yet tested here: alarm com
 | 143 | LOAD_FIRMWARE_DATA_NEW | C |  |  |  | UNSAFE | prohibited |  |
 | 144 | PROCESS_FIRMWARE_IMAGE_NEW | C |  |  |  | UNSAFE | prohibited |  |
 | 145 | GET_HELLO | R | [01] | PENDING→SUCCESS | 124 | CONFIRMED | auto (read-only) | static CLIENT_HELLO; two 124-byte responses (result 2 then 1). Body holds identity/session data: redacted, never logged. |
-| 151 | GET_BATTERY_PACK_INFO | R | [] | FAILURE | 48 | CONFIRMED | auto (read-only) | result 0, body 01 + 30 zero bytes (E02). Sent by the app on connect and with each battery poll. `Whoop5Charging.packInfo`: the E02 shape = `unavailable` (not proof of detachment), SUCCESS = `answeredUndecoded`; neither changes attachment/activity. The attached reply has not been captured yet. |
+| 151 | GET_BATTERY_PACK_INFO | R | [] | FAILURE | 48 | CONFIRMED | auto (read-only) | result 0, body 01 + 30 zero bytes (E02). Sent by the app on connect and with each battery poll. `Whoop5Charging.packInfo`: the E02 shape = `unavailable` (not proof of detachment), SUCCESS = `answeredUndecoded`; neither changes attachment/activity. The attached reply has not been captured yet. C06a 2026-11-17: payload `[01]` (Goose revision byte) gives **SUCCESS**, body `01` + 30 zeros with the pack off; the app still sends `[]`. |
 | 153 | TOGGLE_PERSISTENT_R20 | C |  |  |  | UNSAFE | prohibited |  |
 | 154 | TOGGLE_PERSISTENT_R21 | C |  |  |  | UNSAFE | prohibited |  |

@@ -30,7 +30,14 @@ let READ_ONLY_ALLOWLIST: [UInt8: String] = [
     98: "GET_EXTENDED_BATTERY_INFO",
     141: "GET_ADVERTISING_NAME",
     151: "GET_BATTERY_PACK_INFO",
+    // C07 (owner-approved 2026-11-17): optical front-end READS, empty payload. Their SET twins (39 SET_LED_DRIVE,
+    // 41 SET_TIA_GAIN, 43 SET_BIAS_OFFSET) are prohibited and are not, and must never be, in any allowlist.
+    40: "GET_LED_DRIVE",
+    42: "GET_TIA_GAIN",
+    44: "GET_BIAS_OFFSET",
 ]
+/// Commands that must never be sendable, whatever the allowlists say (checked at startup).
+let PROHIBITED_COMMANDS: Set<UInt8> = [39, 41, 43]
 /// Reversible on/off commands, each needing the owner's approval per experiment (`--toggle N`). The probe
 /// sends `[1]`, captures, and always sends `[0]` before exiting. 3 = TOGGLE_REALTIME_HR (approved for E04).
 let REVERSIBLE_ALLOWLIST: [UInt8: String] = [
@@ -88,6 +95,8 @@ struct Options {
     var alarmScript: [ScriptStep]? = nil
     /// Listen only (#25 C02): subscribe + standard SIG reads, never a write to fd4b0002. Enforced in `write`.
     var passive = false
+    /// C06 (owner-approved 2026-11-17): send GET_BATTERY_PACK_INFO with payload [01] (Goose's revision byte) instead of [].
+    var packRev1 = false
 }
 
 func parseOptions() -> Options {
@@ -119,6 +128,7 @@ func parseOptions() -> Options {
             o.alarmScript = steps
         case "--hello": o.hello = true
         case "--passive": o.passive = true
+        case "--pack-rev1": o.packRev1 = true
         case "--exp": o.experiment = it.next() ?? o.experiment
         case "--out": o.out = it.next()
         default:
@@ -128,6 +138,14 @@ func parseOptions() -> Options {
     }
     if o.passive && (o.hello || !o.commands.isEmpty || o.toggle != nil || o.alarmScript != nil || o.alarmApproved) {
         FileHandle.standardError.write("refusing: --passive cannot be combined with any command option\n".data(using: .utf8)!)
+        exit(2)
+    }
+    guard PROHIBITED_COMMANDS.isDisjoint(with: READ_ONLY_ALLOWLIST.keys), PROHIBITED_COMMANDS.isDisjoint(with: REVERSIBLE_ALLOWLIST.keys) else {
+        FileHandle.standardError.write("refusing: a prohibited command is in an allowlist\n".data(using: .utf8)!)
+        exit(2)
+    }
+    if o.packRev1 && o.commands != [151] {
+        FileHandle.standardError.write("refusing: --pack-rev1 only with --commands 151\n".data(using: .utf8)!)
         exit(2)
     }
     if o.alarmScript != nil && !o.alarmApproved {
@@ -324,7 +342,7 @@ final class Probe: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
             if self.opt.hello {
                 self.write(DeviceFamily.whoop5ClientHello, cmd: 145, seq: 1, to: c, on: p)
             }
-            self.queue = self.opt.commands.map { ($0, READ_ONLY_PAYLOADS[$0] ?? []) }
+            self.queue = self.opt.commands.map { c in (c, c == 151 && self.opt.packRev1 ? [0x01] : (READ_ONLY_PAYLOADS[c] ?? [])) }
             self.script = self.opt.alarmScript ?? []
             if let t = self.opt.toggle { self.queue.append((t, [1])) }
             self.next()

@@ -352,7 +352,7 @@ final class Repository: ObservableObject {
               let rows = try? await store.stepCounterSamples(deviceId: deviceId, from: from - 86_400, to: to),
               rows.contains(where: { $0.ts >= from && $0.ts < to }) else { return nil }
         let until = (try? await store.latestHRSampleTs(deviceId: deviceId)) ?? nil
-        return StepCounterSample.window(rows, from: from, to: to, until: until.map { $0 + 1 })
+        return StepCounterSample.window(rows, from: from, to: to, until: (until ?? rows.map(\.ts).max()!).advanced(by: 1))
     }
 
     func latestHRTimestamp() async -> Int? {

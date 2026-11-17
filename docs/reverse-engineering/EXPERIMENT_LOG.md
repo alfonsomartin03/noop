@@ -146,6 +146,28 @@ accepted every command. Details: ALARM_CAPABILITIES.md. **Wearer confirmed feeli
 - **Conclusion:** wrist off = 10, wrist on = 9 (CONFIRMED once). Capture: `captures/C02a-wear-off-on.jsonl` (redacted).
 - **C02b (charging):** not run — no charging pack available; still approved in scope for later.
 
+## C06a, C07 — approved reads (2026-11-17 15:47–15:54, owner-approved "all")
+
+- **Setup:** NOOP running and connected, right after a completed history pull; no alarm within 30 min. Each command in its
+  own probe run (attached to NOOP's shared link), one attempt, seq 201. Each run wrote exactly **1** frame.
+- **C06a** `151 [01]`, pack off: **SUCCESS**, body `01` + 30 zero bytes (latency 4.6 s). With `[]` the strap always
+  answered FAILURE with the same body, so the revision byte was the cause. Pack-on run (C06b) deferred: no pack at hand.
+- **C07** `40 []`, `42 []`, `44 []`: each **UNSUPPORTED** (result 3, body `000000`), 4.9–5.2 s. No console lines, no events.
+- **After:** DIS/battery read normally in every run (fw 50.43.1.0, 2A19 90 %); NOOP kept its link and pulled history again.
+- Capture: `captures/C06a-C07-afe-pack-reads.jsonl` (redacted; fd4b0007 fragments dropped).
+
+## Offline analysis — v0x1a optical bursts, events 110/120/14 (2026-11-17)
+
+- **v0x1a:** 287 bursts (Nov 14–17 archive copy); 25 samples/s reconstructed from base + cumulative deltas. In 161/279
+  bursts with stored HR the strongest 40–200 bpm component is within 5 bpm of the strap's HR (median gap 2.5 bpm; ≈ 6 %
+  expected by chance; never at 2 × HR) → **PPG pulse waveform**, one stream. Byte 14 is a slow 0/1 state (3 changes in
+  4 days, not aligned with sleep). No second channel → no SpO₂.
+- **Event 110:** changes only around the four stored charge sessions (byte 2 = 1 / byte 3 = 2–3 on the pack, 4 after
+  CHARGING_OFF, 0 hours later) → charger-status report (HYPOTHESIS, strong), matching 117's stages.
+- **Event 120:** every 2 h; no battery correlation; u16 @8 correlates r ≈ 0.50 with mean HR over the prior 2 h (196
+  reports) → a periodic summary, meaning open.
+- **Event 14:** 0 occurrences during ~1.6 h of step data with two walks and a run → not a motion/step detector.
+
 ## Next experiments (need approval or the wearer)
 
 1. **E05** strap off-wrist for 2 min, then on: look for wrist events and the console wear-detect line.
