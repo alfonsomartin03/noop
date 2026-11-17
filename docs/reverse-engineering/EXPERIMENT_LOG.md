@@ -146,6 +146,43 @@ accepted every command. Details: ALARM_CAPABILITIES.md. **Wearer confirmed feeli
 - **Conclusion:** wrist off = 10, wrist on = 9 (CONFIRMED once). Capture: `captures/C02a-wear-off-on.jsonl` (redacted).
 - **C02b (charging):** not run — no charging pack available; still approved in scope for later.
 
+## W01 — counted walk vs stored step counter (2026-11-17, wearer only, no strap commands)
+
+- **Setup:** NOOP from `main` (schema v19) connected and syncing normally; nothing else talked to the strap.
+- **Wearer:** one continuous ~4-minute walk, steps counted by hand (count may be slightly low by the wearer's own account),
+  start/end times to the second. The wearer was moving shortly before and after, not standing still.
+- **Result** (`step_walk_check.py` on a SQLite-backup copy, after the next history pull): strap **326** vs counted **335**
+  (−9, **−2.7 %**), 0 resets, 196 of 245 s at activity code 1. Edge sensitivity: the 2 min before the start held 47 strap
+  steps and the 20 s before it ~17, so a few seconds of clock/timing offset moves the total by ~±20.
+- **Conclusion:** the counter at payload 49 counts steps — **SUPPORTED by one walk** within a few percent; the hand count's
+  own error and the moving edges are of the same size as the difference. Not validated for display.
+- **Next:** see W02; still open: a ≥ 1,000-step walk with still edges, and the reset time across local midnight.
+
+## W02 — counted walk with pace changes and a run (2026-11-17, wearer only, no strap commands)
+
+- **Wearer:** ~700 steps counted by hand, pace changed every 100, the last 100 running; then stood still ~30 s, then walked
+  indoors (not counted) before noting the end time. Edges: 29 strap steps in the 2 min before the start, none after the end.
+- **Result:** over the noted window the strap gave 775 (+10.7 %), but the per-second rows separate the parts: the counted
+  part ends where the run ends, at **709** strap steps (**+9, +1.3 %** vs ~700); the counter is then flat for 32 s (the
+  stop) and adds 66 during the indoor walk. Time per 100 strap steps: 56, 58, 68, 49, 54, 44, 35 s — the pace changes
+  fall at the strap's own 100-step marks, and the last 100 at ~170 steps/min.
+- **Activity code @55:** **2 appeared only during the run** (and 6 s of the brisk indoor walk); 1 during walking; 0 at
+  rest, including the stop. **HYPOTHESIS: 0 still / 1 walking / 2 running** (one run; no other 2 in the stored data).
+- **Conclusion:** two walks within −2.7 % and +1.3 % of hand counts, running included; the counter's increments are
+  timely to the second. Hand counts are approximate, so this bounds error at a few percent, no tighter.
+
+## W03 — timed run, steps not counted (2026-11-17, wearer only, no strap commands)
+
+- **Wearer:** ran for a noted ~2 min 05 s window; no step count. The wearer also judged their W01/W02 hand counts unreliable
+  (likely low), so hand counts are no reference for accuracy: W01/W02 show the counter tracks steps to the second, not an
+  error figure.
+- **Result:** activity code **2 for 2 min 02 s** (one 2-s dip to 1), at a steady 152–164 steps/min, **320 strap steps**;
+  then a few seconds of 1, then 0 (stopped), a short walk, 0. The strap's run started ~31 s before the noted start and ended
+  ~34 s before the noted end: the same length, shifted. The noted times likely came from a clock about 30 s ahead of the
+  Mac/strap (the edges of W01/W02 fit a similar offset).
+- **Conclusion:** activity code **2 = running, CONFIRMED on two runs** (W02, W03); 1 = walking, 0 = still remain
+  SUPPORTED. Note times from the Mac's clock in future checks.
+
 ## C06a, C07 — approved reads (2026-11-17 15:47–15:54, owner-approved "all")
 
 - **Setup:** NOOP running and connected, right after a completed history pull; no alarm within 30 min. Each command in its
