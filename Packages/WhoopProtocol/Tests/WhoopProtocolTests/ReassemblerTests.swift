@@ -190,8 +190,10 @@ final class Whoop5HistoricalTests: XCTestCase {
     func testStepChangePointsAndWindowCounting() {
         func s(_ ts: Int, _ c: Int, _ a: Int = 0) -> StepCounterSample { StepCounterSample(ts: ts, counter: c, activity: a) }
         // Every second for 10 s: still, then walking (+6, +1, +2), then still again; duplicate second ignored.
-        let raw = [s(0, 100), s(1, 100), s(2, 100, 1), s(3, 106, 1), s(3, 999, 1), s(4, 107, 1), s(5, 109, 1),
-                   s(6, 109), s(7, 109), s(8, 109), s(9, 109)].shuffled()
+        let raw = [s(0, 100), s(1, 100), s(2, 100, 1), s(3, 106, 1), s(4, 107, 1), s(5, 109, 1),
+                   s(6, 109), s(7, 109), s(8, 109), s(9, 109)].shuffled() + [s(3, 999, 1)]
+        // Conflicting duplicate comes last: the first input reading at that second must win.
+        XCTAssertEqual(StepCounterSample.changePoints([s(3, 999, 1), s(3, 106, 1)]), [s(3, 999, 1)])
         let cp = StepCounterSample.changePoints(raw)
         XCTAssertEqual(cp, [s(0, 100), s(2, 100, 1), s(3, 106, 1), s(4, 107, 1), s(5, 109, 1), s(6, 109)])
         let w = StepCounterSample.window(cp, from: 1, to: 10)

@@ -15,10 +15,10 @@ This is a convention, not CI: reconcile with the working tree before trusting it
 
 ## 1 · Snapshot
 
-- Refreshed **2026-11-17** (America/New_York). Includes pilot implementations #15–#19, the interrupted-night acceptance fix and #25 phase 1 research docs; experimental estimates and outstanding manual/hardware/accuracy checks are distinguished in §3/§4/§8.
+- Refreshed **2026-11-17** (America/New_York). Includes pilot implementations #15–#19, the interrupted-night fix and #25 research, battery, temperature, wrist-wear and experimental step integrations; experimental estimates and outstanding manual/hardware/accuracy checks are distinguished in §3/§4/§8.
 - **NOOP**: local-only macOS companion for WHOOP 4.0/5.0 straps. Internal target/scheme/package prefix **Strand**; bundle `com.noopapp.noop`, product `NOOP.app`, v0.1.0 (1).
 - 360 first-party files indexed in §7 (tracked + non-ignored untracked, excluding this file). Source size hotspots: `BLEManager.swift` ~2.0k lines, `SleepStager.swift` ~1.3k, `OnboardingWizard.swift` ~1.1k, `TrendSections.swift` ~0.9k — search, don't read whole.
-- Test inventory (methods in files, not pass results): StrandAnalytics 489, WhoopProtocol 156, WhoopStore 118, StrandImport 61, StrandDesign 40 (2 snapshot tests skip without env), hosted StrandTests 88 (4 render tests skip without `NOOP_RENDER_TRENDS=1`, 1 without `NOOP_RENDER_OVERVIEW=1`), Python 28.
+- Test inventory (methods in files, not pass results): StrandAnalytics 489, WhoopProtocol 156, WhoopStore 118, StrandImport 61, StrandDesign 40 (2 snapshot tests skip without env), hosted StrandTests 88 (4 render tests skip without `NOOP_RENDER_TRENDS=1`, 1 without `NOOP_RENDER_OVERVIEW=1`), Python 31.
 
 ## 2 · Architecture and routing
 
@@ -303,6 +303,8 @@ Format: `file` — purpose. Tests list `Suite(methods)`. Fixtures/resources are 
 
 ## 8 · Verification record
 
+- 2026-11-17 step integration: initial protocol run exposed a flaky fixture (conflicting duplicate timestamp shuffled before a fixed expected winner). Fixture now randomizes distinct timestamps and appends the conflicting duplicate, plus checks reversed duplicate order against the documented first-input rule. Revalidation PASS: WhoopProtocol 156, WhoopStore 118, Python whoop_re 26, app build + hosted suite (88 total, 5 expected render skips). No counted walk or new hardware validation.
+
 - 2026-11-17 PR #34 integration: PASS focused WristWear/SkinTemperature/DayCoverage 25, full WhoopProtocol 154, app build + hosted suite. Rebased onto merged #33; diff/index checks clean. Caption visual review and broader hardware validation remain pending.
 
 - 2026-11-17 PR #33 integration: PASS full WhoopProtocol 154, WhoopStore 117, StrandAnalytics 482, Python whoop_re 23, app build + hosted suite. Diff/index checks clean. No live-night, reference thermometer or new hardware validation.
@@ -442,6 +444,7 @@ git ls-files --cached --others --exclude-standard | grep -v -e '^AGENTS.md$' -e 
 
 | Date | Change | Checks / remaining |
 | --- | --- | --- |
+| 2026-11-17 | Integrated #25 origin branches as squash PRs #31–#35; reconciled capability docs and fixed shuffled duplicate fixture. | Probe, package/focused analytics, Python and hosted checks pass; hardware/reference/drain/walk checks remain open. |
 | 2026-11-16 | 5.0 step counter + activity code decoded and stored as change points (schema v19, unvalidated, shown nowhere); `step_walk_check.py` for a counted walk. | Package suites + Python pass; hosted 88 has 11 pre-existing `TrendWindowTests` date-boundary failures; walk not done. |
 | 2026-11-16 | Wrist wear from strap events 10/9: off-wrist intervals exclude skin samples (`skin-temp-night-v2`) and explain Overview coverage gaps. | All suites + hosted 88 pass; DB-copy replay unchanged otherwise; caption not visually checked. |
 | 2026-11-16 | Nightly skin-temperature change from 5.0 samples (`skin-temp-night-v1`): asleep-time median, causal 30-day reference, stored night series + provenance. | All suites + hosted 88 pass; DB-copy replay changes nothing else; no real night with samples yet. |
@@ -449,4 +452,3 @@ git ls-files --cached --others --exclude-standard | grep -v -e '^AGENTS.md$' -e 
 | 2026-11-16 | Event 29 (every 10 min) soc read live as a battery reading; periodic poll skips the level read after a fresh pushed soc (pack info still asked). | WhoopProtocol 152 + build + hosted 88 pass; not run on the strap. |
 | 2026-11-16 | #25 C02a: `ble_probe --passive`; wrist off/on = events 10/9 confirmed live; fd4b0007 silent on probe-only connect. | 0 frames written; C02b (charging), C06, C07 pending. |
 | 2026-11-16 | #25 phase 2: events 29/109/117 battery/charging fields, R18 steps/activity, console-log summary, C03 closed; C02/C06/C07 procedures. | Docs only; offline; strap tests need approval. |
-| 2026-11-16 | #25 desk research: R18 skin temperature + R26 optical layout corroborated on local copies; 151/40/42/44/121/128 payload leads; firmware acquisition no-go. | Docs only; no strap contact; C06/C07 need approval. |
