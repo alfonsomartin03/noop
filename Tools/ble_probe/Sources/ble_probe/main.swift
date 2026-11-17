@@ -86,6 +86,8 @@ struct Options {
     var toggle: UInt8? = nil
     var alarmApproved = false
     var alarmScript: [ScriptStep]? = nil
+    /// Listen only (#25 C02): subscribe + standard SIG reads, never a write to fd4b0002. Enforced in `write`.
+    var passive = false
 }
 
 func parseOptions() -> Options {
@@ -116,12 +118,17 @@ func parseOptions() -> Options {
             }
             o.alarmScript = steps
         case "--hello": o.hello = true
+        case "--passive": o.passive = true
         case "--exp": o.experiment = it.next() ?? o.experiment
         case "--out": o.out = it.next()
         default:
             FileHandle.standardError.write("unknown option \(a)\n".data(using: .utf8)!)
             exit(2)
         }
+    }
+    if o.passive && (o.hello || !o.commands.isEmpty || o.toggle != nil || o.alarmScript != nil || o.alarmApproved) {
+        FileHandle.standardError.write("refusing: --passive cannot be combined with any command option\n".data(using: .utf8)!)
+        exit(2)
     }
     if o.alarmScript != nil && !o.alarmApproved {
         FileHandle.standardError.write("refusing alarm script without --alarm-approved\n".data(using: .utf8)!)
@@ -308,6 +315,7 @@ final class Probe: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     func startCommands() {
         guard !commandsStarted else { return }
         commandsStarted = true
+        if opt.passive { say("passive: no commands will be written"); return }
         // Let subscriptions settle before writing anything.
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
             guard let self, let p = self.peripheral, let c = self.command else {
@@ -379,6 +387,7 @@ final class Probe: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     }
 
     func write(_ frame: [UInt8], cmd: UInt8, seq: UInt8, to c: CBCharacteristic, on p: CBPeripheral) {
+        guard !opt.passive else { say("REFUSED write cmd=\(cmd) in passive mode"); return }
         record(["kind": "frame", "dir": "tx", "ch": c.uuid.uuidString, "len": frame.count, "hex": hex(frame),
                 "cmd": Int(cmd), "seq": Int(seq), "name": commandName(cmd)])
         say("TX cmd=\(cmd) \(commandName(cmd)) seq=\(seq) \(hex(frame))")
@@ -409,7 +418,11 @@ final class Probe: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         guard svc == whoopService else { return }
         let asm = reassemblers[c.uuid] ?? Reassembler(family: .whoop5)
         reassemblers[c.uuid] = asm
-        record(["kind": "fragment", "ch": c.uuid.uuidString, "len": bytes.count])
+        var frag: [String: Any] = ["kind": "fragment", "ch": c.uuid.uuidString, "len": bytes.count]
+        // fd4b0007 (diagnostics) is not WHOOP-framed, so the reassembler would drop it: keep its raw bytes. PRIVATE —
+        // may hold identifiers; never commit a capture with `raw_hex` before a privacy review (#25).
+        if c.uuid.uuidString.hasPrefix("FD4B0007") { frag["raw_hex"] = hex(bytes) }
+        record(frag)
         for frame in asm.feed(bytes) { handle(frame, on: c.uuid) }
     }
 

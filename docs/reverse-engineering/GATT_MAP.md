@@ -15,9 +15,9 @@ those are not listed.
 | 180D Heart Rate | 2A37 HR Measurement | notify | 2902 | streams only while HR broadcast (cmd 14) is on | standard HR | CONFIRMED (app, 2026-10-21) |
 | fd4b0001 WHOOP | fd4b0002 | write, write-without-response | — | command input | commands | CONFIRMED |
 | | fd4b0003 | notify | 2902 | command responses | responses | CONFIRMED |
-| | fd4b0004 | notify | 2902 | silent in E01/E02/E04; live events (56–60, 100, 14) arrived here in real time during H02b–H07 | live events (Asherlc name: EVENTS_FROM_STRAP) | CONFIRMED (H02b–H07); coverage of other event kinds UNKNOWN |
+| | fd4b0004 | notify | 2902 | silent in E01/E02/E04; live events (56–60, 100, 14) during H02b–H07; wrist off/on (10/9) and condition report 29 during C02a | live events (Asherlc name: EVENTS_FROM_STRAP) | CONFIRMED (H02b–H07, C02a) |
 | | fd4b0005 | notify | 2902 | history, events, metadata, console logs | data | CONFIRMED |
-| | fd4b0007 | notify | 2902 | 244-byte fragments at connect, before the hello | diagnostics (Asherlc: MEMFAULT; Goose: "debug") | SUPPORTED |
+| | fd4b0007 | notify | 2902 | 244-byte fragments at connect, before the hello (earlier app sessions); none on a fresh probe-only connect (C02a) | diagnostics (Asherlc: MEMFAULT; Goose: "debug") | SUPPORTED |
 
 Not present on this unit: the "puffin" service `11500001-6215-11ee-8c99-0242ac120002` (Asherlc docs), the
 2BED Battery Level Status characteristic (Goose parses it), 2A28 Software Revision. Absent from E01 and E02.

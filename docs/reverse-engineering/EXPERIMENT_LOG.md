@@ -135,6 +135,17 @@ consumes the slot. **H04: a stored alarm rang at its exact strap time with nothi
 stopped by a double tap (14 + 100 reason 2).** Live events stream on fd4b0004. A fresh connection without the hello
 accepted every command. Details: ALARM_CAPABILITIES.md. **Wearer confirmed feeling all three buzzes** (H07, H06b, H04).
 
+## C02a — passive wear off/on (2026-11-16 14:57–15:02, owner-approved)
+
+- **Tool:** `ble_probe --passive --seconds 300` (new mode: no command option accepted, `write` refuses). Probe wrote **0** frames;
+  it subscribed to fd4b0003/04/05/07 and read DIS/battery (serial redacted). NOOP was not connected at start, so the probe
+  made a fresh connection (no hello).
+- **Wearer actions:** strap off 14:58, back on 15:00 (times from the wearer, minute resolution).
+- **Result:** fd4b0004 delivered event **10** at 14:58:12 and event **9** at 15:00:15 (empty bodies), plus event 29 at 14:58:44
+  (soc field 994 = 99.4 %, 2A19 = 99). fd4b0007 sent nothing. DIS read live: fw `50.43.1.0`, hw `WG50_r52`.
+- **Conclusion:** wrist off = 10, wrist on = 9 (CONFIRMED once). Capture: `captures/C02a-wear-off-on.jsonl` (redacted).
+- **C02b (charging):** not run — no charging pack available; still approved in scope for later.
+
 ## Next experiments (need approval or the wearer)
 
 1. **E05** strap off-wrist for 2 min, then on: look for wrist events and the console wear-detect line.
