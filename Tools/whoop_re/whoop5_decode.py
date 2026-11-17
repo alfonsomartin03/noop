@@ -179,6 +179,9 @@ def decode(frame: bytes, redact: bool = True) -> dict:
             # SUPPORTED (#25): skin temperature u16 at payload 65, 1/100 degC; outside 5-45 degC = missing (as the app)
             raw = struct.unpack_from("<H", p, 65)[0]
             d["skin_temp_c"] = raw / 100 if 500 <= raw <= 4500 else None
+            # UNVALIDATED (#25): on-strap step counter u16 @49 and activity code u8 @55 (as the app stores them)
+            d["step_counter"] = struct.unpack_from("<H", p, 49)[0]
+            d["activity"] = p[55]
     else:
         d["raw"] = p.hex()
     return d

@@ -60,6 +60,57 @@ public struct SkinTempSample: Equatable, Codable {
     }
 }
 
+/// WHOOP 5.0 on-strap step counter at one second (type-47 v0x12 payload 49 u16) and its activity code (payload 55).
+/// UNVALIDATED (issue #25): the counter rose only within 5 s of activity code 1 on 7/7 local increments, and fell
+/// between days (a reset; when it resets is unknown). Not shown anywhere until a counted walk agrees with it.
+public struct StepCounterSample: Equatable, Codable {
+    public let ts: Int
+    public let counter: Int
+    public let activity: Int
+    public init(ts: Int, counter: Int, activity: Int) { self.ts = ts; self.counter = counter; self.activity = activity }
+
+    /// Only the seconds where the counter or the activity code changed (plus the first), so a day costs a few
+    /// thousand rows instead of 86,400. Input in any order; duplicate seconds keep the first.
+    public static func changePoints(_ samples: [StepCounterSample]) -> [StepCounterSample] {
+        var out: [StepCounterSample] = []
+        for s in samples.sorted(by: { $0.ts < $1.ts }) {
+            if let last = out.last, last.ts == s.ts || (last.counter == s.counter && last.activity == s.activity) { continue }
+            out.append(s)
+        }
+        return out
+    }
+
+    public struct Window: Equatable, Sendable {
+        /// Sum of counter increases between the last row at/before `from` and the last row before `to`.
+        public let steps: Int
+        /// Counter decreases inside the window: their steps are NOT counted (reset time unknown).
+        public let resets: Int
+        /// False when no row at/before `from` exists: the first increase can't be measured.
+        public let hasStartReference: Bool
+        /// Seconds whose activity code was 1 (as recorded by change points).
+        public let activityOneSeconds: Int
+    }
+
+    /// Steps counted by the strap in [from, to). `samples` are change points (or every second) in any order.
+    public static func window(_ samples: [StepCounterSample], from: Int, to: Int) -> Window {
+        let s = samples.sorted { $0.ts < $1.ts }
+        let start = s.last { $0.ts <= from }
+        let inside = s.filter { $0.ts > from && $0.ts < to }
+        var steps = 0, resets = 0, prev = start?.counter
+        for r in inside {
+            if let p = prev { if r.counter >= p { steps += r.counter - p } else { resets += 1 } }
+            prev = r.counter
+        }
+        var active = 0
+        let chain = (start.map { [$0] } ?? []) + inside
+        for (i, r) in chain.enumerated() where r.activity == 1 {
+            let a = max(r.ts, from), b = i + 1 < chain.count ? chain[i + 1].ts : to
+            if b > a { active += b - a }
+        }
+        return Window(steps: steps, resets: resets, hasStartReference: start != nil, activityOneSeconds: active)
+    }
+}
+
 public struct RespSample: Equatable, Codable {
     public let ts: Int
     public let raw: Int
@@ -90,17 +141,19 @@ public struct Streams: Equatable, Codable {
     public var gravity: [GravitySample]
     public var events: [WhoopEvent]
     public var battery: [BatterySample]
+    /// 5.0 step-counter change points (unvalidated; stored for a counted-walk check, not used by scoring or UI).
+    public var steps: [StepCounterSample]
     public init(hr: [HRSample] = [], rr: [RRInterval] = [],
                 spo2: [SpO2Sample] = [], skinTemp: [SkinTempSample] = [],
                 resp: [RespSample] = [], gravity: [GravitySample] = [],
-                events: [WhoopEvent] = [], battery: [BatterySample] = []) {
+                events: [WhoopEvent] = [], battery: [BatterySample] = [], steps: [StepCounterSample] = []) {
         self.hr = hr; self.rr = rr
         self.spo2 = spo2; self.skinTemp = skinTemp; self.resp = resp; self.gravity = gravity
-        self.events = events; self.battery = battery
+        self.events = events; self.battery = battery; self.steps = steps
     }
 
     private enum CodingKeys: String, CodingKey {
-        case hr, rr, spo2, skinTemp = "skin_temp", resp, gravity, events, battery
+        case hr, rr, spo2, skinTemp = "skin_temp", resp, gravity, events, battery, steps
     }
 
     // Custom decode so older fixtures (streams_golden.json / historical_golden.json) that
@@ -116,6 +169,7 @@ public struct Streams: Equatable, Codable {
         gravity = try c.decodeIfPresent([GravitySample].self, forKey: .gravity) ?? []
         events = try c.decodeIfPresent([WhoopEvent].self, forKey: .events) ?? []
         battery = try c.decodeIfPresent([BatterySample].self, forKey: .battery) ?? []
+        steps = try c.decodeIfPresent([StepCounterSample].self, forKey: .steps) ?? []
     }
 }
 
@@ -224,7 +278,10 @@ public func decodeWhoop5Realtime(_ frame: [UInt8]) -> Whoop5Realtime? {
 ///
 /// Payload offsets (payload = frame[8 ..< len-4]):
 ///   0 type 47 · 1 version 0x12 · 3 counter · 7 timestamp u32 (unix s) · 14 heart_rate u8 · 15 rr_count u8
-///   16 rr[i] u16 ms · 37/41/45 gravity x/y/z float32 (g) · 65 skin temperature u16, 1/100 °C
+///   16 rr[i] u16 ms · 37/41/45 gravity x/y/z float32 (g) · 49 step counter u16 · 55 activity code u8
+///   · 65 skin temperature u16, 1/100 °C
+/// Step counter / activity (issue #25): ryanbr/noop R18 layout; locally the counter rose only around activity code 1.
+/// UNVALIDATED against counted steps: stored for that check, shown nowhere.
 /// Skin temperature (issue #25): offset and scale from two independent layouts (ryanbr/noop R18 frame byte 73,
 /// Asherlc payload 65), consistent on 544/544 local raw frames (≈ 35 °C, matching the firmware console's
 /// `skin_temp`). SUPPORTED, not calibrated against a reference thermometer; wrist skin, not core temperature.
@@ -236,6 +293,9 @@ public struct Whoop5HistoricalRecord: Equatable, Sendable {
     public let gravity: (x: Double, y: Double, z: Double)?
     /// Wrist skin temperature in 1/100 °C, nil outside the accepted 5–45 °C (`skinTempCentiCRange`): missing, never 0.
     public let skinTempCentiC: Int?
+    /// On-strap step counter (payload 49) and activity code (payload 55); see `StepCounterSample`. UNVALIDATED.
+    public let stepCounter: Int?
+    public let activity: Int?
 
     /// Plausibility gate for the skin-temperature word (5–45 °C, as in ryanbr/noop). Off-wrist ambient readings can
     /// fall inside it; telling them apart is left to analysis.
@@ -243,15 +303,16 @@ public struct Whoop5HistoricalRecord: Equatable, Sendable {
     /// `SkinTempSample.unit` for these values (4.0 samples are "raw_adc").
     public static let skinTempUnit = "centi_celsius"
 
-    public init(timestamp: Int, heartRate: Int, rr: [Int], gravity: (x: Double, y: Double, z: Double)?, skinTempCentiC: Int? = nil) {
+    public init(timestamp: Int, heartRate: Int, rr: [Int], gravity: (x: Double, y: Double, z: Double)?, skinTempCentiC: Int? = nil,
+                stepCounter: Int? = nil, activity: Int? = nil) {
         self.timestamp = timestamp; self.heartRate = heartRate; self.rr = rr; self.gravity = gravity
-        self.skinTempCentiC = skinTempCentiC
+        self.skinTempCentiC = skinTempCentiC; self.stepCounter = stepCounter; self.activity = activity
     }
 
     public static func == (a: Self, b: Self) -> Bool {
         a.timestamp == b.timestamp && a.heartRate == b.heartRate && a.rr == b.rr
             && a.gravity?.x == b.gravity?.x && a.gravity?.y == b.gravity?.y && a.gravity?.z == b.gravity?.z
-            && a.skinTempCentiC == b.skinTempCentiC
+            && a.skinTempCentiC == b.skinTempCentiC && a.stepCounter == b.stepCounter && a.activity == b.activity
     }
 }
 
@@ -275,5 +336,6 @@ public func decodeWhoop5Historical(_ frame: [UInt8]) -> Whoop5HistoricalRecord? 
     let gravity = (0.7...1.3).contains(norm) ? g : nil
     let skin = Int(p[65]) | Int(p[66]) << 8
     let skinTemp = Whoop5HistoricalRecord.skinTempCentiCRange.contains(skin) ? skin : nil
-    return Whoop5HistoricalRecord(timestamp: ts, heartRate: hr, rr: rr, gravity: gravity, skinTempCentiC: skinTemp)
+    return Whoop5HistoricalRecord(timestamp: ts, heartRate: hr, rr: rr, gravity: gravity, skinTempCentiC: skinTemp,
+                                  stepCounter: Int(p[49]) | Int(p[50]) << 8, activity: Int(p[55]))
 }

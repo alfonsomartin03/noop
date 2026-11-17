@@ -149,4 +149,15 @@ final class SkinTempUnitTests: XCTestCase {
         XCTAssertNil(rows[0].celsius, "no verified conversion for 4.0 ADC counts")
         XCTAssertEqual(try XCTUnwrap(rows[1].celsius), 35.08, accuracy: 1e-9)
     }
+
+    func testStepCounterRowsRoundTripIdempotently() async throws {
+        let store = try await WhoopStore.inMemory()
+        try await store.upsertDevice(id: "dev1", mac: nil, name: nil)
+        let rows = [StepCounterSample(ts: 1_700_000_000, counter: 7452, activity: 0),
+                    StepCounterSample(ts: 1_700_000_005, counter: 7458, activity: 1)]
+        _ = try await store.insert(Streams(steps: rows), deviceId: "dev1")
+        _ = try await store.insert(Streams(steps: rows), deviceId: "dev1")
+        let back = try await store.stepCounterSamples(deviceId: "dev1", from: 0, to: 2_000_000_000)
+        XCTAssertEqual(back, rows)
+    }
 }
