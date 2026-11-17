@@ -171,6 +171,18 @@ accepted every command. Details: ALARM_CAPABILITIES.md. **Wearer confirmed feeli
 - **Conclusion:** two walks within −2.7 % and +1.3 % of hand counts, running included; the counter's increments are
   timely to the second. Hand counts are approximate, so this bounds error at a few percent, no tighter.
 
+## W03 — timed run, steps not counted (2026-11-17, wearer only, no strap commands)
+
+- **Wearer:** ran for a noted ~2 min 05 s window; no step count. The wearer also judged their W01/W02 hand counts unreliable
+  (likely low), so hand counts are no reference for accuracy: W01/W02 show the counter tracks steps to the second, not an
+  error figure.
+- **Result:** activity code **2 for 2 min 02 s** (one 2-s dip to 1), at a steady 152–164 steps/min, **320 strap steps**;
+  then a few seconds of 1, then 0 (stopped), a short walk, 0. The strap's run started ~31 s before the noted start and ended
+  ~34 s before the noted end: the same length, shifted. The noted times likely came from a clock about 30 s ahead of the
+  Mac/strap (the edges of W01/W02 fit a similar offset).
+- **Conclusion:** activity code **2 = running, CONFIRMED on two runs** (W02, W03); 1 = walking, 0 = still remain
+  SUPPORTED. Note times from the Mac's clock in future checks.
+
 ## Next experiments (need approval or the wearer)
 
 1. **E05** strap off-wrist for 2 min, then on: look for wrist events and the console wear-detect line.
