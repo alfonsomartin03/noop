@@ -156,8 +156,20 @@ accepted every command. Details: ALARM_CAPABILITIES.md. **Wearer confirmed feeli
   steps and the 20 s before it ~17, so a few seconds of clock/timing offset moves the total by ~±20.
 - **Conclusion:** the counter at payload 49 counts steps — **SUPPORTED by one walk** within a few percent; the hand count's
   own error and the moving edges are of the same size as the difference. Not validated for display.
-- **Next:** 2–3 more walks with ≥ 30 s standing still before and after (different paces; one ≥ 1,000 steps), and one
-  across local midnight to time the reset.
+- **Next:** see W02; still open: a ≥ 1,000-step walk with still edges, and the reset time across local midnight.
+
+## W02 — counted walk with pace changes and a run (2026-11-17, wearer only, no strap commands)
+
+- **Wearer:** ~700 steps counted by hand, pace changed every 100, the last 100 running; then stood still ~30 s, then walked
+  indoors (not counted) before noting the end time. Edges: 29 strap steps in the 2 min before the start, none after the end.
+- **Result:** over the noted window the strap gave 775 (+10.7 %), but the per-second rows separate the parts: the counted
+  part ends where the run ends, at **709** strap steps (**+9, +1.3 %** vs ~700); the counter is then flat for 32 s (the
+  stop) and adds 66 during the indoor walk. Time per 100 strap steps: 56, 58, 68, 49, 54, 44, 35 s — the pace changes
+  fall at the strap's own 100-step marks, and the last 100 at ~170 steps/min.
+- **Activity code @55:** **2 appeared only during the run** (and 6 s of the brisk indoor walk); 1 during walking; 0 at
+  rest, including the stop. **HYPOTHESIS: 0 still / 1 walking / 2 running** (one run; no other 2 in the stored data).
+- **Conclusion:** two walks within −2.7 % and +1.3 % of hand counts, running included; the counter's increments are
+  timely to the second. Hand counts are approximate, so this bounds error at a few percent, no tighter.
 
 ## Next experiments (need approval or the wearer)
 
