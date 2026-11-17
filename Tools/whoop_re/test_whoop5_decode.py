@@ -146,6 +146,15 @@ class Decoding(unittest.TestCase):
         for raw in (0, 499, 4501, 0xFFFF):
             self.assertIsNone(record(raw)["skin_temp_c"])
 
+    def test_historical_step_counter(self):
+        p = bytearray(112)
+        p[0], p[1] = 47, 0x12
+        p[7:11] = (1791574000).to_bytes(4, "little")
+        p[49:51] = (7452).to_bytes(2, "little")
+        p[55] = 1
+        d = w.decode(w.build_frame(bytes(p)))
+        self.assertEqual((d["step_counter"], d["activity"]), (7452, 1))
+
 
 if __name__ == "__main__":
     unittest.main()

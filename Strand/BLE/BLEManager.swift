@@ -1106,7 +1106,12 @@ public final class BLEManager: NSObject, ObservableObject {
         let skin = recs.compactMap { r in
             r.skinTempCentiC.map { SkinTempSample(ts: r.timestamp, raw: $0, unit: Whoop5HistoricalRecord.skinTempUnit) }
         }
-        guard let n = await collector?.persistDecodedHistory(Streams(hr: hr, rr: rr, skinTemp: skin, gravity: grav, events: events)) else {
+        // Step counter + activity code, change points only. UNVALIDATED: stored for a counted-walk check, shown nowhere.
+        let steps = StepCounterSample.changePoints(recs.compactMap { r in
+            r.stepCounter.map { StepCounterSample(ts: r.timestamp, counter: $0, activity: r.activity ?? 0) }
+        })
+        guard let n = await collector?.persistDecodedHistory(Streams(hr: hr, rr: rr, skinTemp: skin, gravity: grav, events: events,
+                                                                     steps: steps)) else {
             return nil
         }
         state.syncSavedRows += n

@@ -127,9 +127,11 @@ final class Whoop5RealtimeTests: XCTestCase {
 
 // Checks the decoded stored-record layout and its sanity filters.
 final class Whoop5HistoricalTests: XCTestCase {
-    private func record(ts: UInt32, hr: UInt8, rr: [UInt16], g: (Float, Float, Float), skin: UInt16 = 0) -> [UInt8] {
+    private func record(ts: UInt32, hr: UInt8, rr: [UInt16], g: (Float, Float, Float), skin: UInt16 = 0,
+                        steps: UInt16 = 0, activity: UInt8 = 0) -> [UInt8] {
         var p = [UInt8](repeating: 0, count: 112)
         p[65] = UInt8(skin & 0xFF); p[66] = UInt8(skin >> 8)
+        p[49] = UInt8(steps & 0xFF); p[50] = UInt8(steps >> 8); p[55] = activity
         p[0] = 47; p[1] = 0x12
         for i in 0..<4 { p[7 + i] = UInt8((ts >> (8 * UInt32(i))) & 0xFF) }
         p[14] = hr; p[15] = UInt8(rr.count)
@@ -176,6 +178,30 @@ final class Whoop5HistoricalTests: XCTestCase {
         for raw: UInt16 in [500, 4500] {
             XCTAssertEqual(decodeWhoop5Historical(record(ts: 1_791_574_000, hr: 60, rr: [], g: (0, 0, 1), skin: raw))?.skinTempCentiC, Int(raw))
         }
+    }
+
+    func testDecodesStepCounterAndActivityCode() throws {
+        let r = try XCTUnwrap(decodeWhoop5Historical(record(ts: 1_791_574_000, hr: 92, rr: [], g: (0, 0, 1), steps: 7452, activity: 1)))
+        XCTAssertEqual(r.stepCounter, 7452)
+        XCTAssertEqual(r.activity, 1)
+        XCTAssertEqual(r.heartRate, 92)
+    }
+
+    func testStepChangePointsAndWindowCounting() {
+        func s(_ ts: Int, _ c: Int, _ a: Int = 0) -> StepCounterSample { StepCounterSample(ts: ts, counter: c, activity: a) }
+        // Every second for 10 s: still, then walking (+6, +1, +2), then still again; duplicate second ignored.
+        let raw = [s(0, 100), s(1, 100), s(2, 100, 1), s(3, 106, 1), s(3, 999, 1), s(4, 107, 1), s(5, 109, 1),
+                   s(6, 109), s(7, 109), s(8, 109), s(9, 109)].shuffled()
+        let cp = StepCounterSample.changePoints(raw)
+        XCTAssertEqual(cp, [s(0, 100), s(2, 100, 1), s(3, 106, 1), s(4, 107, 1), s(5, 109, 1), s(6, 109)])
+        let w = StepCounterSample.window(cp, from: 1, to: 10)
+        XCTAssertEqual(w, .init(steps: 9, resets: 0, hasStartReference: true, activityOneSeconds: 4))
+        XCTAssertEqual(StepCounterSample.window(cp, from: 3, to: 5).steps, 1, "increase at `from` belongs before the window")
+        XCTAssertFalse(StepCounterSample.window(cp, from: -5, to: 10).hasStartReference)
+        // A drop is a reset: counted as a reset, never as negative or as the new total.
+        let reset = StepCounterSample.window([s(0, 10_000), s(5, 10_010), s(6, 3), s(9, 8)], from: 0, to: 10)
+        XCTAssertEqual(reset.steps, 15)
+        XCTAssertEqual(reset.resets, 1)
     }
 
     func testDropsImplausibleGravityButKeepsHeartRate() throws {

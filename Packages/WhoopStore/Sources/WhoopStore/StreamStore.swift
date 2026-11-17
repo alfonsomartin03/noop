@@ -118,6 +118,13 @@ extension WhoopStore {
                     skin += db.changesCount
                 }
             }
+            if !streams.steps.isEmpty {
+                let stmt = try db.cachedStatement(sql: """
+                    INSERT INTO stepCounterSample (deviceId, ts, counter, activity) VALUES (?, ?, ?, ?)
+                    ON CONFLICT(deviceId, ts) DO NOTHING
+                    """)
+                for s in streams.steps { try stmt.execute(arguments: [deviceId, s.ts, s.counter, s.activity]) }
+            }
             if !streams.resp.isEmpty {
                 let stmt = try db.cachedStatement(sql: """
                     INSERT INTO respSample (deviceId, ts, raw) VALUES (?, ?, ?)

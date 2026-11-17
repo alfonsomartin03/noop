@@ -408,6 +408,17 @@ extension WhoopStore {
                 t.add(column: "unit", .text).notNull().defaults(to: "raw_adc")
             }
         }
+        migrator.registerMigration("v19") { db in
+            // 5.0 on-strap step counter (type-47 v0x12 payload 49) + activity code (55), change points only.
+            // UNVALIDATED: kept for a counted-walk check; nothing scores or shows it.
+            try db.create(table: "stepCounterSample") { t in
+                t.column("deviceId", .text).notNull()
+                t.column("ts", .integer).notNull()
+                t.column("counter", .integer).notNull()
+                t.column("activity", .integer).notNull()
+                t.primaryKey(["deviceId", "ts"])
+            }
+        }
         return migrator
     }
 }

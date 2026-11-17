@@ -92,6 +92,17 @@ extension WhoopStore {
         }
     }
 
+    /// 5.0 step-counter change points in [from, to] (unvalidated; research only).
+    public func stepCounterSamples(deviceId: String, from: Int, to: Int) async throws -> [StepCounterSample] {
+        try syncRead { db in
+            try Row.fetchAll(db, sql: """
+                SELECT ts, counter, activity FROM stepCounterSample
+                WHERE deviceId = ? AND ts >= ? AND ts <= ? ORDER BY ts ASC
+                """, arguments: [deviceId, from, to])
+                .map { StepCounterSample(ts: $0["ts"], counter: $0["counter"], activity: $0["activity"]) }
+        }
+    }
+
     public func respSamples(deviceId: String, from: Int, to: Int, limit: Int) async throws -> [RespSample] {
         try syncRead { db in
             try Self.fetchStream(db, sql: """
