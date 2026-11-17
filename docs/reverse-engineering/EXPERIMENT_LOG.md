@@ -146,6 +146,19 @@ accepted every command. Details: ALARM_CAPABILITIES.md. **Wearer confirmed feeli
 - **Conclusion:** wrist off = 10, wrist on = 9 (CONFIRMED once). Capture: `captures/C02a-wear-off-on.jsonl` (redacted).
 - **C02b (charging):** not run — no charging pack available; still approved in scope for later.
 
+## W01 — counted walk vs stored step counter (2026-11-17, wearer only, no strap commands)
+
+- **Setup:** NOOP from `main` (schema v19) connected and syncing normally; nothing else talked to the strap.
+- **Wearer:** one continuous ~4-minute walk, steps counted by hand (count may be slightly low by the wearer's own account),
+  start/end times to the second. The wearer was moving shortly before and after, not standing still.
+- **Result** (`step_walk_check.py` on a SQLite-backup copy, after the next history pull): strap **326** vs counted **335**
+  (−9, **−2.7 %**), 0 resets, 196 of 245 s at activity code 1. Edge sensitivity: the 2 min before the start held 47 strap
+  steps and the 20 s before it ~17, so a few seconds of clock/timing offset moves the total by ~±20.
+- **Conclusion:** the counter at payload 49 counts steps — **SUPPORTED by one walk** within a few percent; the hand count's
+  own error and the moving edges are of the same size as the difference. Not validated for display.
+- **Next:** 2–3 more walks with ≥ 30 s standing still before and after (different paces; one ≥ 1,000 steps), and one
+  across local midnight to time the reset.
+
 ## Next experiments (need approval or the wearer)
 
 1. **E05** strap off-wrist for 2 min, then on: look for wrist events and the console wear-detect line.
