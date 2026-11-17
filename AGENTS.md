@@ -299,6 +299,8 @@ Format: `file` — purpose. Tests list `Suite(methods)`. Fixtures/resources are 
 
 ## 8 · Verification record
 
+- 2026-11-17 PR #34 integration: PASS focused WristWear/SkinTemperature/DayCoverage 25, full WhoopProtocol 154, app build + hosted suite. Rebased onto merged #33; diff/index checks clean. Caption visual review and broader hardware validation remain pending.
+
 - 2026-11-17 PR #33 integration: PASS full WhoopProtocol 154, WhoopStore 117, StrandAnalytics 482, Python whoop_re 23, app build + hosted suite. Diff/index checks clean. No live-night, reference thermometer or new hardware validation.
 - 2026-11-16 wrist wear: PASS StrandAnalytics 489 (7 new `WristWearTests`: pairing incl. old unnamed rows and double-encoded numbers, repeated off / stray on, open interval vs known data, same-second order, overlap seconds, skin night excludes an off-wrist hour, coverage explains strap-reported time and drops the warning, never claims it without events, version in `algorithmKey`), WhoopProtocol 152 (9/10 names), WhoopStore 117, StrandImport 61, perf_probe/strain_replay/ble_probe builds, app build + hosted 88 (5 env skips). DB-copy replay: 21 days re-scored (`algorithm`), no other field or sleep row changed; the copy's two real off/on pairs are 23–26 s (below the 1-min caption threshold). NOT done: Overview card visually checked with an off-wrist day, a longer real removal in the app.
 
