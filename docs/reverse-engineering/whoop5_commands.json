@@ -143,7 +143,7 @@
    "goose_gate": "U",
    "device": "WHOOP 5.0 (Goose table); numbers shared with 4.0 enum unless noted",
    "payload_sent": "[1,47,152,0,0,0,0,0,0,0,0,1,0]",
-   "observed_result": "PENDING\u2192SUCCESS (SUCCESSFUL_PLAY)",
+   "observed_result": "PENDING→SUCCESS (SUCCESSFUL_PLAY)",
    "response_len": 20,
    "confidence": "CONFIRMED",
    "notes": "H07: one-loop buzz; events 60 then 100 (expired).",
@@ -177,7 +177,7 @@
    "observed_result": "SUCCESS",
    "response_len": 20,
    "confidence": "CONFIRMED",
-   "notes": "starts history: START/records/END\u2026 then COMPLETE on fd4b0005 (app logs).",
+   "notes": "starts history: START/records/END… then COMPLETE on fd4b0005 (app logs).",
    "safety": "reversible, approval per experiment",
    "sources": [
     "b-nnett/goose commands.rs",
@@ -282,7 +282,7 @@
    "goose_gate": "R",
    "device": "WHOOP 5.0 (Goose table); numbers shared with 4.0 enum unless noted",
    "payload_sent": "[]",
-   "observed_result": "PENDING\u2192SUCCESS",
+   "observed_result": "PENDING→SUCCESS",
    "response_len": 84,
    "confidence": "CONFIRMED",
    "notes": "PENDING (20 B) then 84 B body; layout in PACKET_TYPES.md (E02, app logs).",
@@ -372,14 +372,15 @@
    "name": "GET_LED_DRIVE",
    "goose_gate": "R",
    "device": "WHOOP 5.0 (Goose table); numbers shared with 4.0 enum unless noted",
-   "payload_sent": null,
-   "observed_result": null,
-   "response_len": null,
-   "confidence": "SUPPORTED",
-   "notes": "",
-   "safety": "auto (read-only)",
+   "payload_sent": "[]",
+   "observed_result": "UNSUPPORTED",
+   "response_len": 20,
+   "confidence": "CONFIRMED",
+   "notes": "C07 2026-11-17: result 3, body 000000.",
+   "safety": "probe only (C07)",
    "sources": [
-    "b-nnett/goose commands.rs"
+    "b-nnett/goose commands.rs",
+    "live: this strap"
    ]
   },
   {
@@ -402,14 +403,15 @@
    "name": "GET_TIA_GAIN",
    "goose_gate": "R",
    "device": "WHOOP 5.0 (Goose table); numbers shared with 4.0 enum unless noted",
-   "payload_sent": null,
-   "observed_result": null,
-   "response_len": null,
-   "confidence": "SUPPORTED",
-   "notes": "",
-   "safety": "auto (read-only)",
+   "payload_sent": "[]",
+   "observed_result": "UNSUPPORTED",
+   "response_len": 20,
+   "confidence": "CONFIRMED",
+   "notes": "C07 2026-11-17: result 3, body 000000.",
+   "safety": "probe only (C07)",
    "sources": [
-    "b-nnett/goose commands.rs"
+    "b-nnett/goose commands.rs",
+    "live: this strap"
    ]
   },
   {
@@ -432,14 +434,15 @@
    "name": "GET_BIAS_OFFSET",
    "goose_gate": "R",
    "device": "WHOOP 5.0 (Goose table); numbers shared with 4.0 enum unless noted",
-   "payload_sent": null,
-   "observed_result": null,
-   "response_len": null,
-   "confidence": "SUPPORTED",
-   "notes": "",
-   "safety": "auto (read-only)",
+   "payload_sent": "[]",
+   "observed_result": "UNSUPPORTED",
+   "response_len": 20,
+   "confidence": "CONFIRMED",
+   "notes": "C07 2026-11-17: result 3, body 000000.",
+   "safety": "probe only (C07)",
    "sources": [
-    "b-nnett/goose commands.rs"
+    "b-nnett/goose commands.rs",
+    "live: this strap"
    ]
   },
   {
@@ -511,7 +514,7 @@
    "observed_result": "SUCCESS (VALID_PATTERN)",
    "response_len": 20,
    "confidence": "CONFIRMED",
-   "notes": "H02b/H04: id 1 accepted, event 56; rang autonomously at the stored time (event 57). id 0 \u2192 INVALID_ALARM_ID.",
+   "notes": "H02b/H04: id 1 accepted, event 56; rang autonomously at the stored time (event 57). id 0 → INVALID_ALARM_ID.",
    "safety": "restricted: needs reviewed procedure + approval",
    "sources": [
     "b-nnett/goose commands.rs",
@@ -540,7 +543,7 @@
    "goose_gate": "U",
    "device": "WHOOP 5.0 (Goose table); numbers shared with 4.0 enum unless noted",
    "payload_sent": "[2,1]",
-   "observed_result": "PENDING\u2192SUCCESS (SUCCESSFUL_PLAY)",
+   "observed_result": "PENDING→SUCCESS (SUCCESSFUL_PLAY)",
    "response_len": 20,
    "confidence": "CONFIRMED",
    "notes": "H06b: plays the stored alarm now (event 58 + 60) and clears the slot.",
@@ -681,7 +684,7 @@
    "observed_result": "FAILURE",
    "response_len": 24,
    "confidence": "CONFIRMED",
-   "notes": "result 0, body 01 00\u2026; payload probably needs arguments (E02).",
+   "notes": "result 0, body 01 00…; payload probably needs arguments (E02).",
    "safety": "auto (read-only)",
    "sources": [
     "b-nnett/goose commands.rs",
@@ -920,7 +923,7 @@
    "goose_gate": "U",
    "device": "WHOOP 5.0 (Goose table); numbers shared with 4.0 enum unless noted",
    "payload_sent": "[1]",
-   "observed_result": "PENDING\u2192FAILURE when nothing plays",
+   "observed_result": "PENDING→FAILURE when nothing plays",
    "response_len": 20,
    "confidence": "CONFIRMED",
    "notes": "H07: sent after the buzz ended.",
@@ -1116,7 +1119,7 @@
    "goose_gate": "R",
    "device": "WHOOP 5.0 (Goose table); numbers shared with 4.0 enum unless noted",
    "payload_sent": "[01]",
-   "observed_result": "PENDING\u2192SUCCESS",
+   "observed_result": "PENDING→SUCCESS",
    "response_len": 124,
    "confidence": "CONFIRMED",
    "notes": "static CLIENT_HELLO; two 124-byte responses (result 2 then 1). Body holds identity/session data: redacted, never logged.",
@@ -1135,7 +1138,7 @@
    "observed_result": "FAILURE",
    "response_len": 48,
    "confidence": "CONFIRMED",
-   "notes": "result 0, body 01 + 30 zero bytes (E02). App: this shape = unavailable (not proof of detachment), SUCCESS = answeredUndecoded (Whoop5Charging.packInfo); attached reply not captured.",
+   "notes": "result 0, body 01 + 30 zero bytes (E02). App: this shape = unavailable (not proof of detachment), SUCCESS = answeredUndecoded (Whoop5Charging.packInfo); attached reply not captured. C06a 2026-11-17: payload [01] gives SUCCESS, body 01 + 30 zeros (pack off); the app still sends [].",
    "safety": "auto (read-only)",
    "sources": [
     "b-nnett/goose commands.rs",
