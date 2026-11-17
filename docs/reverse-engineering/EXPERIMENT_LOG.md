@@ -205,6 +205,19 @@ accepted every command. Details: ALARM_CAPABILITIES.md. **Wearer confirmed feeli
   reports) → a periodic summary, meaning open.
 - **Event 14:** 0 occurrences during ~1.6 h of step data with two walks and a run → not a motion/step detector.
 
+## Offline re-check — clock, steps, optical bursts, event 120, alarm writes (2026-11-17 evening, no strap contact)
+
+- **Strap clock:** receipt − strap time of live events (app alarm history) gives a daily minimum rising 22.2 s (Nov 5) →
+  38.9 s (Nov 17), +1.41 s/day (~16 ppm); Nov 2 GET_CLOCK replies (17.9–18.9 s) match the live events in the same
+  captures, so latency < ~1 s. NOOP never sends SET_CLOCK to a 5.0 (not allowlisted), so stored 5.0 times run ~40 s
+  late. Re-reads C02a: 14:58:12 / 15:00:15 were Mac receipt times of events stamped 14:57:34 / 14:59:37 strap time.
+- **Step resets:** only two decreases in all local data, bounded by 7- and 26-day gaps → reset timing unobservable yet.
+- **Optical bursts:** the earlier "58 % vs ≈ 6 % chance" does not survive controls (EVIDENCE_MATRIX.md §3); with the
+  stored deltas a weak HR relation remains (HR ≥ 80: 28 % vs 9 % shuffled).
+- **Event 120:** the HR correlation is mostly time-of-day and movement; no field replicates under split-half Bonferroni.
+- **Alarm writes:** 2 event-56 rows on Nov 17 (was ~50/day); app history: 1 deadline SET, 1 ring-now SET, 52 GET verifies.
+- Tools: `strap_clock_offset.py`, `step_reset_scan.py`, `ppg_burst_check.py`, `event120_check.py` (copies only).
+
 ## Next experiments (need approval or the wearer)
 
 1. **E05** strap off-wrist for 2 min, then on: look for wrist events and the console wear-detect line.
