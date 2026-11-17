@@ -97,7 +97,7 @@ Packages (all Swift tools 5.9, platforms macOS 13 / iOS 16; **only a macOS app t
 - 5.0 undecodable history → `RawHistoryArchive` (UTC-day JSONL in `OpenWhoop/undecoded-history`, fsync before return, never pruned). Archive failure must block acknowledgement.
 - Clocks are explicit (`DeviceClock`, `ClockCorrelation`, `ClockPolicy`): type-47 history carries Unix time; realtime may need device/host correlation.
 - `BackfillPolicy` rate-limits sync triggers; `StuckStrapDetector` compares strap availability to persisted HR frontier.
-- Before hardware work read `docs/reverse-engineering/SAFETY_MATRIX.md`, `COMMAND_REGISTRY.md` and relevant captures. Evidence is scoped to WHOOP 5.0 fw 50.43.1.0 / hw WG50_r52.
+- Before hardware work read `docs/reverse-engineering/SAFETY_MATRIX.md`, `COMMAND_REGISTRY.md` and relevant captures. Evidence is scoped to WHOOP 5.0 fw 50.43.1.0 / hw WG50_r52. #25 C06a/C07 (2026-11-17, owner-approved): 151 with `[01]` answers SUCCESS (body `01` + zeros, pack off; the app still sends `[]` → FAILURE = `unavailable`, unchanged until a pack-on reply is captured); 40/42/44 answer UNSUPPORTED. Offline: v0x1a bursts are a 25 Hz single-channel PPG (HR-matched; no SpO₂); event 110 = charger-status report (hypothesis); 120 tracks prior-2-h HR (meaning open); event 14 does not fire while walking/running. Not decoded by the app.
 
 ### Storage, imports and scoring
 
@@ -287,7 +287,7 @@ Format: `file` — purpose. Tests list `Suite(methods)`. Fixtures/resources are 
 - Tests: `PlaceholderTests` = StrandDesignTests(25), `ZoneSpectrumTests`(5), `TrendChartGapTests`(7), `WidgetSnapshotTests`(2, need `STRAND_SNAPSHOT_DIR`). `Package.swift`.
 
 ### `Tools`
-- `ble_probe/` — `Sources/ble_probe/main.swift` scripted BLE research probe (`--passive` = listen only, write path guarded); `make_app.sh` wraps it as an app; `bundle/Info.plist`; `Package.swift`.
+- `ble_probe/` — `Sources/ble_probe/main.swift` scripted BLE research probe (`--passive` = listen only, write path guarded; `--pack-rev1` = 151 with `[01]`, only with `--commands 151`; 40/42/44 reads allowed, SET twins 39/41/43 hard-blocked by `PROHIBITED_COMMANDS`); `make_app.sh` wraps it as an app; `bundle/Info.plist`; `Package.swift`.
 - `perf_probe/` — `main.swift` repository/scoring timing on a DB copy (`--sleepperf`: NOOP vs imported sleep performance, nights paired by sleep interval, values from the cycle declaring that sleep); `Package.swift`, `Package.resolved`.
 - `strain_replay/` — `main.swift` replays strain scoring on a DB copy; `Package.swift`, `Package.resolved`.
 - `whoop_re/` — `whoop5_decode.py` standalone 5.0 frame decoder; `test_whoop5_decode.py` (24). `step_walk_check.py` — counted-walk vs stored 5.0 step counter on a DB copy (read-only, aggregates only); `test_step_walk_check.py` (2). `reverse_engineer/analyze_export.py` — export score analysis. `reverse_engineer/sleep_performance_eval.py` — held-out sleep-performance hypotheses on an export (stdlib); `test_sleep_performance_eval.py` (5); joins both export CSVs per sleep, reports eligible/excluded counts.
@@ -299,7 +299,7 @@ Format: `file` — purpose. Tests list `Suite(methods)`. Fixtures/resources are 
 - Measurement reports: `MEASUREMENT_VALIDITY.md`, `NAP_DETECTION.md` (versioned nap evidence, private label schema, evaluation limits), `SLEEP_SESSIONS.md`, `SLEEP_STRAIN_AUDIT.md`, `SLEEP_RECOVERY_RESEARCH_2026-10-27.md`, `WORKOUT_STRAIN_REPORT.md`, `WORKOUT_STRAIN_RESEARCH_2026-10-30.md`.
 - `assets/` — `banner.svg`, `logo.svg`. `assets/qa/issue-18/2026-11-13/` — synthetic (no personal data) before/after QA renders for #18: `year-strip-760-dark-before.png`, `year-strip-760-dark-after.png`, `vitals-card-rows-1180-light-before.jpg`, `vitals-card-rows-1180-light-after.jpg`, `sparse-sections-sleep-stage-labels-before.jpg`, `sparse-sections-sleep-stage-labels-after.jpg`, `activity-sessions-workout-detail-long-label-760-before.jpg`, `workout-detail-long-label-760-after.jpg`, `vitals-live-recent-cycles-supporting-day.jpg`.
 - `reverse-engineering/` — `README.md`, `CAPABILITY_MATRIX.md` (#25 reconciled command/characteristic/event/history inventory, ranked improvements, firmware status; offline only), `AUDIT.md`, `SAFETY_MATRIX.md`, `COMMAND_REGISTRY.md` + `whoop5_commands.json`, `GATT_MAP.md`, `PROTOCOL_SPEC.md`, `PACKET_TYPES.md`, `SENSOR_STREAMS.md`, `STATE_MACHINE.md`, `ALARM_CAPABILITIES.md`, `EXPERIMENT_LOG.md`, `TEST_RESULTS.md`, `UNKNOWN_CAPABILITIES.md`.
-- `reverse-engineering/captures/` — redacted JSONL evidence: `E01-passive-gatt`, `E02-readonly-matrix`, `E04-realtime-hr`, `H01-get-alarm`, `H02-H03-H06-slot0`, `H02b`, `H05-disable`, `H07`, `C02a-wear-off-on` (passive wrist off/on, redacted).
+- `reverse-engineering/captures/` — redacted JSONL evidence: `E01-passive-gatt`, `E02-readonly-matrix`, `E04-realtime-hr`, `H01-get-alarm`, `H02-H03-H06-slot0`, `H02b`, `H05-disable`, `H07`, `C02a-wear-off-on` (passive wrist off/on, redacted), `C06a-C07-afe-pack-reads` (151 `[01]`, 40/42/44; redacted).
 
 ## 8 · Verification record
 
@@ -308,6 +308,8 @@ Format: `file` — purpose. Tests list `Suite(methods)`. Fixtures/resources are 
 - 2026-11-17 counted walk W02 (docs only, wearer, no strap commands): ~700 hand-counted steps with a pace change per 100 and a final 100 running → 709 strap steps at the end of the run (+1.3 %); the stop is a 32-s flat counter and a later uncounted indoor walk explains the 775 over the noted window. Activity code 2 only during the run. NOT done: reset timing across midnight, ≥ 1,000-step walk.
 
 - 2026-11-17 counted walk W01 (docs only, wearer, no strap commands): ~4-min walk, `step_walk_check.py` on a SQLite-backup copy after the next pull → strap 326 vs hand count 335 (−2.7 %), 0 resets; edges not still (≈ ±20 steps from a few seconds of timing). Live pulls now store step rows (544 rows in the first 20 min). NOT done: more walks with still edges, a ≥ 1,000-step walk, reset timing across midnight.
+
+- 2026-11-17 #25 C06a/C07 + offline decoding: probe built; refusals checked (39 refused, `--pack-rev1` without 151 refused). On the strap (owner-approved, NOOP connected after a completed pull, one probe run per command, 1 frame each): 151 `[01]` SUCCESS, 40/42/44 UNSUPPORTED, no console lines; NOOP pulled history again afterwards. Offline on archive/DB copies: v0x1a PPG HR match 161/279 bursts, event 110 vs charge sessions, 120 vs prior-2-h HR, event 14 vs step data. No app code changed; C06b (pack on) not run.
 
 - 2026-11-17 step integration: initial protocol run exposed a flaky fixture (conflicting duplicate timestamp shuffled before a fixed expected winner). Fixture now randomizes distinct timestamps and appends the conflicting duplicate, plus checks reversed duplicate order against the documented first-input rule. Revalidation PASS: WhoopProtocol 156, WhoopStore 118, Python whoop_re 26, app build + hosted suite (88 total, 5 expected render skips). No counted walk or new hardware validation.
 
@@ -451,10 +453,11 @@ git ls-files --cached --others --exclude-standard | grep -v -e '^AGENTS.md$' -e 
 | Date | Change | Checks / remaining |
 | --- | --- | --- |
 | 2026-11-17 | Walks W01–W03: stored 5.0 step counter tracks walking/running (SUPPORTED; hand counts unreliable, no accuracy figure); activity code 2 = running CONFIRMED on two runs; still shown nowhere. | Docs only; reset timing + a reliable reference count still needed. |
+
+| 2026-11-17 | #25 C06a/C07 run (151 `[01]` SUCCESS; 40/42/44 UNSUPPORTED); offline: v0x1a = 25 Hz PPG, event 110 = charger status, 120 tracks HR, 14 not motion. Probe gains `--pack-rev1`, 40/42/44, hard block on 39/41/43. | Probe build + refusals; 4 strap reads, 1 frame each; docs only otherwise. |
 | 2026-11-17 | Integrated #25 origin branches as squash PRs #31–#35; reconciled capability docs and fixed shuffled duplicate fixture. | Probe, package/focused analytics, Python and hosted checks pass; hardware/reference/drain/walk checks remain open. |
 | 2026-11-16 | 5.0 step counter + activity code decoded and stored as change points (schema v19, unvalidated, shown nowhere); `step_walk_check.py` for a counted walk. | Package suites + Python pass; hosted 88 has 11 pre-existing `TrendWindowTests` date-boundary failures; walk not done. |
 | 2026-11-16 | Wrist wear from strap events 10/9: off-wrist intervals exclude skin samples (`skin-temp-night-v2`) and explain Overview coverage gaps. | All suites + hosted 88 pass; DB-copy replay unchanged otherwise; caption not visually checked. |
 | 2026-11-16 | Nightly skin-temperature change from 5.0 samples (`skin-temp-night-v1`): asleep-time median, causal 30-day reference, stored night series + provenance. | All suites + hosted 88 pass; DB-copy replay changes nothing else; no real night with samples yet. |
 | 2026-11-16 | 5.0 skin temperature decoded (v0x12 payload 65, 1/100 °C) and stored with an explicit unit (schema v18); Python decoder matches. | All package suites + hosted 88 pass; not yet seen in a live pull; not used by scoring/UI. |
 | 2026-11-16 | Event 29 (every 10 min) soc read live as a battery reading; periodic poll skips the level read after a fresh pushed soc (pack info still asked). | WhoopProtocol 152 + build + hosted 88 pass; not run on the strap. |
-| 2026-11-16 | #25 C02a: `ble_probe --passive`; wrist off/on = events 10/9 confirmed live; fd4b0007 silent on probe-only connect. | 0 frames written; C02b (charging), C06, C07 pending. |
