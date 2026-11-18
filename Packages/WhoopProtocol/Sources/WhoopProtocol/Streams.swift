@@ -61,8 +61,8 @@ public struct SkinTempSample: Equatable, Codable {
 }
 
 /// WHOOP 5.0 on-strap step counter at one second (type-47 v0x12 payload 49 u16) and its activity code (payload 55).
-/// UNVALIDATED (issue #25): the counter rose only within 5 s of activity code 1 on 7/7 local increments, and fell
-/// between days (a reset; when it resets is unknown). Not shown anywhere until a counted walk agrees with it.
+/// Experimental (issue #25): W01–W03 support walking/running timing; accuracy and reset timing remain unknown.
+/// The UI reports recorded increases with completeness limits; this counter is never used for scoring.
 public struct StepCounterSample: Equatable, Codable {
     public let ts: Int
     public let counter: Int
