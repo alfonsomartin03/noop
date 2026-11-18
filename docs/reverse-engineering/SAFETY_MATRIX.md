@@ -38,6 +38,11 @@ So NOOP acks only what it has safely stored, and nothing else (`BLEManager.commi
 5. "Never delete data from the strap" (`keepDataOnStrap`) sends no acks at all; each pull then stops after
    the first chunk. This remains the user's choice; the default is to ack after saving.
 6. Crash-safe: an un-acked chunk is re-sent by the strap next pull; duplicates are absorbed by the database keys.
+7. Repeated ENDs (2026-11-18, #38, `HistoryAckGate`): the strap only advances after an ack, so an END that arrives
+   while an earlier END of the same pull is still being saved is a repeat with the same `end_data`; it is saved but
+   never acked. Once any chunk of a pull is refused (archive or store failure, unstorable frame), the refusal is
+   recorded synchronously and no later END of that pull is acked, even before the pull's asynchronous stop has run.
+   Unit-tested on the gate; the full BLE sequence is not exercised against a strap.
 
 A local save is not a promise that the strap keeps its copy.
 
