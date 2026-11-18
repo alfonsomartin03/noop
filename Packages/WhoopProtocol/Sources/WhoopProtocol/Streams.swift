@@ -294,13 +294,14 @@ func appendBattery(_ out: inout Streams, ts: Int, p: [String: ParsedValue]) {
 /// [rr_count u8][rr u16…]`, i.e. frame offsets 10 / 14 / 16 / 17 / 18. Timestamps are strap-clock seconds and stepped
 /// exactly 1 s. No frame ever carried R-R (count 0), so R-R must come from history or the 0x2A37 profile.
 ///
-/// Live R-R UNIT IS UNRESOLVED (#39): history is ms on fw 50.43.1.0 (R-R audit), external sources disagree for live
-/// packets, and no live frame with intervals has been seen. `rr` is the raw u16 words; nothing in the app uses them.
+/// Live R-R unit: MILLISECONDS, CONFIRMED on fw 50.43.1.0 (L01, 2026-11-18, #39): every one of 738 live words equalled a
+/// stored history ms interval within ±2 s (median live/history 1.0029 over 650 seconds). Live frames carry only a sparse
+/// subset of beats (~0.5 per frame, 0–3 each), so history stays the R-R source; nothing in the app uses live `rr`.
 public struct Whoop5Realtime: Equatable, Sendable {
     public let timestamp: UInt32
     public let subseconds: UInt16
     public let heartRate: Int
-    public let rr: [Int]          // raw u16 words (unit unresolved, see above), zeros dropped
+    public let rr: [Int]          // R-R intervals in ms (confirmed live, see above), zeros dropped
     /// The packet declared more intervals than its payload holds: `rr` is then empty (never a silent partial list);
     /// the heart rate in the complete fixed prefix is still valid.
     public let rrTruncated: Bool

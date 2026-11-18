@@ -82,8 +82,8 @@ Enabled by `TOGGLE_REALTIME_HR` (3) `[1]`, stopped by `[0]`; 1 frame per second 
 | 2 | strap unix seconds u32, +1 every frame (42/42) | CONFIRMED |
 | 6 | subseconds u16, constant within the session | CONFIRMED value |
 | 8 | heart rate u8 bpm (69 → 59 over 42 s, resting) | CONFIRMED (NOOP decoded the same values; history cross-check below) |
-| 9 | R-R count u8 (0 in all 42 frames) | HYPOTHESIS: count; Asherlc calls it a "valid flag" |
-| 10–17 | zeros (R-R slots?) | UNKNOWN: never non-zero |
+| 9 | R-R count u8: 0 in all 42 E04 frames; 0–3 in L01 (650 of 1,535 frames > 0) | **CONFIRMED count** (L01, 2026-11-18) |
+| 10–17 | R-R words u16 LE, `count` of them; zero-filled after | **CONFIRMED milliseconds** (L01: all 738 live words equal a stored history ms interval within ±2 s; median live/history 1.0029). Sparse: ~0.5 interval per frame, a subset of beats |
 | 18 | `0x01` constant | UNKNOWN |
 | 19 | `0x00` | UNKNOWN |
 

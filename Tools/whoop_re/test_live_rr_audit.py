@@ -65,5 +65,32 @@ class LiveRRAuditTests(unittest.TestCase):
         self.assertEqual(packets[T0][:2], (60, [1000]), "first copy of a second wins")
 
 
+class PairedTests(unittest.TestCase):
+    def _sparse(self, scale):
+        # Live packets carry every other beat; history has every beat (ms). Live words = history * scale.
+        packets, hist = {}, []
+        for s in range(400):
+            beat = 900 + (s % 7) * 20
+            hist.append((T0 + s, beat))
+            packets[T0 + s] = (65, [round(beat * scale)] if s % 2 == 0 else [], False, 32)
+        return packets, hist
+
+    def test_ms_and_ticks_are_told_apart(self):
+        p, h = self._sparse(1.0)
+        r = L.paired(p, h)
+        self.assertEqual(r["verdict"], "milliseconds")
+        self.assertGreater(r["exact_equal_share"], 0.99)
+        p, h = self._sparse(1.024)
+        r = L.paired(p, h)
+        self.assertEqual(r["verdict"], "1/1024-s ticks")
+        self.assertLess(r["exact_equal_share"], 0.2)
+
+    def test_too_few_pairs_is_inconclusive(self):
+        p, h = self._sparse(1.0)
+        few = dict(list(p.items())[:150])
+        self.assertTrue(L.paired(few, h)["verdict"].startswith("inconclusive (fewer than"))
+        self.assertTrue(L.paired(p, [])["verdict"].startswith("inconclusive"))
+
+
 if __name__ == "__main__":
     unittest.main()
