@@ -110,7 +110,12 @@ final class AppModel: ObservableObject {
         ble.onSyncDownloadFinished = { [weak self] complete in self?.runPostSyncProcessing(downloadComplete: complete) }
         // Each (re)connect measures the strap clock; re-store the next alarm on the strap then, so a deadline set while
         // disconnected (or consumed when it rang) is put back and verified by read-back.
-        live.$clock.compactMap { $0 }.removeDuplicates { abs($0.measuredAt - $1.measuredAt) < 60 }
+        // `$clock` publishes in willSet: hop to the next main-queue turn so the controller reads the NEW estimate (it
+        // used to read the previous one, so after a clock jump the first check kept the old offset). A changed offset
+        // is never a duplicate, so a SET_CLOCK read-back re-arms even right after the pull's own measurement.
+        live.$clock.compactMap { $0 }
+            .removeDuplicates { abs($0.measuredAt - $1.measuredAt) < 60 && abs($0.offset - $1.offset) < 1 }
+            .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.alarms.syncDeviceAlarm() }.store(in: &hrCancellables)
 
         if let mode = LaunchMode.fixtureBattery, ["cycle", "charging"].contains(mode) { playFixtureBattery(mode) }

@@ -193,6 +193,22 @@ accepted every command. Details: ALARM_CAPABILITIES.md. **Wearer confirmed feeli
 - **After:** DIS/battery read normally in every run (fw 50.43.1.0, 2A19 90 %); NOOP kept its link and pulled history again.
 - Capture: `captures/C06a-C07-afe-pack-reads.jsonl` (redacted; fd4b0007 fragments dropped).
 
+## K01 — one-shot SET_CLOCK (2026-11-18 13:57–14:05 EST, owner-approved)
+
+- **Setup:** NOOP connected, right after a completed pull; no alarm within hours. `ble_probe --k01 --k01-approved`
+  attached to NOOP's link. DIS fw 50.43.1.0 / WG50_r52.
+- **Run 1 (13:57): no write.** The first GET_CLOCK after subscribing answered ~1 s after the probe's 7-s timeout, so no
+  "before" clock existed and the guard skipped SET_CLOCK (as designed). The probe now reads the clock twice first.
+  (Run 2 at 13:59 never reached Bluetooth: the rebuilt probe app awaited a new macOS permission; nothing sent.)
+- **Run 3 (14:05): PASS.** Before: strap − Mac = **−40.47 s**. `10 [f4f6fd6a 56790000]` → **SUCCESS** (92 ms, body
+  `000000`). Read-back: **−0.07 s**. GET_DATA_RANGE still SUCCESS (newest record 45 s before the Mac's time = written
+  under the old clock). Capture `captures/K01-set-clock.jsonl` (redacted like C08).
+- **After:** NOOP's 14:19 pull logged "strap clock jumped (offset 40.4 s → −0.0 s)", the strap reported its newest
+  record at the Mac's time, and history completed normally (17 chunks). Alarm slot: the 14:19 check read the slot with the stale estimate (alarm sync ran on `$clock` willSet; fixed in this change) and only verified; the **14:34** measurement (strap 0.2 s behind) re-SET the next occurrence at exactly its deadline (stored offset 40 s → 0) and read it back SUCCESS. History completed again (17 chunks).
+- **Conclusion:** SET_CLOCK `[sec u32][subsec u32]` latches on fw 50.43.1.0 and does not disturb history serving.
+  NOOP now re-syncs at most daily (`ClockResyncPolicy`). Stored timestamps before 14:05 keep their old offset
+  (option A not done).
+
 ## C08 — named configuration reads 121/128 (2026-11-18 13:23–13:25 EST, owner-approved)
 
 - **Setup:** NOOP running and connected, 2.5 min after a completed history pull; next alarm the following morning.

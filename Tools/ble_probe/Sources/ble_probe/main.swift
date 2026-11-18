@@ -384,9 +384,11 @@ final class Probe: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
             self.script = self.opt.alarmScript ?? []
             if let t = self.opt.toggle { self.queue.append((t, [1])) }
             if self.opt.k01 {
-                // Fixed sequence. SET_CLOCK's data is built at send time from the Mac clock (see next()).
-                self.queue = [(Whoop5Clock.getCommand, []), (34, []), (Whoop5Clock.setCommand, []),
-                              (Whoop5Clock.getCommand, []), (34, [])]
+                // Fixed sequence. SET_CLOCK's data is built at send time from the Mac clock (see next()). The clock is
+                // read twice before the SET: the first command after subscribing can answer after the 7 s timeout
+                // (first run, 2026-11-18), and the SET needs a decoded "before" reading.
+                self.queue = [(Whoop5Clock.getCommand, []), (34, []), (Whoop5Clock.getCommand, []),
+                              (Whoop5Clock.setCommand, []), (Whoop5Clock.getCommand, []), (34, [])]
             }
             if self.opt.c08 {
                 // Fixed table only; payloads come from the shared, unit-tested builder.

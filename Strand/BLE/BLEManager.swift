@@ -532,7 +532,12 @@ public final class BLEManager: NSObject, ObservableObject {
         .getAlarmTime:       { _ in Whoop5Alarm.getPayload() },
         .runAlarm:           { _ in Whoop5Alarm.runPayload() },
         .disableAlarm:       { _ in Whoop5Alarm.disableAllPayload },
+        // K01: only with the one-shot token from `resyncWhoop5ClockIfDue` (checked in sendWhoop5), so the 4.0-era
+        // SET_CLOCK call sites (handshake, watchdog, legacy alarm arm) can never send it on a 5.0.
+        .setClock:           { $0 },
     ]
+    /// One SET_CLOCK may go out on 5.0 while this is set; cleared by that send.
+    private var whoop5ClockSetToken = false
     private var whoop5SkippedLogged = Set<UInt8>()
 
     private func sendWhoop5(_ command: WhoopCommand, payload: [UInt8], peripheral p: CBPeripheral,
@@ -546,6 +551,14 @@ public final class BLEManager: NSObject, ObservableObject {
         guard didBond else {
             log("send(\(command.label)) deferred — WHOOP 5.0 link not bonded yet")
             return nil
+        }
+        if command == .setClock {
+            let sec = payload.count == 8 ? Int(payload[0]) | Int(payload[1]) << 8 | Int(payload[2]) << 16 | Int(payload[3]) << 24 : 0
+            guard whoop5ClockSetToken, isPlausibleUnix(sec) else {
+                log("send(Set Clock) refused on WHOOP 5.0 — only the daily re-sync may set the strap clock")
+                return nil
+            }
+            whoop5ClockSetToken = false
         }
         if command == .setAlarmTime, !(payload.count == 20 && payload[0] == 4 && payload[1] == Whoop5Alarm.alarmID) {
             log("send(Set Alarm Time) refused on WHOOP 5.0 — payload is not the verified [4, 1, time, pattern] form")
@@ -1102,6 +1115,7 @@ public final class BLEManager: NSObject, ObservableObject {
         undecodedArchived = 0
         log("History: pull ended — \(reason); frames=\(state.historyFrames); chunks=\(historyMetaSeen.filter { $0 == "END" }.count)")
         if reason != "disconnected" { pollBatteryIfOverdue() }
+        if complete { resyncWhoop5ClockIfDue() }
         Task { @MainActor in
             // Records after the last END were not acknowledged (the strap re-sends them next time); save them anyway.
             _ = await self.persistWhoop5Records(leftover, events: events)
@@ -1493,6 +1507,14 @@ extension BLEManager {
             guard let req, let reply = Whoop5Charging.packInfo(r) else { return }   // not our request: no time to bind it to
             state.applyPackInfo(reply, requestedAt: req.at, connection: req.connection)
             log("Battery pack: reply \(reply) — attachment and charging reports unchanged")
+        case 10:
+            guard r.isFinal else { return }
+            if r.result == .success {
+                log("Clock: strap accepted the new time — reading it back")
+                send(.getClock, payload: [])
+            } else {
+                log("Clock: strap answered \(r.result) to SET_CLOCK — clock unchanged; next try in a day")
+            }
         case 3:
             if r.result != .success { state.realtimeStreaming = false }
         case 14:
@@ -1520,6 +1542,25 @@ extension BLEManager {
         case .rejected(let why):
             log("Clock: sample rejected (\(why)); keeping the previous estimate")
         }
+    }
+
+    /// Daily strap-clock correction (K01). Runs after a completed pull: when the current estimate says the strap is
+    /// >= 1 s off and the last attempt was over a day ago (an hour for >= 30 s), send ONE SET_CLOCK with this Mac's
+    /// time, then read it back (case 10 above). The read-back feeds the estimator, which reports the jump and re-arms
+    /// the alarm slot with the new offset. History stays strap-stamped: a forward correction leaves a gap of the
+    /// drift (~1.4 s/day), never duplicates.
+    private func resyncWhoop5ClockIfDue() {
+        guard family == .whoop5, didBond, ClockResyncPolicy.isEnabled(), let est = state.clock else { return }
+        let now = Date().timeIntervalSince1970
+        let last = UserDefaults.standard.object(forKey: ClockResyncPolicy.lastAttemptKey) as? Double
+        guard ClockResyncPolicy.shouldResync(offset: est.offset, uncertainty: est.uncertainty, measuredAt: est.measuredAt,
+                                             lastAttemptAt: last, now: now),
+              let payload = Whoop5Clock.setPayload(unixSeconds: Date().timeIntervalSince1970) else { return }
+        UserDefaults.standard.set(now, forKey: ClockResyncPolicy.lastAttemptKey)
+        log(String(format: "Clock: strap is %.1f s %@ this Mac — setting it to this Mac's time (daily re-sync)",
+                   abs(est.offset), est.offset >= 0 ? "behind" : "ahead of"))
+        whoop5ClockSetToken = true
+        if send(.setClock, payload: payload) == nil { whoop5ClockSetToken = false }
     }
 
     /// Held charging events, judged against the strap time at their receipt now that a clock exists.
