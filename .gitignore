@@ -44,9 +44,13 @@ secrets.*
 
 # ── Personal data — NEVER publish (real WHOOP/Apple Health exports) ──
 Fixtures/
+OpenWhoop/
+undecoded-history/
+NOOP-Data-Backup-*/
 *.sqlite
 *.sqlite-wal
 *.sqlite-shm
+*.sqlite-journal
 export.xml
 # …except the hand-written synthetic fixture the Apple Health parser tests need.
 !Packages/StrandImport/Tests/StrandImportTests/Resources/export.xml

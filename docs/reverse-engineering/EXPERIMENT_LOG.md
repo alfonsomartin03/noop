@@ -223,3 +223,19 @@ accepted every command. Details: ALARM_CAPABILITIES.md. **Wearer confirmed feeli
 1. **E05** strap off-wrist for 2 min, then on: look for wrist events and the console wear-detect line.
 2. **E06** probe as the only client (quit NOOP) without hello: is the hello mandatory?
 3. **E07** capture fd4b0007 content at connect (needs the probe to connect before NOOP).
+
+## S01 — step counter across midnight (2026-11-17/18, passive, no strap commands)
+
+- **Source:** SQLite-backup copy of the app DB after normal syncing (rows 2026-11-17 14:07 → 2026-11-18 10:10 local EST,
+  9,171 change points, HR at 1 Hz through the night). Aggregates only.
+- **Midnight:** **no reset.** The counter ran 19,238 → 19,290 across local 00:00 (and across 19:00 = UTC midnight) and
+  stayed flat overnight.
+- **Reset:** one drop only, **19,362 → 0 at 08:15:29** local — 1 s after an alarm rang (events 58 + 60 at 08:15:28),
+  2 s before the double-tap dismissal (14 + 100 reason 2 at 08:15:31) and ~2.5 min after NOOP's main sleep ended
+  (08:12:59). Counting resumed at 08:15:48.
+- **Conclusion:** the counter is **not a calendar-day count**; it reset at waking (HYPOTHESIS: the strap's own
+  wake/cycle boundary, or the alarm dismissal — one morning cannot separate them). NOOP's tile is unaffected: it adds
+  increases over the local day and never subtracts a drop (3,465 steps from 00:00 to 10:11, 1 reset). The pre-reset
+  value (19,362) is probably the previous wake-to-wake total, but the prior reset was not stored.
+- **Next:** a morning without an alarm (natural wake) and a nap/late-wake day to tell the triggers apart.
+

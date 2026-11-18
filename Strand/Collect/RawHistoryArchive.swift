@@ -12,10 +12,28 @@ final class RawHistoryArchive {
     init(directory: URL) { self.directory = directory }
 
     static func standard() throws -> RawHistoryArchive {
-        let base = try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask,
-                                               appropriateFor: nil, create: true)
-            .appendingPathComponent("OpenWhoop/undecoded-history", isDirectory: true)
-        return RawHistoryArchive(directory: base)
+        try RawHistoryArchive(directory: supportFolder("OpenWhoop/undecoded-history"))
+    }
+
+    /// Full decoded-record frames kept during an explicit research capture (`ResearchCapture`), apart from the
+    /// undecoded archive so the two can be told apart and deleted separately.
+    static func research() throws -> RawHistoryArchive {
+        try RawHistoryArchive(directory: supportFolder("OpenWhoop/research-history"))
+    }
+
+    private static func supportFolder(_ path: String) throws -> URL {
+        try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask,
+                                    appropriateFor: nil, create: true)
+            .appendingPathComponent(path, isDirectory: true)
+    }
+
+    /// Where a frame came from. Written on every line when given, so a later decoder can be scoped to the firmware
+    /// that produced the bytes and to the capture that kept them.
+    struct Provenance: Equatable {
+        /// `undecoded` (always-on archive) or a research capture id.
+        var capture: String
+        var firmware: String?
+        var hardware: String?
     }
 
     private static let day: DateFormatter = {
@@ -27,8 +45,12 @@ final class RawHistoryArchive {
     }()
 
     /// Durably append frames. Throws if anything could not be written and flushed; the caller must then not ack.
-    func append(_ frames: [[UInt8]], receivedAt now: Date = Date()) throws {
-        guard !frames.isEmpty else { return }
+    /// `recordTimes[i]` (strap Unix time of frame i, when known) and `provenance` are written when given.
+    /// Returns the number of bytes appended.
+    @discardableResult
+    func append(_ frames: [[UInt8]], receivedAt now: Date = Date(), recordTimes: [Int?] = [],
+                provenance: Provenance? = nil) throws -> Int {
+        guard !frames.isEmpty else { return 0 }
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let url = directory.appendingPathComponent("\(Self.day.string(from: now)).jsonl")
         if !FileManager.default.fileExists(atPath: url.path) {
@@ -37,15 +59,27 @@ final class RawHistoryArchive {
             }
         }
         var text = ""
-        for f in frames {
+        var tail = ""
+        if let p = provenance {
+            tail += ",\"capture\":\(Self.json(p.capture))"
+            if let fw = p.firmware { tail += ",\"fw\":\(Self.json(fw))" }
+            if let hw = p.hardware { tail += ",\"hw\":\(Self.json(hw))" }
+        }
+        for (i, f) in frames.enumerated() {
             let hex = f.map { String(format: "%02x", $0) }.joined()
             let type = f.count > 8 ? Int(f[8]) : -1, version = f.count > 9 ? Int(f[9]) : -1
-            text += "{\"t\":\(now.timeIntervalSince1970),\"type\":\(type),\"version\":\(version),\"len\":\(f.count),\"hex\":\"\(hex)\"}\n"
+            let ts = i < recordTimes.count ? recordTimes[i].map { ",\"ts\":\($0)" } ?? "" : ""
+            text += "{\"t\":\(now.timeIntervalSince1970),\"type\":\(type),\"version\":\(version),\"len\":\(f.count)\(ts)\(tail),\"hex\":\"\(hex)\"}\n"
         }
         let h = try FileHandle(forWritingTo: url)
         defer { try? h.close() }
         try h.seekToEnd()
         try h.write(contentsOf: Data(text.utf8))
         try h.synchronize()
+        return text.utf8.count
+    }
+
+    private static func json(_ s: String) -> String {
+        (try? String(data: JSONEncoder().encode(s), encoding: .utf8)) ?? "\"\""
     }
 }

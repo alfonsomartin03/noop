@@ -581,6 +581,7 @@ struct StrainDetailView: View {
     @State private var workouts: [WorkoutRow] = []
     @State private var selectedWorkout: WorkoutSelection?
     @State private var steps: Int?
+    @State private var strapSteps: StepCounterSample.Window?
     @State private var activeKcal: Double?
     @State private var load: DayLoadRecord?
 
@@ -644,8 +645,13 @@ struct StrainDetailView: View {
                     DetailTile(title: "Strength time", value: DayMath.hm(strengthSeconds / 60),
                                caption: "Weights, gym and functional sessions", tint: StrandPalette.metricRose)
                 }
+                if let s = strapSteps {
+                    DetailTile(title: "Steps", value: (s.isComplete ? "" : "≥ ") + s.steps.formatted(),
+                               caption: "Recorded strap increases · experimental",
+                               tint: StrandPalette.statusPositive, details: Self.stepDetails(s))
+                }
                 if let steps {
-                    DetailTile(title: "Steps", value: steps.formatted(), caption: "From Apple Health", tint: StrandPalette.statusPositive)
+                    DetailTile(title: "Steps (Apple)", value: steps.formatted(), caption: "From Apple Health", tint: StrandPalette.statusPositive)
                 }
                 if let activeKcal {
                     DetailTile(title: "Active energy (Apple)", value: "\(Int(activeKcal.rounded()))", unit: "kcal",
@@ -665,6 +671,22 @@ struct StrainDetailView: View {
         }
         .task(id: "\(dayKey)-\(repo.dataVersion)") { await load() }
         .sheet(item: $selectedWorkout) { WorkoutDetailView(workout: $0.row) }
+    }
+
+    /// Walking / running time from the strap's activity code, and what the count leaves out.
+    static func stepDetails(_ s: StepCounterSample.Window) -> [String] {
+        var out: [String] = []
+        var motion: [String] = []
+        if s.activityOneSeconds >= 60 { motion.append("Walking \(DayMath.hm(Double(s.activityOneSeconds) / 60))") }
+        if s.activityTwoSeconds >= 60 { motion.append("Running \(DayMath.hm(Double(s.activityTwoSeconds) / 60))") }
+        if !motion.isEmpty { out.append(motion.joined(separator: " · ")) }
+        if !s.hasStartReference { out.append("Counted from the first synced step of the day.") }
+        if s.resets > 0 { out.append("Counter reset detected; steps after it are counted from the strap's new count.") }
+        if s.unknownSeconds >= 60 {
+            out.append("No synced data for \(DayMath.hm(Double(s.unknownSeconds) / 60)); walking and running time there is not counted.")
+        }
+        out.append("Reset timing and accuracy are unverified; this may be an incomplete daily count.")
+        return out
     }
 
     /// Minutes in Zone 2 or higher while awake, when NOOP scored the day.
@@ -758,5 +780,6 @@ struct StrainDetailView: View {
         let apple = await repo.appleDailyRows().first { $0.day == dayKey }
         steps = apple?.steps
         activeKcal = apple?.activeKcal
+        strapSteps = await repo.strapSteps(from: r.from, to: r.to)
     }
 }

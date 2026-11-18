@@ -68,7 +68,7 @@ the oldest record moves with a rolling ~3-week buffer, independently of acks. CO
 Seen live 2026-11-02 (80 records). Strap unix u32 at payload 7, consecutive 1-s records. NOOP archives these frames
 verbatim before acking their chunk. Offline inventory of the archive (41k frames, 15 days): bursts of 40 consecutive
 seconds about every 20 min; @3 counter u32 +1 per record; @19–66 = 24 × i16 LE with strong lag-1 correlation
-(waveform-like, ~24 samples/s). Meaning of every field except type/version/counter/time is UNKNOWN; see
+(waveform-like). 2026-11-17: u32 base + 24 i16 deltas = a **25 Hz single-channel PPG** window (HR-matched); other fields UNKNOWN; see
 [CAPABILITY_MATRIX.md](CAPABILITY_MATRIX.md) §4.
 
 ## 40 REALTIME_DATA (payload 20 bytes) — E04
@@ -100,11 +100,12 @@ No R-R ever arrived on this stream; use 2A37 or type-47 for R-R.
 | 7 | unix seconds u32: consecutive records step exactly 1 s (628/628) | CONFIRMED |
 | 14 | heart rate u8 bpm; median \|HR − 60000/mean R-R\| = 3.5 bpm over 425 records | CONFIRMED |
 | 15 | R-R count u8 (≤ 4 seen) | CONFIRMED |
-| 16 | R-R u16 ms × count | CONFIRMED |
+| 16 | R-R u16 × count; NOOP reads ms | CONFIRMED **ms** (2026-11-17 `rr_unit_audit.py`: 1,924 complete windows, beat sum / elapsed median 0.9998; ticks would be ~1.024). ryanbr's 1/1024-s claim does not hold here. (The 3.5-bpm match above alone could not separate them.) |
 | 37, 41, 45 | gravity x, y, z float32 (g); \|g\| within 0.9–1.1 for 634/634 | CONFIRMED |
 | 61, 63 | auxiliary thermal i16 ÷ 10 °C (ryanbr R18) | SUPPORTED; plausible on 544 local frames |
-| 65 | skin temperature u16 ÷ 100 °C (ryanbr R18 frame 73, Asherlc payload 65); median ≈ 35 °C on 544 local frames, matching console `skin_temp` | SUPPORTED + locally consistent; not decoded by NOOP |
-| others | optical, temperature, SpO2 candidates | UNKNOWN (not decoded; do not guess) |
+| 65 | skin temperature u16 ÷ 100 °C (ryanbr R18 frame 73, Asherlc payload 65); median ≈ 35 °C on 544 local frames, matching console `skin_temp` | SUPPORTED + locally consistent; **decoded and stored by NOOP** (schema v18, `centi_celsius`) |
+| 49, 55 | step counter u16 (selected source), activity code (0 still / 1 walk / 2 run) | SUPPORTED (walks W01–W03; running CONFIRMED); stored as change points (v19) |
+| others | quality flags, alt HR, band state, step-source switch, byte 82 — leads in CAPABILITY_MATRIX.md §4 | UNKNOWN (not decoded; do not guess; byte 82 is not established SpO₂) |
 
 ## 48 EVENT
 
@@ -119,10 +120,10 @@ all 26 captured events. CONFIRMED (matches ryanbr/noop's "length at frame[18]").
 | 11 / 12 | BLE_CONNECTION_UP / DOWN | 0 | CONFIRMED (appear around connects) |
 | 25 | BLE_HR_PROFILE_DISABLED | — | CONFIRMED (2026-10-31, after cmd 14 [0]) |
 | 29 | STRAP_CONDITION_REPORT | 12 | body u16 @6 = soc × 10 (locally CONFIRMED 2026-11-16); rest UNKNOWN |
-| 110 | — | 8, constant `0101000000000000` | UNKNOWN; every 10 min |
+| 110 | — | 8, constant `0101000000000000` | every 10 min; charger-status report (HYPOTHESIS, 2026-11-17) |
 | 109 | — | 28 | only while charging; u16 @23 tapers as soc rises (HYPOTHESIS: charge current) |
 | 117 | — | 4 | byte 1: 0 idle / 2 charging / 3 top-off / 4 full (HYPOTHESIS, strong) |
-| 120 | — | 32 | UNKNOWN |
+| 120 | — | 32 | tracks prior-2-h HR (correlation only); meaning UNKNOWN |
 | 123 | — | 8; byte 4 = 01 at disconnect, 02 at reconnect | HYPOTHESIS: connection state |
 
 Current NOOP decodes 5.0 events (`Whoop5Event`) and routes charging/alarm events; the old "undecoded" note is

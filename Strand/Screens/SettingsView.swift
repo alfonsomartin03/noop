@@ -17,6 +17,7 @@ struct SettingsView: View {
             profileCard
             strapCard
             keepDataCard
+            ResearchCaptureCard()
             checkInCard
             aboutCard
         }
@@ -428,3 +429,44 @@ private struct FormRow<Control: View>: View {
         .preferredColorScheme(.dark)
 }
 #endif
+
+/// Settings ▸ General: start/stop the bounded full-frame research capture (`ResearchCapture`, #25).
+private struct ResearchCaptureCard: View {
+    @State private var capture = ResearchCapture.load()
+    @State private var now = Date()
+
+    var body: some View {
+        SettingsSection(
+            icon: "doc.badge.clock",
+            title: "Research capture",
+            blurb: "NOOP keeps only the history fields it understands. For up to 7 days, this also keeps every history record's complete bytes, with the strap's firmware and time, so fields not decoded yet can be studied later. Saved on this Mac only (Application Support/OpenWhoop/research-history, about 20 MB a day); nothing is changed on the strap."
+        ) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 12) {
+                    if let c = capture, c.isActive(at: now) {
+                        Button("Stop capture") { var s = c; s.stoppedReason = "stopped by you"; s.save(); refresh() }
+                            .buttonStyle(.strandSecondary)
+                    } else {
+                        Button("Capture for 7 days") { ResearchCapture.start().save(); refresh() }
+                            .buttonStyle(.strandSecondary)
+                    }
+                }
+                Text(status)
+                    .font(StrandFont.footnote)
+                    .foregroundStyle(StrandPalette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .onAppear(perform: refresh)
+    }
+
+    private func refresh() { capture = ResearchCapture.load(); now = Date() }
+
+    private var status: String {
+        guard let c = capture else { return "Off. Captures only during syncs while it is on." }
+        let size = ByteCountFormatter.string(fromByteCount: Int64(c.bytesWritten), countStyle: .file)
+        let end = c.until.formatted(date: .abbreviated, time: .shortened)
+        if c.isActive(at: now) { return "On until \(end) · \(size) kept so far. Applies from the next sync." }
+        return "Off (\(c.stoppedReason ?? "ended \(end)")) · \(size) kept."
+    }
+}

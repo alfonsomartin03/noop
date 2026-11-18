@@ -61,8 +61,8 @@ public struct SkinTempSample: Equatable, Codable {
 }
 
 /// WHOOP 5.0 on-strap step counter at one second (type-47 v0x12 payload 49 u16) and its activity code (payload 55).
-/// UNVALIDATED (issue #25): the counter rose only within 5 s of activity code 1 on 7/7 local increments, and fell
-/// between days (a reset; when it resets is unknown). Not shown anywhere until a counted walk agrees with it.
+/// Experimental (issue #25): W01–W03 support walking/running timing; accuracy and reset timing remain unknown.
+/// The UI reports recorded increases with completeness limits; this counter is never used for scoring.
 public struct StepCounterSample: Equatable, Codable {
     public let ts: Int
     public let counter: Int
@@ -81,33 +81,81 @@ public struct StepCounterSample: Equatable, Codable {
     }
 
     public struct Window: Equatable, Sendable {
-        /// Sum of counter increases between the last row at/before `from` and the last row before `to`.
+        /// Sum of counter increases between the last row at/before `from` and the last row before `to`; at a reset
+        /// (a decrease) the post-reset value is added, as steps since the reset.
         public let steps: Int
-        /// Counter decreases inside the window: their steps are NOT counted (reset time unknown).
+        /// Counter decreases inside the window (resets; boundary seen once at waking, S01, not yet established).
         public let resets: Int
-        /// False when no row at/before `from` exists: the first increase can't be measured.
+        /// False when no row at/before `from` exists, or (with `known`) `from` itself was not synced, so an older row
+        /// can't stand for the counter at `from`: the first increase can't be measured.
         public let hasStartReference: Bool
-        /// Seconds whose activity code was 1 (as recorded by change points).
+        /// Seconds whose activity code was 1 (walking; SUPPORTED, walks W01–W03) as recorded by change points.
         public let activityOneSeconds: Int
+        /// Seconds whose activity code was 2 (running; CONFIRMED on two runs, W02/W03).
+        public let activityTwoSeconds: Int
+        /// Seconds in [from, end of known data) with no synced record (only when `known` was given; else 0). Change
+        /// points can't tell "unchanged" from "missing", so activity time there is not counted and a reset there would
+        /// hide steps: the count is then a lower bound.
+        public let unknownSeconds: Int
+
+        /// True only with a start reference, no reset and no unknown time: otherwise `steps` is "at least".
+        /// Resets also count as incomplete until the reset boundary is established (EVIDENCE_MATRIX S01, two nights).
+        public var isComplete: Bool { hasStartReference && resets == 0 && unknownSeconds == 0 }
     }
 
-    /// Steps counted by the strap in [from, to). `samples` are change points (or every second) in any order.
-    public static func window(_ samples: [StepCounterSample], from: Int, to: Int) -> Window {
+    /// Seconds known to hold a synced record (e.g. stored heart-rate seconds plus step change points), as sorted,
+    /// merged half-open runs. A run ends at the first missing second.
+    public static func knownRuns(_ seconds: [Int]) -> [Range<Int>] {
+        var out: [Range<Int>] = []
+        for t in Set(seconds).sorted() {
+            if let last = out.last, last.upperBound == t { out[out.count - 1] = last.lowerBound..<(t + 1) }
+            else { out.append(t..<(t + 1)) }
+        }
+        return out
+    }
+
+    /// Seconds of [a, b) covered by sorted, disjoint `runs`.
+    static func covered(_ a: Int, _ b: Int, by runs: [Range<Int>]) -> Int {
+        guard b > a else { return 0 }
+        var n = 0
+        for r in runs where r.upperBound > a {
+            if r.lowerBound >= b { break }
+            n += min(b, r.upperBound) - max(a, r.lowerBound)
+        }
+        return n
+    }
+
+    /// Steps counted by the strap in [from, to). `samples` are change points (or every second) in any order. Activity
+    /// time is clipped at `until` (the end of known data): change points say nothing about time past the last sync.
+    /// With `known` (see `knownRuns`), activity time also stops at the first missing second inside the window, and the
+    /// missing time is reported as `unknownSeconds`; without it, time between change points is assumed synced.
+    public static func window(_ samples: [StepCounterSample], from: Int, to: Int, until: Int? = nil,
+                              known: [Range<Int>]? = nil) -> Window {
         let s = samples.sorted { $0.ts < $1.ts }
         let start = s.last { $0.ts <= from }
         let inside = s.filter { $0.ts > from && $0.ts < to }
-        var steps = 0, resets = 0, prev = start?.counter
+        // An older row stands for the counter at `from` only if `from` was synced (change points record every change
+        // in synced data); across a gap it could carry another day's steps into this window.
+        let reference = known.map { covered(from, from + 1, by: $0) == 1 } ?? true ? start : nil
+        var steps = 0, resets = 0, prev = reference?.counter
         for r in inside {
-            if let p = prev { if r.counter >= p { steps += r.counter - p } else { resets += 1 } }
+            if let p = prev {
+                if r.counter >= p { steps += r.counter - p } else { resets += 1; steps += r.counter }
+            }
             prev = r.counter
         }
-        var active = 0
+        var walk = 0, run = 0
+        let end = min(to, until ?? to)
         let chain = (start.map { [$0] } ?? []) + inside
-        for (i, r) in chain.enumerated() where r.activity == 1 {
-            let a = max(r.ts, from), b = i + 1 < chain.count ? chain[i + 1].ts : to
-            if b > a { active += b - a }
+        for (i, r) in chain.enumerated() where r.activity == 1 || r.activity == 2 {
+            let a = max(r.ts, from), b = min(i + 1 < chain.count ? chain[i + 1].ts : end, end)
+            guard b > a else { continue }
+            let n = known.map { covered(a, b, by: $0) } ?? (b - a)
+            if r.activity == 1 { walk += n } else { run += n }
         }
-        return Window(steps: steps, resets: resets, hasStartReference: start != nil, activityOneSeconds: active)
+        let unknown = known.map { max(0, end - from) - covered(from, end, by: $0) } ?? 0
+        return Window(steps: steps, resets: resets, hasStartReference: reference != nil, activityOneSeconds: walk,
+                      activityTwoSeconds: run, unknownSeconds: unknown)
     }
 }
 
