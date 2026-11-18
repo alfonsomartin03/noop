@@ -209,6 +209,39 @@ accepted every command. Details: ALARM_CAPABILITIES.md. **Wearer confirmed feeli
   NOOP now re-syncs at most daily (`ClockResyncPolicy`). Stored timestamps before 14:05 keep their old offset
   (option A not done).
 
+## L01 — live R-R unit (2026-11-18 17:2x–17:49 EST, #39; no new strap commands)
+
+- **Setup:** NOOP rebuilt from main (`Whoop5RealtimeTally` + `OpenWhoop/live-rr`), live strap sheet open ~25 min (NOOP's
+  own TOGGLE_REALTIME_HR). Strap clock corrected by K01 earlier; both streams are strap-stamped anyway.
+- **Tally:** 1,535 live frames over 1,535 s, all 32 bytes, **650 with intervals** (738 words, 0–3 per frame), 0
+  truncated. E04's 42 frames at rest had none; intervals do appear in ordinary streaming.
+- **Frozen beat-sum method** (history audit bands): **inconclusive** — 4 windows, 0 complete: live frames carry ~0.5
+  interval per frame, a subset of beats, so the completeness gate cannot pass.
+- **Paired method** (frozen in `live_rr_audit.py` before any live value was examined): per live second, mean live
+  words / mean stored history R-R within ±2 s. **650 paired seconds, median 1.0029 (p10–p90 0.82–1.23) → ms.**
+  Secondary: **738/738 live words exactly equal a stored history word** in the same span (ticks would sit ~2.4 % off).
+- **Conclusion:** live packet-40 R-R words are **milliseconds** on fw 50.43.1.0, the same values as history, sparse.
+  No decoder or scoring change (the app does not use live R-R).
+
+## A01 — research capture acceptance (2026-11-18 17:22–17:49 EST, #38; no new strap commands)
+
+- **Setup:** owner started "Capture for 7 days" in Settings ▸ General; NOOP's ordinary pulls at 17:34 and 17:49
+  (complete, 18 chunks at 17:49; ordinary acks continued). Checked on copies with `research_archive_check.py`.
+- **Research archive:** 1,831 lines, all type 47 v0x12 full 124-byte frames, CRC16/CRC32 valid, provenance
+  (capture id, fw 50.43.1.0, hw WG50_r52, strap time) on every line, stored time = decoded time, 0 repeats.
+- **Survival:** 1,831/1,831 records present in the SQLite-backup copy's `hrSample` with the same heart rate, and the
+  archive span (17:18:34–17:49:04) holds exactly 1,831 stored seconds: nothing saved was missed.
+- **Replay:** inserting the archive twice into an `hrSample`-keyed table added 1,831 then **0** rows (idempotent;
+  WhoopStore uses the same ON CONFLICT DO NOTHING).
+- **Undecoded archive (today's UTC file, 2,880 v0x1a lines):** CRC valid; 200 lines without provenance are from
+  Nov 17 19:00–19:44 EST (a build before provenance); 39 byte-identical repeats = chunks the strap re-sent; replay
+  idempotent.
+- **Inventory (sizes only):** DB 384 MB + WAL; research-history 0.7 MB; live-rr 0.3 MB; undecoded-history 11 MB;
+  preferences in the app domain (85 keys). Restore/replay: `RESEARCH_CAPTURE.md`.
+- **Fail-before-ack:** unit-tested (archive write failure → problem; `HistoryAckGate` refuses the chunk and any
+  repeat END); the CoreBluetooth path itself is code-reviewed. Cap/expiry ends capture without blocking sync
+  (unit-tested). Capture left running (ends by itself after 7 days) to gather full frames for #44.
+
 ## M01 — ordinary-use operating metrics (offline, 2026-11-18, #46)
 
 - **Inputs:** SQLite-backup copy of the app DB (events from 11-02; HR coverage ≥ 97 % on every full day 11-03 → 11-17)

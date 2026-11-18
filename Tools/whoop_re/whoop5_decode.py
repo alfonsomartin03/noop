@@ -169,7 +169,7 @@ def decode(frame: bytes, redact: bool = True) -> dict:
         d.update(seq=struct.unpack_from("<H", p, 1)[0], log_ts=u32(p, 3), text=ADDR_RE.sub("<addr>", text))
     elif t == 40 and len(p) >= 10:
         # CONFIRMED E04: [40][kind 0x02][unix u32][subsec u16][hr u8][rr_count u8][rr u16…]; R-R never non-zero yet
-        # Live R-R unit is unresolved (#39). An overdeclared count gives rr=[] + rr_truncated, never a partial list.
+        # Live R-R words are ms (L01, #39; sparse subset of beats). An overdeclared count gives rr=[] + rr_truncated.
         n = p[9]
         truncated = 10 + 2 * n > len(p)
         rr = [] if truncated else [struct.unpack_from("<H", p, 10 + 2 * i)[0] for i in range(n)]
