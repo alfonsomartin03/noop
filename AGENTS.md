@@ -18,7 +18,7 @@ This is a convention, not CI: reconcile with the working tree before trusting it
 - Refreshed **2026-11-17** (America/New_York). Includes pilot implementations #15–#19, the interrupted-night fix and #25 research, battery, temperature, wrist-wear and experimental step integrations; experimental estimates and outstanding manual/hardware/accuracy checks are distinguished in §3/§4/§8.
 - **NOOP**: local-only macOS companion for WHOOP 4.0/5.0 straps. Internal target/scheme/package prefix **Strand**; bundle `com.noopapp.noop`, product `NOOP.app`, v0.1.0 (1).
 - 360 first-party files indexed in §7 (tracked + non-ignored untracked, excluding this file). Source size hotspots: `BLEManager.swift` ~2.0k lines, `SleepStager.swift` ~1.3k, `OnboardingWizard.swift` ~1.1k, `TrendSections.swift` ~0.9k — search, don't read whole.
-- Test inventory (methods in files, not pass results): StrandAnalytics 489, WhoopProtocol 157, WhoopStore 118, StrandImport 61, StrandDesign 40 (2 snapshot tests skip without env), hosted StrandTests 90 (4 render tests skip without `NOOP_RENDER_TRENDS=1`, 1 without `NOOP_RENDER_OVERVIEW=1`), Python 31.
+- Test inventory (methods in files, not pass results): StrandAnalytics 489, WhoopProtocol 157, WhoopStore 118, StrandImport 61, StrandDesign 40 (2 snapshot tests skip without env), hosted StrandTests 93 (4 render tests skip without `NOOP_RENDER_TRENDS=1`, 1 without `NOOP_RENDER_OVERVIEW=1`), Python 36 (whoop_re 31, reverse_engineer 5).
 
 ## 2 · Architecture and routing
 
@@ -95,7 +95,8 @@ Packages (all Swift tools 5.9, platforms macOS 13 / iOS 16; **only a macOS app t
 - `Commands` is a restricted app command set; research never licenses destructive/firmware ops in normal flows. `FrameRouter` mutates `LiveState`; standard HR broadcast listening is opt-in (`listenToHRBroadcast`, default off).
 - `Collector`: flush at 64 frames / 30 s, pre-clock cap 4096; decode/persist before optional raw outbox. Raw capture off by default; capture window ≤5 min.
 - `Backfiller` persists decoded history, optional raw and cursor **before** chunk ack. Keep-data-on-strap suppresses ack/cursor advance. Repeated ENDs belong to one offload; never close after the first END.
-- 5.0 undecodable history → `RawHistoryArchive` (UTC-day JSONL in `OpenWhoop/undecoded-history`, fsync before return, never pruned). Archive failure must block acknowledgement.
+- 5.0 undecodable history → `RawHistoryArchive` (UTC-day JSONL in `OpenWhoop/undecoded-history`, fsync before return, never pruned). Archive failure must block acknowledgement. Lines now carry provenance (`capture`, `fw`, `hw`, strap `ts` when known).
+- Research capture (#25, `ResearchCapture`, Settings ▸ General ▸ Research capture, key `noop.research.fullHistoryCapture`): user-started, ends after ≤ 7 days or 400 MB (cap ends the capture, never blocks ack). While active, every DECODED type-47 record's complete frame is also appended to `OpenWhoop/research-history` with capture id, firmware/hardware and strap time, flushed before the chunk is acked (write failure → no ack, pull stops). Read once per pull. Without it, R18 fields NOOP doesn't decode are lost at ack. Unit-tested (archive, bounds); the BLE ack path is not; not yet run on a live pull.
 - Clocks are explicit (`DeviceClock`, `ClockCorrelation`, `ClockPolicy`): type-47 history carries Unix time; realtime may need device/host correlation.
 - `BackfillPolicy` rate-limits sync triggers; `StuckStrapDetector` compares strap availability to persisted HR frontier.
 - Before hardware work read `docs/reverse-engineering/SAFETY_MATRIX.md`, `COMMAND_REGISTRY.md` and relevant captures. Evidence is scoped to WHOOP 5.0 fw 50.43.1.0 / hw WG50_r52. #25 C06a/C07 (2026-11-17, owner-approved): 151 with `[01]` answers SUCCESS (body `01` + zeros, pack off; the app still sends `[]` → FAILURE = `unavailable`, unchanged until a pack-on reply is captured); 40/42/44 answer UNSUPPORTED. Offline: v0x1a bursts are a 25 Hz single-channel PPG (HR-matched; no SpO₂); event 110 = charger-status report (hypothesis); 120 tracks prior-2-h HR (meaning open); event 14 does not fire while walking/running. Not decoded by the app.
@@ -143,6 +144,8 @@ Packages (all Swift tools 5.9, platforms macOS 13 / iOS 16; **only a macOS app t
 - Not universal WHOOP compatibility: alarm confirmation is firmware-specific; attached battery-pack reply layout and live charging events are unobserved; unknown history must be archived, not guessed.
 - Issues #4, #12, #13, #14 (2026-11-09) are implemented and unit-tested but **not visually checked** (no fixture screenshots, light/dark, narrow/wide, VoiceOver or Reduce Motion pass). Check-in reminders and the snooze action were not exercised against real notifications. Health thresholds and check-in insight rules are untested on real data.
 - Charging poll correction (2026-11-09): reproduced in synthetic tests; exact reply during the reported physical charging session is unknown. Missed removal events can leave an old report until the 3 h expiry or disconnect; pack polls cannot currently confirm removal.
+- R-R unit (2026-11-17): ryanbr (fw 50.42.1.0) says 1/1024-s ticks; `Tools/whoop_re/rr_unit_audit.py` on a DB copy shows **ms** for stored 5.0 history on fw 50.43.1.0 (1,924 complete-beat windows, median beat-sum/elapsed 0.9998; ticks ≈ 1.024; HR − RR-HR +0.02 bpm vs −1.36 as ticks). No decoder change. Live packet 40 not separately audited.
+- Commands 121/128: the "unknown 32-byte keys" blocker is revised — ryanbr documents NUL-padded ASCII names (one source, no cited capture). Proposed read-only C08 (4 fixed names) in `CAPABILITY_MATRIX.md` §7: **not approved, not run**; probe unchanged.
 - `TrendWindowTests` (hosted) fail 11 assertions whenever the UTC date is ahead of the local date (evenings west of UTC): fixtures key days from UTC midnight while `TrendWindow` takes "today" locally. Pre-existing (same failures without the step-counter change, 2026-11-16 19:36 EST); not fixed.
 - No CI workflow exists. No release/test-health conclusion is implied by this file.
 
@@ -177,6 +180,7 @@ Run the affected checks per change; docs-only changes need path/claim consistenc
 | `-noop.fixture.alarmHistory YES`, `-noop.fixture.alarmDetail YES` | Fixture-only: seed synthetic alarm history (one occurrence per status) into the COPY; open the newest detail sheet |
 | `noop.onboarded`, `scoringVersionApplied` (target 5) | First-run done; applied scoring migration |
 | `noop.bluetoothChoice` | `undecided`/`allowed`/`declined` |
+| `noop.research.fullHistoryCapture` | Active/ended `ResearchCapture` (JSON: id, start, until, bytes, stop reason) |
 | `noop.keepDataOnStrap`, `enableRawCapture`, `listenToHRBroadcast` | No trim ack; research raw capture (off); standard HR subscription (off) |
 | `noop.deviceInfo`, `lastSyncedAt`, `backfillLastAt`, `hrBroadcastLastSet` | Cached DIS info; sync/backfill timestamps; last broadcast set |
 | `alarm.specs`, `alarm.capabilities`, `alarm.fired`, `alarm.earlyAttempted`, `alarm.armedTargets`, `alarm.ownsStrapAlarm`, `alarm.followUp` | Alarm definitions, capabilities, completed occurrences, early wakes attempted, stored strap times, strap ownership |
@@ -217,7 +221,7 @@ Format: `file` — purpose. Tests list `Suite(methods)`. Fixtures/resources are 
 - `StandardHeartRate.swift` — 0x2A37 parser. `BackfillPolicy.swift` — sync trigger rate limit. `StuckStrapDetector.swift` — data-vs-frontier stall check. `BluetoothChoice.swift` — remembered access choice, launch gate, reconnect interval.
 
 ### `Strand/Collect`
-- `Collector.swift` — frame buffer/flush policy, `StoreWriting`. `Backfiller.swift` — history persist-then-ack. `RawHistoryArchive.swift` — undecodable-history JSONL.
+- `Collector.swift` — frame buffer/flush policy, `StoreWriting`. `Backfiller.swift` — history persist-then-ack. `RawHistoryArchive.swift` — undecodable-history + research JSONL with provenance. `ResearchCapture.swift` — bounded full-frame research capture policy.
 - `ClockCorrelation.swift`, `ClockPolicy.swift` — device↔host time. `RawCaptureWindow.swift` — bounded raw capture. `PrunePolicy.swift` — retention constants. `StorePaths.swift` — DB path, `LaunchMode`, fixture switches.
 
 ### `Strand/Data`
@@ -241,7 +245,7 @@ Format: `file` — purpose. Tests list `Suite(methods)`. Fixtures/resources are 
 - `CheckInViews.swift` — `CheckInCard` (Overview), `CheckInForm`, `CheckInSheet` (entries, insights, settings), `CheckInSettingsForm`. `ScreenScaffold.swift` — page scaffold + `ComingSoon` empty state.
 - `SleepView.swift` — sleep detail tiles/hypnogram. `SleepSessionsCard.swift` — sessions + `AdjustSleepSheet` corrections. `SleepNeedCard.swift` — sleep need.
 - `HealthView.swift` — HR and vitals detail. `WorkoutsView.swift` — workout list/summary. `WorkoutDetailView.swift` — workout detail, labels, effort, sets (activity title wraps/truncates to the sheet width; full name in tooltip + VoiceOver value).
-- `SettingsView.swift` — General settings (strap, Bluetooth toggle, profile, battery). `AlarmsView.swift` — Alarms tab, `AlarmEditor`, `NextAlarmLink`. `AlarmHistoryView.swift` — History section, occurrence detail (stage timeline, trail, notes). `DataSourcesView.swift` — imports, comparison, backups.
+- `SettingsView.swift` — General settings (strap, Bluetooth toggle, profile, battery, keep-data, research capture). `AlarmsView.swift` — Alarms tab, `AlarmEditor`, `NextAlarmLink`. `AlarmHistoryView.swift` — History section, occurrence detail (stage timeline, trail, notes). `DataSourcesView.swift` — imports, comparison, backups.
 - `LiveView.swift` — live strap sheet. `LiveStatusView.swift` — connection steps, strap history card. `PairingResetNotice.swift` — stale-pairing instructions.
 - `MetricExplorerView.swift` — metric browser + correlations. `RecoveryDiagnosticsView.swift` — recovery inputs report. `RecentCyclesCard.swift` — recent cycles list.
 
@@ -250,7 +254,7 @@ Format: `file` — purpose. Tests list `Suite(methods)`. Fixtures/resources are 
 
 ### `StrandTests` (hosted)
 - `TrendsAuditTests.swift` = `TrendWindowTests`(7: per-range plotted days, gaps, comparison periods, sparse/empty) + `TrendsRenderTests`(4, env-gated: every Trends section × range, sparse/empty, Highlights ranges × sources, nested surfaces — Activity ▸ Sessions, long-label workout detail, Vitals ▸ Live, Recent cycles, Highlights supporting-day sheet — from synthetic data to PNG tiles).
-- `HeartRateCardRenderTests`(1, env-gated `NOOP_RENDER_OVERVIEW=1`: Overview HR card — partial day at 10 am with gaps and every state, full day, 25 h DST day, unavailable activation, empty day — 1180 light / 760 dark PNGs). `ActivationLoadTests`(3), `SleepPairingImportTests`(2: export fixture → importer → store → pairing), `StrapStepsTests`(2: day steps across a reset, walk/run time clipped at known data, no rows → no tile, missing start reference), `FieldProvenanceTests`(2: Recovery HRV/skin-temp source per field on partial imports), `AlarmControllerTests`(35), `NightlyMaxHRVTests`(6), `BluetoothChoiceTests`(5), `CollectorBatteryTests`(2), `LivePresentationTests` = LiveHeartRateTests + BatteryPresentationTests (15), `RawHistoryArchiveTests`(2), `StrandSmokeTests`(1).
+- `HeartRateCardRenderTests`(1, env-gated `NOOP_RENDER_OVERVIEW=1`: Overview HR card — partial day at 10 am with gaps and every state, full day, 25 h DST day, unavailable activation, empty day — 1180 light / 760 dark PNGs). `ActivationLoadTests`(3), `SleepPairingImportTests`(2: export fixture → importer → store → pairing), `StrapStepsTests`(2: day steps across a reset, walk/run time clipped at known data, no rows → no tile, missing start reference), `FieldProvenanceTests`(2: Recovery HRV/skin-temp source per field on partial imports), `AlarmControllerTests`(35), `NightlyMaxHRVTests`(6), `BluetoothChoiceTests`(5), `CollectorBatteryTests`(2), `LivePresentationTests` = LiveHeartRateTests + BatteryPresentationTests (15), `RawHistoryArchiveTests`(5: durable append, provenance/record times, capture bounds, defaults round trip), `StrandSmokeTests`(1).
 
 ### `Packages/WhoopProtocol/Sources/WhoopProtocol`
 - `DeviceFamily.swift` — 4.0/5.0 GATT, header CRC kind, packet types. `Framing.swift` — CRC8/16/32, `Reassembler`, frame verification.
@@ -289,7 +293,7 @@ Format: `file` — purpose. Tests list `Suite(methods)`. Fixtures/resources are 
 - `ble_probe/` — `Sources/ble_probe/main.swift` scripted BLE research probe (`--passive` = listen only, write path guarded; `--pack-rev1` = 151 with `[01]`, only with `--commands 151`; 40/42/44 reads allowed, SET twins 39/41/43 hard-blocked by `PROHIBITED_COMMANDS`); `make_app.sh` wraps it as an app; `bundle/Info.plist`; `Package.swift`.
 - `perf_probe/` — `main.swift` repository/scoring timing on a DB copy (`--sleepperf`: NOOP vs imported sleep performance, nights paired by sleep interval, values from the cycle declaring that sleep); `Package.swift`, `Package.resolved`.
 - `strain_replay/` — `main.swift` replays strain scoring on a DB copy; `Package.swift`, `Package.resolved`.
-- `whoop_re/` — `whoop5_decode.py` standalone 5.0 frame decoder; `test_whoop5_decode.py` (24). `step_walk_check.py` — counted-walk vs stored 5.0 step counter on a DB copy (read-only, aggregates only); `test_step_walk_check.py` (2). `ppg_burst_check.py` — concurrently added offline optical-analysis tool; not part of this review. `reverse_engineer/analyze_export.py` — export score analysis. `reverse_engineer/sleep_performance_eval.py` — held-out sleep-performance hypotheses on an export (stdlib); `test_sleep_performance_eval.py` (5); joins both export CSVs per sleep, reports eligible/excluded counts.
+- `whoop_re/` — `whoop5_decode.py` standalone 5.0 frame decoder; `test_whoop5_decode.py` (24). `step_walk_check.py` — counted-walk vs stored 5.0 step counter on a DB copy (read-only, aggregates only); `test_step_walk_check.py` (2). `rr_unit_audit.py` — R-R ms vs 1/1024-s ticks on a DB copy (complete-beat windows, frozen bands, aggregates only); `test_rr_unit_audit.py` (5). `ppg_burst_check.py` — concurrently added offline optical-analysis tool; not part of this review. `reverse_engineer/analyze_export.py` — export score analysis. `reverse_engineer/sleep_performance_eval.py` — held-out sleep-performance hypotheses on an export (stdlib); `test_sleep_performance_eval.py` (5); joins both export CSVs per sleep, reports eligible/excluded counts.
 
 ### `docs`
 - Guides: `README.md` (index), `ARCHITECTURE.md`, `BUILD.md`, `CONTRIBUTING.md`, `DATA_MODEL.md`, `FEATURES.md`, `LIBRARY.md`, `PRIVACY_SECURITY.md`, `SCREEN_INVENTORY.md`, `ANALYTICS.md`.
@@ -301,6 +305,8 @@ Format: `file` — purpose. Tests list `Suite(methods)`. Fixtures/resources are 
 - `reverse-engineering/captures/` — redacted JSONL evidence: `E01-passive-gatt`, `E02-readonly-matrix`, `E04-realtime-hr`, `H01-get-alarm`, `H02-H03-H06-slot0`, `H02b`, `H05-disable`, `H07`, `C02a-wear-off-on` (passive wrist off/on, redacted), `C06a-C07-afe-pack-reads` (151 `[01]`, 40/42/44; redacted).
 
 ## 8 · Verification record
+
+- 2026-11-17 research capture + R-R audit + doc reconciliation: PASS hosted `RawHistoryArchiveTests` 5 (3 new), app build + hosted 93 (5 env skips) with the 11 known `TrendWindowTests` failures only (evening EST, §4); Python whoop_re 31 (5 new) + reverse_engineer 5. NOT done: research capture on a live pull (ack ordering is code-reviewed only), C08 (needs approval). R-R audit on a SQLite-backup copy (aggregates only): verdict ms — 1,924/6,319 complete 300-s windows, ratio median 0.9998 (p10–p90 0.9972–1.0019); 120-s windows 6,670 complete, same median. External docs re-read: ryanbr `PROTOCOL_CONFIGURATION/SENSORS/UPDATES/COMMANDS`, `WHOOP5_DEEP_DATA`, `ATTRIBUTION`; dofek (tail via summary only).
 
 - 2026-11-17 merge of origin/main (#37) into `feature/strain-steps`: PASS WhoopProtocol 157; app build + hosted 90 (5 env skips) with 11 failures, all in `TrendWindowTests` at 19:50 EST (UTC date ahead; pre-existing, §4) — every other hosted test passes, incl. `StrapStepsTests`. Index check clean. Step tile still not seen in the running app.
 
@@ -457,6 +463,7 @@ git ls-files --cached --others --exclude-standard | grep -v -e '^AGENTS.md$' -e 
 
 | Date | Change | Checks / remaining |
 | --- | --- | --- |
+| 2026-11-17 | Opt-in bounded research capture keeps full decoded R18 frames (flushed before ack); R-R unit audit → ms confirmed on stored history; 121/128 blocker revised + C08 proposal; R18 leads/conflicts and stale research pages reconciled. | Hosted 93 (11 known date failures) + Python pass; live capture and C08 not run. |
 | 2026-11-17 | Branch review: step count limitations disclosed; no-HR activity clipped to known step data. | Protocol 157 + probe build pass; hosted pending; hardware/visual checks remain. |
 | 2026-11-17 | Strain page "Steps" tile from the strap step counter (experimental) with walking/running time; Apple steps relabelled. | WhoopProtocol 157 + build + hosted 90 pass; not seen in the running app. |
 | 2026-11-17 | Walks W01–W03: stored 5.0 step counter tracks walking/running (SUPPORTED; hand counts unreliable, no accuracy figure); activity code 2 = running CONFIRMED on two runs (UI tile added on this branch). | Docs only; reset timing + a reliable reference count still needed. |

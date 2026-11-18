@@ -185,6 +185,12 @@ public final class BLEManager: NSObject, ObservableObject {
     /// archived verbatim (RawHistoryArchive) before the chunk is acknowledged, so an ack never discards them.
     private var whoop5ChunkUndecoded: [[UInt8]] = []
     private lazy var rawArchive: RawHistoryArchive? = try? RawHistoryArchive.standard()
+    /// Complete frames of DECODED records in the open chunk, kept only while a `ResearchCapture` is active (#25):
+    /// archived (flushed) before the chunk is acknowledged, so fields NOOP does not decode yet survive the ack.
+    private var whoop5ChunkResearch: [(frame: [UInt8], ts: Int)] = []
+    /// The research capture this pull writes for (read once at pull start; nil = none).
+    private var whoop5ResearchCapture: ResearchCapture?
+    private lazy var researchArchive: RawHistoryArchive? = try? RawHistoryArchive.research()
     /// Strap events that arrived inside the open chunk; saved with its records (unknown events included).
     private var whoop5ChunkEvents: [WhoopEvent] = []
     /// Waiting for GET_DATA_RANGE before starting a pull (the range fixes the session's target).
@@ -982,6 +988,9 @@ public final class BLEManager: NSObject, ObservableObject {
         whoop5ChunkProblem = nil
         whoop5ChunkEvents = []
         whoop5ChunkUndecoded = []
+        whoop5ChunkResearch = []
+        whoop5ResearchCapture = ResearchCapture.load().flatMap { $0.isActive() ? $0 : nil }
+        if let c = whoop5ResearchCapture { log("History: research capture \(c.id) active — full frames of decoded records are kept") }
         state.historySummary = nil
         state.historyFrames = 0
         state.historyBusy = true
@@ -1074,9 +1083,14 @@ public final class BLEManager: NSObject, ObservableObject {
         whoop5ChunkEvents = []
         if !whoop5ChunkUndecoded.isEmpty {
             // Not acknowledged (no END followed), but archive anyway: harmless if the strap re-sends them.
-            try? rawArchive?.append(whoop5ChunkUndecoded)
+            try? rawArchive?.append(whoop5ChunkUndecoded, provenance: archiveProvenance("undecoded"))
             whoop5ChunkUndecoded = []
         }
+        if !whoop5ChunkResearch.isEmpty {
+            _ = archiveResearchFrames(whoop5ChunkResearch)   // not acknowledged either; kept if possible
+            whoop5ChunkResearch = []
+        }
+        whoop5ResearchCapture = nil
         if undecodedArchived > 0 { log("History: \(undecodedArchived) undecoded record(s) archived this pull (Application Support/OpenWhoop/undecoded-history)") }
         undecodedArchived = 0
         log("History: pull ended — \(reason); frames=\(state.historyFrames); chunks=\(historyMetaSeen.filter { $0 == "END" }.count)")
@@ -1142,11 +1156,17 @@ public final class BLEManager: NSObject, ObservableObject {
         if !undecoded.isEmpty {
             do {
                 guard let archive = rawArchive else { throw CocoaError(.fileNoSuchFile) }
-                try archive.append(undecoded)
+                try archive.append(undecoded, recordTimes: undecoded.map { Self.undecodedRecordTime($0) },
+                                   provenance: archiveProvenance("undecoded"))
                 undecodedArchived += undecoded.count
             } catch {
                 problem = "\(undecoded.count) undecoded record(s) could not be archived (\(error.localizedDescription))"
             }
+        }
+        let research = whoop5ChunkResearch
+        whoop5ChunkResearch = []
+        if problem == nil, !research.isEmpty, let failure = archiveResearchFrames(research) {
+            problem = failure
         }
         let session = whoop5SessionID
         guard case .end(_, let endData)? = Whoop5HistoryMeta.decode(frame) else {
@@ -1188,6 +1208,38 @@ public final class BLEManager: NSObject, ObservableObject {
         }
     }
 
+    private func archiveProvenance(_ capture: String) -> RawHistoryArchive.Provenance {
+        RawHistoryArchive.Provenance(capture: capture, firmware: state.deviceInfo?.firmware, hardware: state.deviceInfo?.hardware)
+    }
+
+    /// Writes the chunk's full decoded-record frames for the active research capture. Returns a problem (→ no ack)
+    /// if the write failed; returns nil when written, or when the capture ended (expired / size cap) — the cap ends
+    /// the capture, it never blocks acknowledgement.
+    private func archiveResearchFrames(_ items: [(frame: [UInt8], ts: Int)]) -> String? {
+        guard var capture = ResearchCapture.load(), capture.id == whoop5ResearchCapture?.id, capture.isActive() else {
+            if whoop5ResearchCapture != nil { log("History: research capture ended — full frames no longer kept") }
+            whoop5ResearchCapture = nil
+            return nil
+        }
+        let frames = items.map(\.frame)
+        if capture.wouldExceed(ResearchCapture.estimatedBytes(frames: frames)) {
+            capture.stoppedReason = "size limit reached"
+            capture.save()
+            whoop5ResearchCapture = nil
+            log("History: research capture \(capture.id) reached its size limit — stopped")
+            return nil
+        }
+        do {
+            guard let archive = researchArchive else { throw CocoaError(.fileNoSuchFile) }
+            capture.bytesWritten += try archive.append(frames, recordTimes: items.map { Optional($0.ts) },
+                                                       provenance: archiveProvenance(capture.id))
+            capture.save()
+            return nil
+        } catch {
+            return "\(frames.count) research frame(s) could not be archived (\(error.localizedDescription))"
+        }
+    }
+
     /// Called for every complete, CRC-valid 5.0 frame while a pull is active.
     private func captureWhoop5HistoryFrame(_ frame: [UInt8], on characteristic: CBCharacteristic) {
         guard whoop5HistoryActive, frame.count > 12 else { return }
@@ -1202,6 +1254,7 @@ public final class BLEManager: NSObject, ObservableObject {
                 // The strap re-sends an unacked chunk on retry; the DB also enforces uniqueness (deviceId, ts).
                 if historySeenTs.insert(rec.timestamp).inserted {
                     historyDecoded.append(rec)
+                    if whoop5ResearchCapture != nil { whoop5ChunkResearch.append((frame, rec.timestamp)) }
                     if rec.timestamp > (state.syncNewestTs ?? 0) { state.syncNewestTs = rec.timestamp }
                 }
             } else {
