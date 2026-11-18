@@ -21,6 +21,11 @@ final class RawHistoryArchive {
         try RawHistoryArchive(directory: supportFolder("OpenWhoop/research-history"))
     }
 
+    /// Live realtime (type 40) frames from sessions that carried R-R intervals (#39 unit evidence).
+    static func liveRR() throws -> RawHistoryArchive {
+        try RawHistoryArchive(directory: supportFolder("OpenWhoop/live-rr"))
+    }
+
     private static func supportFolder(_ path: String) throws -> URL {
         try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask,
                                     appropriateFor: nil, create: true)

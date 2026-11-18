@@ -204,6 +204,12 @@ public final class BLEManager: NSObject, ObservableObject {
     private var whoop5RangeWait: DispatchWorkItem?
     /// Last realtime (type-40) strap second seen; a repeat is a duplicate frame.
     private var lastRealtimeSecond: UInt32?
+    /// #39 live R-R evidence: per-session tally of realtime packets, the last 300 frames, and whether this session has
+    /// carried intervals (then every frame is kept in `OpenWhoop/live-rr` for the offline unit audit).
+    private var realtimeTally = Whoop5RealtimeTally()
+    private var realtimeRecent: [(frame: [UInt8], ts: Int)] = []
+    private var realtimeKeep = false
+    private lazy var liveRRArchive: RawHistoryArchive? = try? RawHistoryArchive.liveRR()
     private var lastRealtimeAt: Date?
     /// Cursor: newest strap second the database holds contiguously from WHOOP 5.0 pulls (progress start).
     static let syncedThroughCursor = "whoop5_synced_through"
@@ -1635,6 +1641,7 @@ extension BLEManager {
         }
         if let last = lastRealtimeSecond, rt.timestamp <= last { return }   // duplicate or out-of-order second
         lastRealtimeSecond = rt.timestamp
+        noteRealtimeEvidence(rt, frame: frame)
         let received = Date()
         lastRealtimeAt = received
         state.realtimeStreaming = true
@@ -1642,6 +1649,48 @@ extension BLEManager {
         // Measured at the strap second (mapped with the clock estimate); without one, stamped on arrival.
         let at = state.clock.map { Date(timeIntervalSince1970: $0.hostTime(fromDevice: Double(rt.timestamp))) } ?? received
         onRealtimeHR?(HRObservation(at: at, bpm: rt.heartRate, receivedAt: received))
+    }
+}
+
+// MARK: - Live R-R evidence (#39)
+extension BLEManager {
+    /// Counts what each realtime packet carries and, once a session shows intervals, archives its frames (with the 5
+    /// minutes before) for `Tools/whoop_re/live_rr_audit.py`. Never sends anything; nothing reads the archive in-app.
+    fileprivate func noteRealtimeEvidence(_ rt: Whoop5Realtime, frame: [UInt8]) {
+        if realtimeTally.startsNewSession(rt) { endRealtimeEvidenceSession() }
+        realtimeTally.add(rt, frameLength: frame.count)
+        realtimeRecent.append((frame, Int(rt.timestamp)))
+        if !rt.rr.isEmpty, !realtimeKeep {
+            realtimeKeep = true
+            log("Live R-R: first packet with intervals this session — keeping live frames (OpenWhoop/live-rr)")
+        }
+        if realtimeKeep {
+            if realtimeRecent.count >= 60 { flushRealtimeEvidence() }
+        } else if realtimeRecent.count > 300 {
+            realtimeRecent.removeFirst(realtimeRecent.count - 300)
+        }
+        if realtimeTally.packets % Whoop5RealtimeTally.logEvery == 0 { log(realtimeTally.summary) }
+    }
+
+    fileprivate func flushRealtimeEvidence() {
+        guard realtimeKeep, !realtimeRecent.isEmpty else { return }
+        do {
+            guard let archive = liveRRArchive else { throw CocoaError(.fileNoSuchFile) }
+            try archive.append(realtimeRecent.map(\.frame), recordTimes: realtimeRecent.map { Optional($0.ts) },
+                               provenance: archiveProvenance("live-rr"))
+        } catch {
+            log("Live R-R: \(realtimeRecent.count) frame(s) could not be archived (\(error.localizedDescription))")
+        }
+        realtimeRecent = []
+    }
+
+    /// End of a realtime session (gap, new session or disconnect): log its tally and flush kept frames.
+    fileprivate func endRealtimeEvidenceSession() {
+        if realtimeTally.packets > 0 { log(realtimeTally.summary) }
+        flushRealtimeEvidence()
+        realtimeTally = Whoop5RealtimeTally()
+        realtimeRecent = []
+        realtimeKeep = false
     }
 }
 
@@ -1707,6 +1756,7 @@ extension BLEManager: CBCentralManagerDelegate {
         endWhoop5History("disconnected")
         strapFrameTotal = 0
         lastRealtimeSecond = nil
+        endRealtimeEvidenceSession()
         lastRealtimeAt = nil
         packInfoRequests.removeAll()
         lastPushedSocAt = nil

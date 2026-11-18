@@ -301,3 +301,36 @@ final class Whoop5HistoricalTests: XCTestCase {
         XCTAssertEqual(r.heartRate, 60)
     }
 }
+
+/// #39 live R-R evidence tally (synthetic packets).
+final class Whoop5RealtimeTallyTests: XCTestCase {
+    private func rt(_ t: UInt32, rr: [Int] = [], truncated: Bool = false) -> Whoop5Realtime {
+        Whoop5Realtime(timestamp: t, subseconds: 0, heartRate: 60, rr: rr, rrTruncated: truncated)
+    }
+
+    func testCountsPacketsIntervalsTruncationAndLengths() {
+        var t = Whoop5RealtimeTally()
+        t.add(rt(1_795_000_000), frameLength: 32)
+        t.add(rt(1_795_000_001, rr: [1000]), frameLength: 32)
+        t.add(rt(1_795_000_002, rr: [990, 1010]), frameLength: 36)
+        t.add(rt(1_795_000_003, truncated: true), frameLength: 32)
+        XCTAssertEqual(t.packets, 4)
+        XCTAssertEqual(t.withIntervals, 2)
+        XCTAssertEqual(t.words, 3)
+        XCTAssertEqual(t.maxCount, 2)
+        XCTAssertEqual(t.truncated, 1)
+        XCTAssertEqual(t.frameLengths, [32: 3, 36: 1])
+        XCTAssertEqual(t.summary, "Live R-R: 4 packet(s) over 4 s; 2 with intervals (3 word(s), max 2/packet); 1 truncated; lengths 32 B×3, 36 B×1")
+        XCTAssertFalse(t.summary.contains("1000"), "interval values never reach the log")
+    }
+
+    func testSessionBoundaries() {
+        var t = Whoop5RealtimeTally()
+        XCTAssertFalse(t.startsNewSession(rt(100)), "first packet")
+        t.add(rt(1_795_000_000), frameLength: 32)
+        XCTAssertFalse(t.startsNewSession(rt(1_795_000_010)), "10-s gap is the same stream")
+        XCTAssertTrue(t.startsNewSession(rt(1_795_000_011)))
+        XCTAssertTrue(t.startsNewSession(rt(1_794_999_999)), "clock went back (e.g. after SET_CLOCK)")
+        XCTAssertEqual(Whoop5RealtimeTally().summary, "Live R-R: 0 packet(s) over 0 s; 0 with intervals (0 word(s), max 0/packet); 0 truncated; lengths -")
+    }
+}
