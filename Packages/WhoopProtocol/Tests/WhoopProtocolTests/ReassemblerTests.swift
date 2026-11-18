@@ -107,14 +107,60 @@ final class Whoop5CommandFramingTests: XCTestCase {
 
 final class Whoop5RealtimeTests: XCTestCase {
     func testDecodesHypothesisLayout() {
-        // [type 40][seq][ts u32][sub u16][hr][rrn][rr u16 x2] = 14 bytes, padded to 16 by the builder
-        let payload: [UInt8] = [40, 9, 0x41, 0xBA, 0xE8, 0x6A, 0x00, 0x80, 72, 2, 0x20, 0x03, 0x2A, 0x03]  // ts 2026-11-02
+        // [type 40][kind 0x02][ts u32][sub u16][hr][rrn][rr u16 x2] = 14 bytes, padded to 16 by the builder
+        let payload: [UInt8] = [40, 0x02, 0x41, 0xBA, 0xE8, 0x6A, 0x00, 0x80, 72, 2, 0x20, 0x03, 0x2A, 0x03]  // ts 2026-11-02
         let f = buildWhoop5Frame(payload: payload)
         let r = decodeWhoop5Realtime(f)
         XCTAssertEqual(r?.heartRate, 72)
         XCTAssertEqual(r?.timestamp, 1_793_636_929)
         XCTAssertEqual(r?.subseconds, 0x8000)
         XCTAssertEqual(r?.rr, [800, 810])
+        XCTAssertEqual(r?.rrTruncated, false)
+    }
+
+    // #39: synthetic boundary cases; they prove the parser's bounds, not that the strap sends such packets.
+    private let ts: [UInt8] = [0x41, 0xBA, 0xE8, 0x6A]   // 2026-11-02, plausible
+    private func frame(_ payload: [UInt8]) -> [UInt8] { buildWhoop5Frame(payload: payload) }
+
+    func testShortPrefixIsRejectedNeverReadFromTheCRC() {
+        // 8 payload bytes: type, kind, ts, then nothing for subsec/HR/count. CRC verifies; HR must not come from the trailer.
+        let f = frame([40, 0x02] + ts + [0, 0])
+        XCTAssertTrue(verifyFrame(f, family: .whoop5).ok)
+        XCTAssertNil(decodeWhoop5Realtime(f))
+        // 9 bytes are padded to 12 and the length field counts the padding: the missing count byte reads as a padding
+        // zero (indistinguishable at this layer). The HR byte is genuinely in the payload, so HR is kept with no R-R.
+        let nine = decodeWhoop5Realtime(frame([40, 0x02] + ts + [0, 0, 70]))
+        XCTAssertEqual(nine?.heartRate, 70)
+        XCTAssertEqual(nine?.rr, [])
+        XCTAssertNil(decodeWhoop5Realtime(Array(f.prefix(8))), "header only")
+    }
+
+    func testCountOverrunKeepsHeartRateAndFlagsTruncation() throws {
+        // HR 60, declared 255 intervals, one zero word present (the reviewer's reproducer).
+        let r = try XCTUnwrap(decodeWhoop5Realtime(frame([40, 0x02] + ts + [0, 0, 60, 255, 0, 0])))
+        XCTAssertEqual(r.heartRate, 60)
+        XCTAssertEqual(r.rr, [])
+        XCTAssertTrue(r.rrTruncated)
+        // Two declared, one present, payload ends exactly there (no padding): the second word would be the CRC trailer.
+        let one = try XCTUnwrap(decodeWhoop5Realtime(frame([40, 0x02] + ts + [0, 0, 61, 2, 0x20, 0x03])))
+        XCTAssertTrue(one.rrTruncated, "intervals are never read from the CRC trailer")
+    }
+
+    func testZeroWordsTrailingPaddingAndCountZero() throws {
+        let zero = try XCTUnwrap(decodeWhoop5Realtime(frame([40, 0x02] + ts + [0, 0, 62, 2, 0, 0, 0x20, 0x03])))
+        XCTAssertEqual(zero.rr, [800], "zero words are dropped, real ones kept")
+        XCTAssertFalse(zero.rrTruncated)
+        let padded = try XCTUnwrap(decodeWhoop5Realtime(frame([40, 0x02] + ts + [0, 0, 63, 1, 0x20, 0x03] + [UInt8](repeating: 0xEE, count: 6))))
+        XCTAssertEqual(padded.rr, [800], "bytes after the declared words are ignored")
+        let none = try XCTUnwrap(decodeWhoop5Realtime(frame([40, 0x02] + ts + [0, 0, 64, 0])))
+        XCTAssertEqual(none.heartRate, 64, "a well-formed packet with no intervals keeps its BPM")
+        XCTAssertEqual(none.rr, [])
+        XCTAssertFalse(none.rrTruncated)
+    }
+
+    func testUnknownKindIsRejected() {
+        XCTAssertNil(decodeWhoop5Realtime(frame([40, 9] + ts + [0, 0, 70, 0])), "only kind 0x02 is a confirmed layout")
+        XCTAssertNotNil(decodeWhoop5Realtime(frame([40, 0x02] + ts + [0, 0, 70, 0])))
     }
 
     func testRejectsOtherTypesAndBadCRC() {

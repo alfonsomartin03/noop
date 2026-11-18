@@ -169,10 +169,12 @@ def decode(frame: bytes, redact: bool = True) -> dict:
         d.update(seq=struct.unpack_from("<H", p, 1)[0], log_ts=u32(p, 3), text=ADDR_RE.sub("<addr>", text))
     elif t == 40 and len(p) >= 10:
         # CONFIRMED E04: [40][kind 0x02][unix u32][subsec u16][hr u8][rr_count u8][rr u16…]; R-R never non-zero yet
+        # Live R-R unit is unresolved (#39). An overdeclared count gives rr=[] + rr_truncated, never a partial list.
         n = p[9]
-        rr = [struct.unpack_from("<H", p, 10 + 2 * i)[0] for i in range(n) if 11 + 2 * i < len(p)]
+        truncated = 10 + 2 * n > len(p)
+        rr = [] if truncated else [struct.unpack_from("<H", p, 10 + 2 * i)[0] for i in range(n)]
         d.update(kind=p[1], rt_ts=u32(p, 2), rt_subsec=struct.unpack_from("<H", p, 6)[0], hr=p[8], rr_count=n,
-                 rr=[x for x in rr if x], tail=p[10 + 2 * n:].hex())
+                 rr=[x for x in rr if x], rr_truncated=truncated, tail=p[10 + 2 * n:].hex())
     elif t == 47 and len(p) >= 20:
         d.update(version=p[1], record_ts=u32(p, 7), hr=p[14], rr_count=p[15])
         if p[1] == 0x12 and len(p) >= 67:
