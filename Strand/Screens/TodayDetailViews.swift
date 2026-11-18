@@ -681,7 +681,7 @@ struct StrainDetailView: View {
         if s.activityTwoSeconds >= 60 { motion.append("Running \(DayMath.hm(Double(s.activityTwoSeconds) / 60))") }
         if !motion.isEmpty { out.append(motion.joined(separator: " · ")) }
         if !s.hasStartReference { out.append("Counted from the first synced step of the day.") }
-        if s.resets > 0 { out.append("Counter reset detected; steps at the reset are not included.") }
+        if s.resets > 0 { out.append("Counter reset detected; steps after it are counted from the strap's new count.") }
         if s.unknownSeconds >= 60 {
             out.append("No synced data for \(DayMath.hm(Double(s.unknownSeconds) / 60)); walking and running time there is not counted.")
         }
