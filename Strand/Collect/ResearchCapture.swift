@@ -53,3 +53,11 @@ struct ResearchCapture: Codable, Equatable {
 
     static func clear(_ defaults: UserDefaults = .standard) { defaults.removeObject(forKey: key) }
 }
+
+/// Per-pull filter for research frames: admits each distinct frame once. Two records with the same timestamp but
+/// different bytes are both kept (the raw evidence must not collapse them); only an exact repeat is dropped.
+struct ResearchFrameFilter {
+    private var seen = Set<Data>()
+    mutating func admit(_ frame: [UInt8]) -> Bool { seen.insert(Data(frame)).inserted }
+}
+

@@ -91,11 +91,43 @@ public struct StepCounterSample: Equatable, Codable {
         public let activityOneSeconds: Int
         /// Seconds whose activity code was 2 (running; CONFIRMED on two runs, W02/W03).
         public let activityTwoSeconds: Int
+        /// Seconds in [from, end of known data) with no synced record (only when `known` was given; else 0). Change
+        /// points can't tell "unchanged" from "missing", so activity time there is not counted and a reset there would
+        /// hide steps: the count is then a lower bound.
+        public let unknownSeconds: Int
+
+        /// True only with a start reference, no reset and no unknown time: otherwise `steps` is "at least".
+        public var isComplete: Bool { hasStartReference && resets == 0 && unknownSeconds == 0 }
+    }
+
+    /// Seconds known to hold a synced record (e.g. stored heart-rate seconds plus step change points), as sorted,
+    /// merged half-open runs. A run ends at the first missing second.
+    public static func knownRuns(_ seconds: [Int]) -> [Range<Int>] {
+        var out: [Range<Int>] = []
+        for t in Set(seconds).sorted() {
+            if let last = out.last, last.upperBound == t { out[out.count - 1] = last.lowerBound..<(t + 1) }
+            else { out.append(t..<(t + 1)) }
+        }
+        return out
+    }
+
+    /// Seconds of [a, b) covered by sorted, disjoint `runs`.
+    static func covered(_ a: Int, _ b: Int, by runs: [Range<Int>]) -> Int {
+        guard b > a else { return 0 }
+        var n = 0
+        for r in runs where r.upperBound > a {
+            if r.lowerBound >= b { break }
+            n += min(b, r.upperBound) - max(a, r.lowerBound)
+        }
+        return n
     }
 
     /// Steps counted by the strap in [from, to). `samples` are change points (or every second) in any order. Activity
     /// time is clipped at `until` (the end of known data): change points say nothing about time past the last sync.
-    public static func window(_ samples: [StepCounterSample], from: Int, to: Int, until: Int? = nil) -> Window {
+    /// With `known` (see `knownRuns`), activity time also stops at the first missing second inside the window, and the
+    /// missing time is reported as `unknownSeconds`; without it, time between change points is assumed synced.
+    public static func window(_ samples: [StepCounterSample], from: Int, to: Int, until: Int? = nil,
+                              known: [Range<Int>]? = nil) -> Window {
         let s = samples.sorted { $0.ts < $1.ts }
         let start = s.last { $0.ts <= from }
         let inside = s.filter { $0.ts > from && $0.ts < to }
@@ -110,10 +142,12 @@ public struct StepCounterSample: Equatable, Codable {
         for (i, r) in chain.enumerated() where r.activity == 1 || r.activity == 2 {
             let a = max(r.ts, from), b = min(i + 1 < chain.count ? chain[i + 1].ts : end, end)
             guard b > a else { continue }
-            if r.activity == 1 { walk += b - a } else { run += b - a }
+            let n = known.map { covered(a, b, by: $0) } ?? (b - a)
+            if r.activity == 1 { walk += n } else { run += n }
         }
+        let unknown = known.map { max(0, end - from) - covered(from, end, by: $0) } ?? 0
         return Window(steps: steps, resets: resets, hasStartReference: start != nil, activityOneSeconds: walk,
-                      activityTwoSeconds: run)
+                      activityTwoSeconds: run, unknownSeconds: unknown)
     }
 }
 

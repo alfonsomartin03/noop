@@ -188,6 +188,9 @@ public final class BLEManager: NSObject, ObservableObject {
     /// Complete frames of DECODED records in the open chunk, kept only while a `ResearchCapture` is active (#25):
     /// archived (flushed) before the chunk is acknowledged, so fields NOOP does not decode yet survive the ack.
     private var whoop5ChunkResearch: [(frame: [UInt8], ts: Int)] = []
+    /// Research frames already kept this pull: only byte-identical repeats (a re-sent chunk) are dropped, never a
+    /// distinct frame that shares a record time with another.
+    private var researchFramesSeen = ResearchFrameFilter()
     /// The research capture this pull writes for (read once at pull start; nil = none).
     private var whoop5ResearchCapture: ResearchCapture?
     private lazy var researchArchive: RawHistoryArchive? = try? RawHistoryArchive.research()
@@ -989,6 +992,7 @@ public final class BLEManager: NSObject, ObservableObject {
         whoop5ChunkEvents = []
         whoop5ChunkUndecoded = []
         whoop5ChunkResearch = []
+        researchFramesSeen = ResearchFrameFilter()
         whoop5ResearchCapture = ResearchCapture.load().flatMap { $0.isActive() ? $0 : nil }
         if let c = whoop5ResearchCapture { log("History: research capture \(c.id) active — full frames of decoded records are kept") }
         state.historySummary = nil
@@ -1251,10 +1255,11 @@ public final class BLEManager: NSObject, ObservableObject {
         switch type {
         case 47:
             if let rec = decodeWhoop5Historical(frame) {
+                // Research evidence keeps every distinct frame, even one whose record time was already seen.
+                if whoop5ResearchCapture != nil, researchFramesSeen.admit(frame) { whoop5ChunkResearch.append((frame, rec.timestamp)) }
                 // The strap re-sends an unacked chunk on retry; the DB also enforces uniqueness (deviceId, ts).
                 if historySeenTs.insert(rec.timestamp).inserted {
                     historyDecoded.append(rec)
-                    if whoop5ResearchCapture != nil { whoop5ChunkResearch.append((frame, rec.timestamp)) }
                     if rec.timestamp > (state.syncNewestTs ?? 0) { state.syncNewestTs = rec.timestamp }
                 }
             } else {

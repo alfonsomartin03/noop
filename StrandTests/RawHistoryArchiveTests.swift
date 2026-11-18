@@ -79,4 +79,15 @@ final class RawHistoryArchiveTests: XCTestCase {
         ResearchCapture.clear(d)
         XCTAssertNil(ResearchCapture.load(d))
     }
+
+    func testResearchFilterKeepsDistinctFramesThatShareARecordTime() {
+        var f = ResearchFrameFilter()
+        // Two different type-47 frames carrying the same record time: both are evidence and both must be kept.
+        let a: [UInt8] = [0xAA, 0x01, 0x04, 0x00, 0x01, 0x00, 0, 0, 47, 0x12, 0x10, 0x20, 0x30, 0x40, 1]
+        var b = a; b[14] = 2
+        XCTAssertTrue(f.admit(a))
+        XCTAssertTrue(f.admit(b), "same timestamp, different bytes: kept")
+        XCTAssertFalse(f.admit(a), "an exact repeat (re-sent chunk) is dropped")
+        XCTAssertTrue(ResearchFrameFilter().admit(a), "a new pull starts empty")
+    }
 }
