@@ -293,29 +293,42 @@ func appendBattery(_ out: inout Streams, ts: Int, p: [String: ParsedValue]) {
 /// Layout CONFIRMED on the owner's strap (E04, 42 frames): payload `[40][kind 0x02][unix u32][subsec u16][hr u8]
 /// [rr_count u8][rr u16…]`, i.e. frame offsets 10 / 14 / 16 / 17 / 18. Timestamps are strap-clock seconds and stepped
 /// exactly 1 s. No frame ever carried R-R (count 0), so R-R must come from history or the 0x2A37 profile.
+///
+/// Live R-R UNIT IS UNRESOLVED (#39): history is ms on fw 50.43.1.0 (R-R audit), external sources disagree for live
+/// packets, and no live frame with intervals has been seen. `rr` is the raw u16 words; nothing in the app uses them.
 public struct Whoop5Realtime: Equatable, Sendable {
     public let timestamp: UInt32
     public let subseconds: UInt16
     public let heartRate: Int
-    public let rr: [Int]          // milliseconds, zeros dropped
+    public let rr: [Int]          // raw u16 words (unit unresolved, see above), zeros dropped
+    /// The packet declared more intervals than its payload holds: `rr` is then empty (never a silent partial list);
+    /// the heart rate in the complete fixed prefix is still valid.
+    public let rrTruncated: Bool
 }
 
+/// Bytes 8… of a 5.0 realtime frame up to the CRC32 trailer: `[40][kind][unix u32][subsec u16][hr][count]` = 10 fixed.
+public let whoop5RealtimePrefixBytes = 10
+public let whoop5RealtimeKind: UInt8 = 0x02
+
+/// Decodes a 5.0 `REALTIME_DATA` frame, or nil when it is not one, fails its CRC, is shorter than the fixed prefix
+/// (fields are read only inside the payload, never from the CRC trailer), has an unknown kind, or an implausible time.
 public func decodeWhoop5Realtime(_ frame: [UInt8]) -> Whoop5Realtime? {
-    guard verifyFrame(frame, family: .whoop5).ok, frame.count >= 18, frame[8] == 40 else { return nil }
+    guard frame.count > 8, verifyFrame(frame, family: .whoop5).ok, frame[8] == 40 else { return nil }
+    let declaredEnd = (Int(frame[2]) | Int(frame[3]) << 8) + 8 - 4   // start of the CRC32 trailer
+    let payloadEnd = min(declaredEnd, frame.count - 4)
+    guard payloadEnd >= 8 + whoop5RealtimePrefixBytes, frame[9] == whoop5RealtimeKind else { return nil }
     let ts = UInt32(frame[10]) | UInt32(frame[11]) << 8 | UInt32(frame[12]) << 16 | UInt32(frame[13]) << 24
     guard isPlausibleUnix(Int(ts)) else { return nil }
     let sub = UInt16(frame[14]) | UInt16(frame[15]) << 8
     let hr = Int(frame[16])
-    let declaredEnd = (Int(frame[2]) | Int(frame[3]) << 8) + 8 - 4   // start of the CRC32 trailer
     let n = Int(frame[17])
-    var rr: [Int] = []
-    for i in 0..<n {
-        let o = 18 + i * 2
-        guard o + 1 < min(declaredEnd, frame.count) else { break }
-        let v = Int(frame[o]) | Int(frame[o + 1]) << 8
-        if v > 0 { rr.append(v) }
+    let rrStart = 8 + whoop5RealtimePrefixBytes
+    guard rrStart + 2 * n <= payloadEnd else {
+        return Whoop5Realtime(timestamp: ts, subseconds: sub, heartRate: hr, rr: [], rrTruncated: true)
     }
-    return Whoop5Realtime(timestamp: ts, subseconds: sub, heartRate: hr, rr: rr)
+    // Bytes after the declared words (4-byte padding) are ignored.
+    let rr = (0..<n).map { Int(frame[rrStart + 2 * $0]) | Int(frame[rrStart + 2 * $0 + 1]) << 8 }.filter { $0 > 0 }
+    return Whoop5Realtime(timestamp: ts, subseconds: sub, heartRate: hr, rr: rr, rrTruncated: false)
 }
 
 // MARK: - WHOOP 5.0 historical record (type 47)

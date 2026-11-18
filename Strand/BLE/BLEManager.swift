@@ -1570,7 +1570,7 @@ extension BLEManager {
     /// realtime HR is display-only and never written to the database (history supplies the stored series).
     private func handleWhoop5Realtime(_ frame: [UInt8]) {
         guard let rt = decodeWhoop5Realtime(frame) else {
-            log("RX 5.0 realtime frame rejected (implausible timestamp) len=\(frame.count)")
+            log("RX 5.0 realtime frame rejected (short, unknown kind \(frame.count > 9 ? frame[9] : 0) or implausible timestamp) len=\(frame.count)")
             return
         }
         if let last = lastRealtimeSecond, rt.timestamp <= last { return }   // duplicate or out-of-order second
