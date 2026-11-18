@@ -6,6 +6,7 @@ import WhoopProtocol
 //
 //   swift run ble_probe [--seconds N] [--commands 11,34,...] [--hello] [--exp ID] [--out FILE]
 //   swift run ble_probe --c08 --c08-approved [--exp C08] [--out FILE]   (#40; only after the owner approves C08)
+//   swift run ble_probe --k01 --k01-approved [--exp K01] [--out FILE]   (one SET_CLOCK; only after the owner approves K01)
 //
 // What it does: finds the strap (shares the link if NOOP already holds it), enumerates every service,
 // characteristic and descriptor, reads the standard read-only characteristics (Device Information,
@@ -102,6 +103,11 @@ struct Options {
     /// Needs `--c08-approved` too; refuses every other command option. 121/128 stay out of READ_ONLY_ALLOWLIST.
     var c08 = false
     var c08Approved = false
+    /// K01 one-shot (PROPOSED, not approved): GET_CLOCK + GET_DATA_RANGE, ONE SET_CLOCK (10) to the Mac's time, then
+    /// GET_CLOCK + GET_DATA_RANGE read-back. Needs `--k01-approved`; refuses every other command option. SET_CLOCK
+    /// is in no allowlist; this mode is the only way the probe can send it.
+    var k01 = false
+    var k01Approved = false
 }
 
 func parseOptions() -> Options {
@@ -136,6 +142,8 @@ func parseOptions() -> Options {
         case "--pack-rev1": o.packRev1 = true
         case "--c08": o.c08 = true
         case "--c08-approved": o.c08Approved = true
+        case "--k01": o.k01 = true
+        case "--k01-approved": o.k01Approved = true
         case "--exp": o.experiment = it.next() ?? o.experiment
         case "--out": o.out = it.next()
         default:
@@ -158,6 +166,15 @@ func parseOptions() -> Options {
     if o.c08 && (!o.c08Approved || o.passive || o.hello || !o.commands.isEmpty || o.toggle != nil
                  || o.alarmScript != nil || o.alarmApproved || o.packRev1) {
         FileHandle.standardError.write("refusing: --c08 needs --c08-approved and no other command option\n".data(using: .utf8)!)
+        exit(2)
+    }
+    if o.k01 && (!o.k01Approved || o.c08 || o.passive || o.hello || !o.commands.isEmpty || o.toggle != nil
+                 || o.alarmScript != nil || o.alarmApproved || o.packRev1) {
+        FileHandle.standardError.write("refusing: --k01 needs --k01-approved and no other command option\n".data(using: .utf8)!)
+        exit(2)
+    }
+    if o.k01Approved && !o.k01 {
+        FileHandle.standardError.write("refusing: --k01-approved without --k01\n".data(using: .utf8)!)
         exit(2)
     }
     if o.c08Approved && !o.c08 {
@@ -195,6 +212,9 @@ final class Probe: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     var inflight: (cmd: UInt8, seq: UInt8, sentAt: Date, deadline: Date)?
     /// C08: the key name of the in-flight 121/128 read (for echo checking).
     var inflightKey: String?
+    /// K01: whether the single SET_CLOCK has gone out (read-backs after it are the "after" phase).
+    var k01SetSent = false
+    var k01Before: (offset: Double, range: Whoop5DataRange?)?
     var seq: UInt8 = 200            // distinct from the app's low sequence numbers, so responses are attributable
     var commandsStarted = false
     var summary: [String] = []
@@ -363,6 +383,13 @@ final class Probe: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
             self.queue = self.opt.commands.map { c in (c, c == 151 && self.opt.packRev1 ? [0x01] : (READ_ONLY_PAYLOADS[c] ?? [])) }
             self.script = self.opt.alarmScript ?? []
             if let t = self.opt.toggle { self.queue.append((t, [1])) }
+            if self.opt.k01 {
+                // Fixed sequence. SET_CLOCK's data is built at send time from the Mac clock (see next()). The clock is
+                // read twice before the SET: the first command after subscribing can answer after the 7 s timeout
+                // (first run, 2026-11-18), and the SET needs a decoded "before" reading.
+                self.queue = [(Whoop5Clock.getCommand, []), (34, []), (Whoop5Clock.getCommand, []),
+                              (Whoop5Clock.setCommand, []), (Whoop5Clock.getCommand, []), (34, [])]
+            }
             if self.opt.c08 {
                 // Fixed table only; payloads come from the shared, unit-tested builder.
                 self.queue = Whoop5ConfigRead.c08Keys.compactMap { k in Whoop5ConfigRead.requestPayload(k).map { (k.command, $0) } }
@@ -394,7 +421,22 @@ final class Probe: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
             }
         }
         guard let p = peripheral, let c = command, !queue.isEmpty else { return }
-        let (cmd, data) = queue.removeFirst()
+        var (cmd, data) = queue.removeFirst()
+        if cmd == Whoop5Clock.setCommand {
+            guard opt.k01, !k01SetSent else { say("REFUSED SET_CLOCK outside a single --k01 run"); next(); return }
+            guard let before = k01Before, before.offset.isFinite else {
+                say("K01: no clock read before SET — SET_CLOCK skipped"); next(); return
+            }
+            guard !Whoop5Clock.readbackAccepted(offset: before.offset) else {
+                say(String(format: "K01: strap already within 2 s (%.2f s) — SET_CLOCK skipped", before.offset)); next(); return
+            }
+            guard let p = Whoop5Clock.setPayload(unixSeconds: Date().timeIntervalSince1970) else {
+                say("K01: Mac time implausible — SET_CLOCK skipped"); next(); return
+            }
+            data = p
+            k01SetSent = true
+            record(["kind": "k01", "phase": "set", "host_unix": Date().timeIntervalSince1970, "payload": hex(p)])
+        }
         guard opt.c08 || (cmd != Whoop5ConfigRead.deviceConfigCommand && cmd != Whoop5ConfigRead.featureFlagCommand) else {
             say("REFUSED cmd=\(cmd) outside --c08"); next(); return
         }
@@ -427,6 +469,7 @@ final class Probe: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
                 self.record(["kind": "result", "cmd": Int(cmd), "seq": Int(seq), "outcome": "timeout"])
                 self.inflight = nil
                 if self.opt.c08 { self.queue = []; self.say("C08 STOP: timeout") }
+                if self.opt.k01, cmd == Whoop5Clock.setCommand { self.say("K01: SET_CLOCK unanswered — read-backs follow, no retry") }
                 self.next()
             } else { self.armTimeout(cmd: cmd, seq: seq) }
         }
@@ -501,6 +544,7 @@ final class Probe: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
                 if result != 2, opt.c08, let key = inflightKey, let r = Whoop5CommandResponse.decode(frame) {
                     c08Classify(r, key: key)
                 }
+                if result != 2, opt.k01, let r = Whoop5CommandResponse.decode(frame) { k01Observe(r) }
                 if result != 2 {   // 2 = PENDING (Goose); wait for the final result
                     record(["kind": "result", "cmd": Int(cmd), "seq": Int(oseq), "outcome": "result \(result)", "latency_ms": ms])
                     inflight = nil
@@ -557,9 +601,46 @@ extension Probe {
     }
 }
 
+extension Probe {
+    /// K01 bookkeeping: clock offset and data range before and after the single SET_CLOCK, plus the verdict.
+    /// Pass = SET answered SUCCESS, read-back within 2 s of the Mac, and GET_DATA_RANGE still answers with a newest
+    /// record near the strap clock (an unlatched set left the 4.0 RTC lost and history unserved).
+    func k01Observe(_ r: Whoop5CommandResponse) {
+        let phase = k01SetSent ? "after" : "before"
+        switch r.command {
+        case Whoop5Clock.getCommand:
+            guard case .success(let c) = Whoop5Clock.decode(r) else {
+                say("K01 \(phase): GET_CLOCK did not decode (\(r.result))"); return
+            }
+            let off = Whoop5Clock.readbackOffset(strap: c, hostSeconds: Date().timeIntervalSince1970)
+            record(["kind": "k01", "phase": phase, "clock_offset_s": off])
+            say(String(format: "K01 %@: strap − Mac = %.2f s", phase, off))
+            if !k01SetSent { k01Before = (off, k01Before?.range) } else {
+                let ok = Whoop5Clock.readbackAccepted(offset: off)
+                summary.append(String(format: "K01 clock: %.2f s → %.2f s (%@)", k01Before?.offset ?? .nan, off,
+                                      ok ? "within 2 s" : "NOT corrected"))
+            }
+        case 34:
+            guard case .success(let d) = Whoop5DataRange.decode(r) else {
+                say("K01 \(phase): GET_DATA_RANGE did not decode (\(r.result)) — check history is still served"); return
+            }
+            record(["kind": "k01", "phase": phase, "range_oldest": d.oldestUnix, "range_newest": d.newestUnix,
+                    "range_last_synced": d.lastSyncedUnix, "trim_page": d.trimPage, "trim_block": d.trimBlock])
+            say("K01 \(phase): data range oldest=\(d.oldestUnix) newest=\(d.newestUnix) trim=\(d.trimPage)/\(d.trimBlock)")
+            if k01SetSent { summary.append("K01 data range after: newest \(d.newestUnix), trim \(d.trimPage)/\(d.trimBlock)") }
+            else { k01Before = (k01Before?.offset ?? .nan, d) }
+        case Whoop5Clock.setCommand:
+            record(["kind": "k01", "phase": "set_result", "result": "\(r.result)", "body": hex(r.body)])
+            say("K01 SET_CLOCK → \(r.result)")
+            summary.append("K01 SET_CLOCK → \(r.result)")
+        default: break
+        }
+    }
+}
+
 func commandName(_ c: UInt8) -> String {
     if let n = [19: "RUN_HAPTIC_PATTERN_MAVERICK", 66: "SET_ALARM_TIME", 68: "RUN_ALARM", 69: "DISABLE_ALARM_ALL", 122: "STOP_HAPTICS",
-                     121: "GET_DEVICE_CONFIG_VALUE", 128: "GET_FF_VALUE"][c] { return n }
+                     121: "GET_DEVICE_CONFIG_VALUE", 128: "GET_FF_VALUE", 10: "SET_CLOCK"][c] { return n }
     return READ_ONLY_ALLOWLIST[c] ?? REVERSIBLE_ALLOWLIST[c] ?? (c == 145 ? "GET_HELLO" : "?")
 }
 

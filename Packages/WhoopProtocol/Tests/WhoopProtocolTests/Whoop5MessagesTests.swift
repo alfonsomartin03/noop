@@ -42,6 +42,31 @@ final class Whoop5MessagesTests: XCTestCase {
         XCTAssertEqual(Whoop5Clock.decode(try response("rx_get_data_range_success")), .failure(.wrongCommand(34)))
     }
 
+    /// K01 prep: SET_CLOCK data is the GET_CLOCK body's 8-byte form, so it round-trips through the clock decoder.
+    func testSetClockPayloadRoundTripsThroughTheClockDecoder() throws {
+        let t = 1_795_027_200.75
+        let p = try XCTUnwrap(Whoop5Clock.setPayload(unixSeconds: t))
+        XCTAssertEqual(p.count, 8)
+        XCTAssertEqual(le32(p, 0), 1_795_027_200, "seconds, little-endian")
+        XCTAssertEqual(Array(p[4..<8]), [0x00, 0x60, 0x00, 0x00], "0.75 s = 24576/32768")
+        let frame = buildWhoop5Frame(payload: [36, 9, Whoop5Clock.getCommand, 201, 1] + p + [0, 0, 0])
+        let c = try Whoop5Clock.decode(XCTUnwrap(Whoop5CommandResponse.decode(frame))).get()
+        XCTAssertEqual(c.seconds, t, accuracy: 1.0 / 32768)
+        let frame10 = buildWhoop5CommandFrame(seq: 201, command: Whoop5Clock.setCommand, data: p)
+        XCTAssertEqual(frame10.count, 24, "11-byte payload padded to 12: 8 + 12 + 4")
+    }
+
+    func testSetClockPayloadEdgesAndReadbackVerdict() throws {
+        XCTAssertNil(Whoop5Clock.setPayload(unixSeconds: 0), "implausible time is never encoded")
+        XCTAssertNil(Whoop5Clock.setPayload(unixSeconds: .nan))
+        let p = try XCTUnwrap(Whoop5Clock.setPayload(unixSeconds: 1_795_027_200.99999999))
+        XCTAssertLessThanOrEqual(Int(p[4]) | Int(p[5]) << 8, 32767, "subseconds stay below one second")
+        let strap = Whoop5Clock(unix: 1_795_027_200, subseconds: 16384)
+        XCTAssertEqual(Whoop5Clock.readbackOffset(strap: strap, hostSeconds: 1_795_027_200.2), 0.3, accuracy: 1e-6)
+        XCTAssertTrue(Whoop5Clock.readbackAccepted(offset: 0.3))
+        XCTAssertFalse(Whoop5Clock.readbackAccepted(offset: -40.1), "an unlatched set leaves the old offset")
+    }
+
     func testBattery() throws {
         XCTAssertEqual(whoop5BatteryPercent(try response("rx_get_battery_level_success")), 20)
         XCTAssertNil(whoop5BatteryPercent(try response("rx_get_clock_success")))
