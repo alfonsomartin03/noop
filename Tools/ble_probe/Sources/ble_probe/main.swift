@@ -5,6 +5,7 @@ import WhoopProtocol
 // WHOOP 5.0 read-only BLE probe.
 //
 //   swift run ble_probe [--seconds N] [--commands 11,34,...] [--hello] [--exp ID] [--out FILE]
+//   swift run ble_probe --c08 --c08-approved [--exp C08] [--out FILE]   (#40; only after the owner approves C08)
 //
 // What it does: finds the strap (shares the link if NOOP already holds it), enumerates every service,
 // characteristic and descriptor, reads the standard read-only characteristics (Device Information,
@@ -97,6 +98,10 @@ struct Options {
     var passive = false
     /// C06 (owner-approved 2026-11-17): send GET_BATTERY_PACK_INFO with payload [01] (Goose's revision byte) instead of [].
     var packRev1 = false
+    /// C08 (#40, PROPOSED, not approved): the four fixed 121/128 named reads in `Whoop5ConfigRead.c08Keys`, nothing else.
+    /// Needs `--c08-approved` too; refuses every other command option. 121/128 stay out of READ_ONLY_ALLOWLIST.
+    var c08 = false
+    var c08Approved = false
 }
 
 func parseOptions() -> Options {
@@ -129,6 +134,8 @@ func parseOptions() -> Options {
         case "--hello": o.hello = true
         case "--passive": o.passive = true
         case "--pack-rev1": o.packRev1 = true
+        case "--c08": o.c08 = true
+        case "--c08-approved": o.c08Approved = true
         case "--exp": o.experiment = it.next() ?? o.experiment
         case "--out": o.out = it.next()
         default:
@@ -146,6 +153,15 @@ func parseOptions() -> Options {
     }
     if o.packRev1 && o.commands != [151] {
         FileHandle.standardError.write("refusing: --pack-rev1 only with --commands 151\n".data(using: .utf8)!)
+        exit(2)
+    }
+    if o.c08 && (!o.c08Approved || o.passive || o.hello || !o.commands.isEmpty || o.toggle != nil
+                 || o.alarmScript != nil || o.alarmApproved || o.packRev1) {
+        FileHandle.standardError.write("refusing: --c08 needs --c08-approved and no other command option\n".data(using: .utf8)!)
+        exit(2)
+    }
+    if o.c08Approved && !o.c08 {
+        FileHandle.standardError.write("refusing: --c08-approved without --c08\n".data(using: .utf8)!)
         exit(2)
     }
     if o.alarmScript != nil && !o.alarmApproved {
@@ -177,6 +193,8 @@ final class Probe: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     var strapClock: (strap: Double, host: Date)?
     var toggleOffSent = false
     var inflight: (cmd: UInt8, seq: UInt8, sentAt: Date, deadline: Date)?
+    /// C08: the key name of the in-flight 121/128 read (for echo checking).
+    var inflightKey: String?
     var seq: UInt8 = 200            // distinct from the app's low sequence numbers, so responses are attributable
     var commandsStarted = false
     var summary: [String] = []
@@ -345,6 +363,11 @@ final class Probe: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
             self.queue = self.opt.commands.map { c in (c, c == 151 && self.opt.packRev1 ? [0x01] : (READ_ONLY_PAYLOADS[c] ?? [])) }
             self.script = self.opt.alarmScript ?? []
             if let t = self.opt.toggle { self.queue.append((t, [1])) }
+            if self.opt.c08 {
+                // Fixed table only; payloads come from the shared, unit-tested builder.
+                self.queue = Whoop5ConfigRead.c08Keys.compactMap { k in Whoop5ConfigRead.requestPayload(k).map { (k.command, $0) } }
+                guard self.queue.count == Whoop5ConfigRead.c08Keys.count else { self.finish("C08 table invalid — nothing sent"); return }
+            }
             self.next()
         }
     }
@@ -372,6 +395,10 @@ final class Probe: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         }
         guard let p = peripheral, let c = command, !queue.isEmpty else { return }
         let (cmd, data) = queue.removeFirst()
+        guard opt.c08 || (cmd != Whoop5ConfigRead.deviceConfigCommand && cmd != Whoop5ConfigRead.featureFlagCommand) else {
+            say("REFUSED cmd=\(cmd) outside --c08"); next(); return
+        }
+        inflightKey = opt.c08 ? String(decoding: data.dropFirst().prefix { $0 != 0 }, as: UTF8.self) : nil
         seq = seq == 255 ? 200 : seq + 1
         let frame = buildWhoop5CommandFrame(seq: seq, command: cmd, data: data)
         inflight = (cmd, seq, Date(), Date().addingTimeInterval(7))
@@ -399,6 +426,7 @@ final class Probe: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
                 self.say("TIMEOUT cmd=\(cmd) \(commandName(cmd)) seq=\(seq) — no final response (not retried)")
                 self.record(["kind": "result", "cmd": Int(cmd), "seq": Int(seq), "outcome": "timeout"])
                 self.inflight = nil
+                if self.opt.c08 { self.queue = []; self.say("C08 STOP: timeout") }
                 self.next()
             } else { self.armTimeout(cmd: cmd, seq: seq) }
         }
@@ -470,6 +498,9 @@ final class Probe: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
                 let ms = Int(Date().timeIntervalSince(fl.sentAt) * 1000)
                 f["latency_ms"] = ms
                 say("RX response cmd=\(cmd) seq=\(oseq) result=\(result) len=\(frame.count) latency=\(ms)ms")
+                if result != 2, opt.c08, let key = inflightKey, let r = Whoop5CommandResponse.decode(frame) {
+                    c08Classify(r, key: key)
+                }
                 if result != 2 {   // 2 = PENDING (Goose); wait for the final result
                     record(["kind": "result", "cmd": Int(cmd), "seq": Int(oseq), "outcome": "result \(result)", "latency_ms": ms])
                     inflight = nil
@@ -499,8 +530,36 @@ final class Probe: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     }
 }
 
+extension Probe {
+    /// C08 stop rules (CAPABILITY_MATRIX §7): stop at the first unexpected shape or key echo; UNSUPPORTED skips the
+    /// rest of that command; no retries. Values are config settings, not identifiers, so they are logged.
+    func c08Classify(_ r: Whoop5CommandResponse, key: String) {
+        let reply = Whoop5ConfigRead.classify(r, name: key)
+        let outcome: String
+        switch reply.outcome {
+        case .value(let v): outcome = "value \(v)"
+        case .zeroFallback: outcome = "zero fallback (result 1, all-zero value; not a reading of 0)"
+        case .keyUnknownOrUnreadable: outcome = "key unknown or unreadable (result 0)"
+        case .revisionRejected: outcome = "revision rejected"
+        case .unsupported: outcome = "UNSUPPORTED"
+        case .pending: outcome = "pending"
+        case .unexpected(let why): outcome = "UNEXPECTED: \(why)"
+        }
+        record(["kind": "c08", "cmd": Int(r.command), "key": key, "outcome": outcome,
+                "raw_body_len": reply.rawBody.count, "raw_body": hex(reply.rawBody)])
+        say("C08 \(r.command) \(key): \(outcome)")
+        summary.append("C08 \(r.command) \(key): \(outcome)")
+        switch reply.outcome {
+        case .unexpected: queue = []; say("C08 STOP: no further reads")
+        case .unsupported: queue.removeAll { $0.cmd == r.command }
+        default: break
+        }
+    }
+}
+
 func commandName(_ c: UInt8) -> String {
-    if let n = [19: "RUN_HAPTIC_PATTERN_MAVERICK", 66: "SET_ALARM_TIME", 68: "RUN_ALARM", 69: "DISABLE_ALARM_ALL", 122: "STOP_HAPTICS"][c] { return n }
+    if let n = [19: "RUN_HAPTIC_PATTERN_MAVERICK", 66: "SET_ALARM_TIME", 68: "RUN_ALARM", 69: "DISABLE_ALARM_ALL", 122: "STOP_HAPTICS",
+                     121: "GET_DEVICE_CONFIG_VALUE", 128: "GET_FF_VALUE"][c] { return n }
     return READ_ONLY_ALLOWLIST[c] ?? REVERSIBLE_ALLOWLIST[c] ?? (c == 145 ? "GET_HELLO" : "?")
 }
 
