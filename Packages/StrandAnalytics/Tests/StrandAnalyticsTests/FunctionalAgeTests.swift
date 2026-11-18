@@ -69,26 +69,26 @@ final class FunctionalAgeTests: XCTestCase {
         XCTAssertEqual(covered, Set(FunctionalAge.Contributor.allCases), "every contributor has a manifest entry")
     }
 
-    func testGateNeverReturnsANumberAndListsReasons() {
-        XCTAssertFalse(FunctionalAge.numericRelease)
+    func testEvaluateIsReadyOnlyWithEveryGroupAndListsReasons() throws {
+        XCTAssertTrue(FunctionalAge.numericRelease)
         let inputs = [
             FunctionalAge.Input(contributor: .restingHR, value: 52, source: .noop, coveredDays: 30, requiredDays: 30),
             FunctionalAge.Input(contributor: .vo2max, value: 48, source: .derivedEstimate("HR-ratio VO₂max estimate"),
                                 coveredDays: 30, requiredDays: 30),
             FunctionalAge.Input(contributor: .steps, value: nil, source: .noop, coveredDays: 3, requiredDays: 30),
         ]
-        guard case .unsupported(let reason, let reasons) = FunctionalAge.evaluate(inputs: inputs, chronologicalAge: nil) else {
-            return XCTFail("gated model must not be ready or calibrating")
+        guard case .calibrating(let progress, let reasons) = FunctionalAge.evaluate(inputs: inputs, chronologicalAge: nil) else {
+            return XCTFail("missing inputs never give a number")
         }
-        XCTAssertTrue(reason.contains("not switched on"))
+        XCTAssertEqual(progress, 1.0 / 3, accuracy: 1e-12, "only resting HR is usable")
         XCTAssertTrue(reasons.contains { $0.hasPrefix("Chronological age") })
         XCTAssertTrue(reasons.contains { $0.contains("would count them twice") }, "HR-ratio VO₂ refused")
         XCTAssertTrue(reasons.contains { $0.contains("3 of 30 days") }, "sparse steps are coverage, never zero")
         XCTAssertTrue(FunctionalAge.inputProblems(inputs[0]).isEmpty)
-        // Even complete inputs stay gated on the Health page.
-        guard case .unsupported = FunctionalAge.evaluate(inputs: complete(), chronologicalAge: 40) else {
-            return XCTFail("gated")
+        guard case .ready(let years) = FunctionalAge.evaluate(inputs: complete(), chronologicalAge: 40) else {
+            return XCTFail("complete inputs give a number")
         }
+        XCTAssertEqual(years, 0, accuracy: 1e-12)
     }
 
     // MARK: v1 one-per-group estimate

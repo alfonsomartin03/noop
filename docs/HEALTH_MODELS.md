@@ -40,7 +40,7 @@ No subset of NOOP's inputs (age, sex, height, weight, sleep-derived HR/HRV, resp
 
 Issue #16 re-review: still unavailable. The VO₂max estimate below is a *fitness* measure, not biological age, and no fitness-age mapping is shown because the published age/sex reference medians (HUNT) and waist/activity inputs are not in NOOP; the hero keeps its unavailable state.
 
-## Functional age and pace (issue #49, `noop-functional-age-v1-groups`, implemented in analytics, **gated in the UI**)
+## Functional age and pace (issue #49, `noop-functional-age-v1-groups`, shown on the Health page, **experimental**)
 
 Lane chosen by the owner (2026-11-18): a **wearable functional-age** estimate in the hazard-equivalent ("effective
 age") framework. It is not lab biological age, not fitness age, and not WHOOP numerical parity. Code:
@@ -115,14 +115,22 @@ overlap between groups (fit people sleep better and have a lower RHR) is not rem
 - **Age:** comes only from an optional **birth date** (Settings ▸ Profile, `profile.birthDate`). The integer age is
   not used, so birthdays never step.
 
-**Still gated in the UI** (`numericRelease = false`; `evaluate` returns `.unsupported` with reasons). Before
-release:
+**Health page (2026-11-18).** The age hero now shows functional age (`numericRelease = true`).
 
-- Input windows and coverage (e.g. 180-day and 30-day; engineering values to freeze before evaluation).
-- A birth date in Profile.
-- #42 step completeness.
-- The Health hero, contributors and calibration states.
-- Evaluation, including agreement with imported WHOOP values only as a comparison.
+- **Ready state:** the value appears only when every group has a usable input. It shows functional age, the
+  difference from chronological age, and the pace (years per year over the 6-month projection). Pace below 0× or
+  above 3× is shown as "< 0×" / "> 3×"; the raw value stays in the model. Each group's contribution is listed, with
+  "(limit)" when its input was held at the supported edge.
+- **Calibrating state:** an expanded list of exactly what is missing.
+- **Labelling:** "Experimental", the model version, "not biological age", and a note that lab biological age is
+  not available.
+- **Measured VO₂max:** entered in Settings ▸ Profile (value in ml/kg/min, test method, test date). A test more than
+  2 years old, or dated in the future, is not used (engineering choice). NOOP's HR-ratio estimate is never used here.
+- **Known property:** the Kodama per-MET slope applied across 4–16 METs gives a large fitness contribution (e.g.
+  46 ml/kg/min ≈ −7 years at referent 7.9 METs). That is what the cited marginal curve implies; it is not
+  age/sex-specific.
+- **Not done:** evaluation (replay or held-out), comparison with imported WHOOP values, a VoiceOver pass and an
+  in-app check. Renders were checked from synthetic summaries.
 
 ## VO₂max estimate (issue #16, `vo2-hr-ratio-v1`, implemented, **not validated**)
 

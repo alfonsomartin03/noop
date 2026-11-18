@@ -92,6 +92,36 @@ struct SettingsView: View {
                                  accessibility: "Height in centimetres")
                 }
                 rowDivider
+                FormRow(label: "Measured VO₂max") {
+                    VStack(alignment: .trailing, spacing: 6) {
+                        if let v = profile.measuredVO2 {
+                            measureField(value: Binding(get: { v }, set: { profile.measuredVO2 = $0 }), unit: "ml/kg/min",
+                                         range: 10...90, step: 0.5, format: "%.1f",
+                                         accessibility: "Measured VO₂max in millilitres per kilogram per minute")
+                            HStack(spacing: 8) {
+                                Picker("Test", selection: $profile.measuredVO2Method) {
+                                    ForEach(["Lab test (CPET)", "Field test", "Other measured test"], id: \.self) { Text($0).tag($0) }
+                                }
+                                .labelsHidden().fixedSize()
+                                .accessibilityLabel("VO₂max test method")
+                                DatePicker("Test date", selection: $profile.measuredVO2Date, in: ...Date(), displayedComponents: .date)
+                                    .labelsHidden()
+                                    .accessibilityLabel("VO₂max test date")
+                                Button("Clear") { profile.measuredVO2 = nil }
+                                    .buttonStyle(.borderless)
+                                    .accessibilityLabel("Clear measured VO₂max")
+                            }
+                        } else {
+                            Button("Add a test result") { profile.measuredVO2 = 40; profile.measuredVO2Date = Date() }
+                                .buttonStyle(.borderless)
+                        }
+                        Text("Optional. From a fitness test, not a watch estimate. Used only for the Health age estimate.")
+                            .font(StrandFont.footnote)
+                            .foregroundStyle(StrandPalette.textTertiary)
+                            .multilineTextAlignment(.trailing)
+                    }
+                }
+                rowDivider
                 FormRow(label: "Max heart rate") {
                     VStack(alignment: .trailing, spacing: 6) {
                         HStack(spacing: 8) {

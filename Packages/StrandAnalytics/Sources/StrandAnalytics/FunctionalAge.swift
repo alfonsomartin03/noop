@@ -8,13 +8,14 @@ import Foundation
 /// Combination (v1, owner decision 2026-11-18 after a search found no published joint model for these wearable
 /// inputs): ONE contributor per correlated group — activity/fitness (measured VO₂max, else steps), resting heart
 /// rate, sleep duration — each mapped through its cited marginal curve and summed. This is a NOOP simplification:
-/// residual overlap between groups is not removed. `estimate` computes it deterministically; `evaluate` (what the
-/// Health page reads) stays GATED (`numericRelease == false`) until input windows, a birth date and the UI exist.
+/// residual overlap between groups is not removed. `estimate` computes it deterministically; the Health page shows it
+/// (experimental) only when every group has a usable input (`numericRelease`).
 /// Method and sources: `docs/HEALTH_MODELS.md`.
 public enum FunctionalAge {
     public static let modelVersion = "noop-functional-age-v1-groups"
-    /// No numeric age/pace on screen until input windows, coverage rules, a birth date and the UI are in place.
-    public static let numericRelease = false
+    /// Switched on 2026-11-18 with the Health page view (#49): `evaluate` returns `.ready` only when every group has a
+    /// usable input. Set false to hide the number again without touching the math.
+    public static let numericRelease = true
 
     // MARK: Risk → years
 
@@ -263,6 +264,12 @@ public enum FunctionalAge {
         return (Estimate(modelVersion: modelVersion, chronologicalAge: age, impacts: impacts), [])
     }
 
+    /// Groups that have at least one usable input (for calibration progress).
+    public static func usableGroups(_ inputs: [Input]) -> Set<Group> {
+        Set(inputs.filter { inputProblems($0).isEmpty && hazardRatio(for: $0.contributor, value: $0.value ?? .nan) != nil }
+            .compactMap { group(of: $0.contributor) })
+    }
+
     public enum Availability: Equatable, Sendable {
         /// Never returned while `numericRelease` is false.
         case ready(ageImpactYears: Double)
@@ -276,9 +283,10 @@ public enum FunctionalAge {
         if case .derivedEstimate(let what) = i.source {
             out.append("\(i.contributor.label): \(what) is derived from other inputs (e.g. age and resting HR) and would count them twice")
         }
-        if i.value == nil { out.append("\(i.contributor.label): no value") }
         if i.coveredDays < i.requiredDays {
             out.append("\(i.contributor.label): \(i.coveredDays) of \(i.requiredDays) days with complete data")
+        } else if i.value == nil {
+            out.append("\(i.contributor.label): no value")   // coverage met but nothing usable: say so once
         }
         return out
     }
@@ -295,7 +303,6 @@ public enum FunctionalAge {
                                 reasons: reasons)
         }
         if let est { return .ready(ageImpactYears: est.totalImpact) }
-        let required = Double(Group.allCases.count)
-        return .calibrating(progress: (required - Double(missing.count)) / required, reasons: reasons)
+        return .calibrating(progress: Double(usableGroups(inputs).count) / Double(Group.allCases.count), reasons: reasons)
     }
 }

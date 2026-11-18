@@ -72,50 +72,45 @@ private struct MetricDetailItem: Identifiable {
 
 // MARK: - Age hero
 
+/// Functional age (#49, `FunctionalAge` `noop-functional-age-v1-groups`): an experimental hazard-equivalent estimate from
+/// resting heart rate, sleep duration and a measured VO₂max, one contributor per group. Not lab biological age (shown as
+/// unavailable separately). Without every input it shows what is missing, never a number.
 private struct AgeHero: View {
+    @EnvironmentObject var repo: Repository
     @ObservedObject var profile: ProfileStore
-    @State private var expanded = false
-    private var ageSet: Bool { UserDefaults.standard.object(forKey: "profile.age") != nil }
+    @State private var summary: FunctionalAgeSnapshot.Summary?
+
+    private var taskKey: String {
+        "\(repo.dataVersion)-\(repo.estimates.count)-\(repo.official.count)-\(profile.birthDate?.timeIntervalSince1970 ?? 0)-"
+            + "\(profile.measuredVO2 ?? 0)-\(profile.measuredVO2Date.timeIntervalSince1970)-\(Repository.dayString(Date()))"
+    }
 
     var body: some View {
-        let availability = BiologicalAgeModel.availability(hasAge: ageSet, hasSex: UserDefaults.standard.object(forKey: "profile.sex") != nil)
+        FunctionalAgeHeroCard(summary: summary,
+                              chronological: profile.birthDate.flatMap { FunctionalAge.chronologicalAge(birth: $0, asOf: Date()) })
+            .task(id: taskKey) {
+                let days = repo.functionalAgeDays()
+                let birth = profile.birthDate, vo2 = profile.measuredVO2Input
+                summary = await Task.detached(priority: .userInitiated) {
+                    FunctionalAgeSnapshot.summarize(days: days, birth: birth, asOf: Date(), calendar: .current, measuredVO2: vo2)
+                }.value
+            }
+    }
+}
+
+/// The hero's content from a summary (no data loading), so render checks can draw every state from synthetic input.
+struct FunctionalAgeHeroCard: View {
+    let summary: FunctionalAgeSnapshot.Summary?
+    let chronological: Double?
+    /// Open by default: the list is what the wearer acts on while the estimate is calibrating.
+    @State private var expanded = true
+
+    var body: some View {
         ZStack(alignment: .topLeading) {
             HealthAmbient()
-            HStack(alignment: .center, spacing: 28) {
-                AgeOrb()
-                    .frame(width: 150, height: 150)
-                    .overlay {
-                        VStack(spacing: 2) {
-                            Text("—").font(StrandFont.number(44, weight: .bold)).foregroundStyle(.white)
-                            Text("estimate unavailable").font(.system(size: 11, weight: .medium)).foregroundStyle(.white.opacity(0.85))
-                        }
-                    }
-                    .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("Biological age").font(StrandFont.title2).foregroundStyle(.white)
-                    HStack(spacing: 18) {
-                        fact("Chronological age", ageSet ? "\(profile.age)" : "Not set", ageSet ? "from your profile" : "add it in Settings")
-                        fact("Pace of aging", "—", "needs an age model")
-                        fact("Model", "None", "no defensible model yet")
-                    }
-                    if case let .unavailable(reason, missing) = availability {
-                        Text(reason).font(StrandFont.caption).foregroundStyle(.white.opacity(0.9)).fixedSize(horizontal: false, vertical: true)
-                        DisclosureGroup(isExpanded: $expanded) {
-                            VStack(alignment: .leading, spacing: 4) {
-                                ForEach(missing, id: \.self) { m in
-                                    Label(m, systemImage: "circle.dashed").font(StrandFont.caption).foregroundStyle(.white.opacity(0.9))
-                                }
-                                Text("NOOP will only enable an estimate once a published, validated model's inputs are available here. See docs/HEALTH_MODELS.md for the models reviewed.")
-                                    .font(StrandFont.footnote).foregroundStyle(.white.opacity(0.75)).fixedSize(horizontal: false, vertical: true)
-                            }
-                            .padding(.top, 4)
-                        } label: {
-                            Text("What it would need").font(.system(size: 12, weight: .semibold)).foregroundStyle(.white)
-                        }
-                        .tint(.white)
-                    }
-                }
-                Spacer(minLength: 0)
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .top, spacing: 28) { orb(150); details.frame(minWidth: 520, idealWidth: 560, maxWidth: .infinity, alignment: .leading) }
+                VStack(alignment: .leading, spacing: 18) { orb(120); details }
             }
             .padding(24)
         }
@@ -123,7 +118,138 @@ private struct AgeHero: View {
         .overlay(RoundedRectangle(cornerRadius: 28, style: .continuous).strokeBorder(Color.white.opacity(0.12), lineWidth: 0.5))
         .shadow(color: StrandPalette.shadow, radius: 14, y: 4)
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Biological age: estimate unavailable. Chronological age \(ageSet ? "\(profile.age)" : "not set").")
+        .accessibilityLabel(accessibilitySummary)
+    }
+
+    private func orb(_ size: CGFloat) -> some View {
+        AgeOrb()
+            .frame(width: size, height: size)
+            .overlay {
+                // A soft dark disc behind the number keeps white text readable on the bright orb.
+                Circle().fill(Color(red: 0.01, green: 0.20, blue: 0.16).opacity(0.55)).padding(size * 0.2).blur(radius: 6)
+                VStack(spacing: 2) {
+                    Text(orbValue).font(StrandFont.number(size * 0.29, weight: .bold)).foregroundStyle(.white)
+                    Text(summary?.current == nil ? "calibrating" : "functional age")
+                        .font(.system(size: 11, weight: .semibold)).foregroundStyle(.white)
+                }
+                .shadow(color: .black.opacity(0.35), radius: 2, y: 1)
+            }
+            .accessibilityHidden(true)
+    }
+
+    private var details: some View {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(spacing: 8) {
+                        Text("Functional age").font(StrandFont.title2).foregroundStyle(.white).fixedSize()
+                        Text("Experimental").font(.system(size: 10.5, weight: .semibold)).foregroundStyle(.white)
+                            .padding(.horizontal, 7).padding(.vertical, 2)
+                            .background(Capsule().fill(.white.opacity(0.18)))
+                    }
+                    ViewThatFits(in: .horizontal) {
+                        HStack(alignment: .top, spacing: 18) { facts }
+                        VStack(alignment: .leading, spacing: 10) { facts }
+                    }
+                    if let c = summary?.current {
+                        contributors(c)
+                    } else {
+                        missing
+                    }
+                    Text("A hazard-equivalent age from published associations, combined one per group (a NOOP simplification). Not biological age: lab biological age (blood tests) isn't available in NOOP. Model \(FunctionalAge.modelVersion).")
+                        .font(StrandFont.footnote).foregroundStyle(.white.opacity(0.72)).fixedSize(horizontal: false, vertical: true)
+                }
+    }
+
+    private var orbValue: String {
+        guard let c = summary?.current else { return "—" }
+        return String(format: "%.1f", c.functionalAge)
+    }
+
+    @ViewBuilder private var facts: some View {
+        fact("Chronological age", chronological.map { String(format: "%.1f", $0) } ?? "Not set",
+             chronological == nil ? "add your birth date in Settings" : "from your birth date")
+        if let c = summary?.current {
+            fact("Difference", Self.signedYears(c.totalImpact), c.totalImpact <= 0 ? "younger than your age" : "older than your age")
+        }
+        fact("Pace of aging", summary?.pace.map(Self.paceText) ?? "—",
+             summary?.pace == nil ? "needs the full model" : "years per year, projected 6 months")
+    }
+
+    private func contributors(_ c: FunctionalAge.Estimate) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("What moves it").font(.system(size: 12, weight: .semibold)).foregroundStyle(.white)
+            ForEach(c.impacts, id: \.group) { i in
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    ViewThatFits(in: .horizontal) {
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            Text(i.contributor.label).font(StrandFont.caption).foregroundStyle(.white.opacity(0.9))
+                            Text(Self.valueText(i)).font(StrandFont.caption).foregroundStyle(.white.opacity(0.7))
+                        }
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(i.contributor.label).font(StrandFont.caption).foregroundStyle(.white.opacity(0.9))
+                            Text(Self.valueText(i)).font(StrandFont.caption).foregroundStyle(.white.opacity(0.7))
+                        }
+                    }
+                    .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 8)
+                    Text(Self.signedYears(i.years) + (i.clipped ? " (limit)" : ""))
+                        .font(StrandFont.number(13, weight: .semibold)).foregroundStyle(.white)
+                        .fixedSize()
+                }
+                .accessibilityElement(children: .combine)
+            }
+            Text("From the last \(FunctionalAgeSnapshot.longWindowDays) days; pace compares the last \(FunctionalAgeSnapshot.shortWindowDays) days, held for 6 months.")
+                .font(StrandFont.footnote).foregroundStyle(.white.opacity(0.72)).fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: 460, alignment: .leading)
+    }
+
+    @ViewBuilder private var missing: some View {
+        if let s = summary, !s.reasons.isEmpty {
+            DisclosureGroup(isExpanded: $expanded) {
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(s.reasons, id: \.self) { m in
+                        Label(m, systemImage: "circle.dashed").font(StrandFont.caption).foregroundStyle(.white.opacity(0.9))
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .padding(.top, 4)
+            } label: {
+                Text("What it still needs (\(s.reasons.count))").font(.system(size: 12, weight: .semibold)).foregroundStyle(.white)
+            }
+            .tint(.white)
+        } else if summary == nil {
+            ProgressView().controlSize(.small).tint(.white)
+        }
+    }
+
+    private var accessibilitySummary: String {
+        guard let c = summary?.current else {
+            return "Functional age: calibrating. \(summary?.reasons.count ?? 0) inputs still needed."
+        }
+        let pace = summary?.pace.map { ", pace of aging \(Self.paceText($0)) years per year" } ?? ""
+        return "Functional age \(String(format: "%.1f", c.functionalAge)), \(Self.signedYears(c.totalImpact)) against your age\(pace). Experimental."
+    }
+
+    static func signedYears(_ y: Double) -> String {
+        let r = (y * 10).rounded() / 10
+        return r == 0 ? "±0.0 y" : String(format: "%@%.1f y", r > 0 ? "+" : "−", abs(r))
+    }
+
+    /// Raw pace is kept in the model; the display rounds and marks values outside 0–3× instead of showing extremes.
+    static func paceText(_ p: Double) -> String {
+        if p < 0 { return "< 0×" }
+        if p > 3 { return "> 3×" }
+        return String(format: "%.1f×", p)
+    }
+
+    static func valueText(_ i: FunctionalAge.ContributorImpact) -> String {
+        switch i.contributor {
+        case .restingHR: return String(format: "%.0f bpm", i.value)
+        case .sleepDuration: return String(format: "%.1f h/night", i.value)
+        case .vo2max: return String(format: "%.1f ml/kg/min", i.value)
+        case .steps: return String(format: "%.0f steps/day", i.value)
+        default: return String(format: "%.1f", i.value)
+        }
     }
 
     private func fact(_ title: String, _ value: String, _ caption: String) -> some View {

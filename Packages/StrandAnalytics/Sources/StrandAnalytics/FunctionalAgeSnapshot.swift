@@ -32,12 +32,17 @@ public enum FunctionalAgeSnapshot {
         }
     }
 
-    /// A VO₂max the wearer entered from a test (value in ml/kg/min, method text).
+    /// A VO₂max the wearer entered from a test (value in ml/kg/min, method text, test date). Older than
+    /// `maxVO2AgeYears` = stale (fitness changes; engineering choice).
     public struct MeasuredVO2: Equatable, Sendable {
         public let value: Double
         public let method: String
-        public init(value: Double, method: String) { self.value = value; self.method = method }
+        public let testedAt: Date
+        public init(value: Double, method: String, testedAt: Date) {
+            self.value = value; self.method = method; self.testedAt = testedAt
+        }
     }
+    public static let maxVO2AgeYears = 2.0
 
     /// The `length` completed local days before `asOf`'s local day, as "YYYY-MM-DD".
     public static func windowDays(asOf: Date, length: Int, calendar: Calendar) -> Set<String> {
@@ -87,8 +92,16 @@ public enum FunctionalAgeSnapshot {
         var reasons: [String] = []
         let age = birth.flatMap { FunctionalAge.chronologicalAge(birth: $0, asOf: asOf) }
         if age == nil { reasons.append("Birth date (Settings ▸ Profile)") }
-        if measuredVO2 == nil {
-            reasons.append("Activity or fitness: enter a measured VO₂max (daily steps are not validated yet, #42)")
+        var measuredVO2 = measuredVO2
+        if let v = measuredVO2 {
+            let ageYears = asOf.timeIntervalSince(v.testedAt) / FunctionalAge.secondsPerYear
+            if ageYears > maxVO2AgeYears || ageYears < 0 {
+                reasons.append(ageYears < 0 ? "Measured VO₂max: test date is in the future"
+                                            : "Measured VO₂max: test is more than \(Int(maxVO2AgeYears)) years old — enter a recent one")
+                measuredVO2 = nil
+            }
+        } else {
+            reasons.append("Activity or fitness: enter a measured VO₂max in Settings ▸ Profile (daily steps are not validated yet, #42)")
         }
         let long = inputs(days: days, window: windowDays(asOf: asOf, length: longWindowDays, calendar: calendar),
                           minDays: longMinDays, measuredVO2: measuredVO2)

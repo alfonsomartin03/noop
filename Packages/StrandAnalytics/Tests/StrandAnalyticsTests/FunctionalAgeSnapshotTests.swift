@@ -28,7 +28,18 @@ final class FunctionalAgeSnapshotTests: XCTestCase {
         }
     }
 
-    private let vo2 = S.MeasuredVO2(value: 7.9 * 3.5, method: "treadmill CPET")
+    private lazy var vo2 = S.MeasuredVO2(value: 7.9 * 3.5, method: "treadmill CPET",
+                                         testedAt: cal.date(byAdding: .month, value: -3, to: asOf)!)
+
+    func testOldOrFutureVO2TestIsNotUsed() {
+        let old = S.MeasuredVO2(value: 40, method: "CPET", testedAt: cal.date(byAdding: .year, value: -3, to: asOf)!)
+        let s = S.summarize(days: days(200), birth: birth, asOf: asOf, calendar: cal, measuredVO2: old)
+        XCTAssertNil(s.current)
+        XCTAssertTrue(s.reasons.contains { $0.contains("more than 2 years old") })
+        let future = S.MeasuredVO2(value: 40, method: "CPET", testedAt: asOf.addingTimeInterval(86_400))
+        XCTAssertTrue(S.summarize(days: days(200), birth: birth, asOf: asOf, calendar: cal, measuredVO2: future)
+            .reasons.contains("Measured VO₂max: test date is in the future"))
+    }
 
     func testWindowExcludesTodayAndSpansDST() {
         let w = S.windowDays(asOf: asOf, length: 30, calendar: cal)
