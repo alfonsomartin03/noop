@@ -99,6 +99,22 @@ overlap between groups (fit people sleep better and have a lower RHR) is not rem
 - Not used in v1: sleep regularity and strength (exact ratios unconfirmed), zone minutes (no HRR-compatible
   source) and lean mass.
 
+**Inputs (`FunctionalAgeSnapshot`, 2026-11-18).** Engineering choices, frozen before any evaluation:
+
+- **Current age:** taken from the 180 completed local days before today (today excluded); each contributor needs
+  ≥ 90 days.
+- **Projected impact:** taken from the last 30 completed days (≥ 20 days), held for a 6-calendar-month horizon. Its
+  true length comes from the calendar, so DST and leap days only change H.
+- **Value per window:** the median of the daily values.
+- **One source per contributor per window:** whichever of NOOP and the WHOOP import has more days, NOOP on a tie.
+  `Repository.functionalAgeDays` passes NOOP and imported rows separately, so they never mix.
+- **Resting HR and sleep:** resting HR comes from `DailyMetric.restingHr`; sleep hours from `totalSleepMin / 60`
+  (0 = missing).
+- **Steps:** not used until #42 validates completeness. Activity/fitness therefore needs a measured VO₂max; there is
+  no entry field yet.
+- **Age:** comes only from an optional **birth date** (Settings ▸ Profile, `profile.birthDate`). The integer age is
+  not used, so birthdays never step.
+
 **Still gated in the UI** (`numericRelease = false`; `evaluate` returns `.unsupported` with reasons). Before
 release:
 

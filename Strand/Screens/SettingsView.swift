@@ -44,6 +44,30 @@ struct SettingsView: View {
                     }
                 }
                 rowDivider
+                FormRow(label: "Birth date") {
+                    VStack(alignment: .trailing, spacing: 6) {
+                        if let b = profile.birthDate {
+                            HStack(spacing: 8) {
+                                DatePicker("Birth date", selection: Binding(get: { b }, set: { profile.birthDate = $0 }),
+                                           in: ...Date(), displayedComponents: .date)
+                                    .labelsHidden()
+                                    .accessibilityLabel("Birth date")
+                                Button("Clear") { profile.birthDate = nil }
+                                    .buttonStyle(.borderless)
+                                    .accessibilityLabel("Clear birth date")
+                            }
+                        } else {
+                            Button("Add birth date") {
+                                profile.birthDate = Calendar.current.date(byAdding: .year, value: -profile.age, to: Date())
+                            }
+                            .buttonStyle(.borderless)
+                        }
+                        Text("Optional. Used only for the Health age estimate.")
+                            .font(StrandFont.footnote)
+                            .foregroundStyle(StrandPalette.textTertiary)
+                    }
+                }
+                rowDivider
                 FormRow(label: "Sex") {
                     Picker("Sex", selection: $profile.sex) {
                         Text("Male").tag("male")

@@ -12,11 +12,15 @@ final class ProfileStore: ObservableObject {
     @Published var heightCm: Double { didSet { d.set(heightCm, forKey: K.height) } }
     /// 0 = auto-estimate from age.
     @Published var hrMaxOverride: Int { didSet { d.set(hrMaxOverride, forKey: K.hrMax) } }
+    /// Optional; used only by the Health functional-age model (#49) for a continuous age without birthday steps.
+    @Published var birthDate: Date? {
+        didSet { if let b = birthDate { d.set(b.timeIntervalSince1970, forKey: K.birth) } else { d.removeObject(forKey: K.birth) } }
+    }
 
     private let d = UserDefaults.standard
     private enum K {
         static let age = "profile.age", sex = "profile.sex", weight = "profile.weightKg"
-        static let height = "profile.heightCm", hrMax = "profile.hrMaxOverride"
+        static let height = "profile.heightCm", hrMax = "profile.hrMaxOverride", birth = "profile.birthDate"
     }
 
     init() {
@@ -25,6 +29,7 @@ final class ProfileStore: ObservableObject {
         weightKg = d.object(forKey: K.weight) as? Double ?? 75
         heightCm = d.object(forKey: K.height) as? Double ?? 178
         hrMaxOverride = d.object(forKey: K.hrMax) as? Int ?? 0
+        birthDate = (d.object(forKey: K.birth) as? Double).map { Date(timeIntervalSince1970: $0) }
     }
 
     /// Tanaka estimate unless overridden.
