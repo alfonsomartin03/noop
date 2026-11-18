@@ -83,6 +83,28 @@ public struct Whoop5Clock: Equatable, Sendable {
         guard sub < 32768 else { return .failure(.implausible("subseconds \(sub)")) }
         return .success(Whoop5Clock(unix: t, subseconds: sub))
     }
+
+    // MARK: SET_CLOCK (K01, prepared 2026-11-18; never sent by NOOP on 5.0 — not in `BLEManager.whoop5Allowed`)
+
+    public static let getCommand: UInt8 = 11
+    public static let setCommand: UInt8 = 10
+
+    /// SET_CLOCK (10) data: the same 8 bytes GET_CLOCK returns, `[unix sec u32 LE][subsec u32 LE, 1/32768 s]`
+    /// (Goose 5.0 client; 4.0 docs). A wrong length was accepted but not latched on 4.0, so the length is fixed here.
+    /// nil outside the plausible-unix range.
+    public static func setPayload(unixSeconds: Double) -> [UInt8]? {
+        let whole = unixSeconds.rounded(.down)
+        guard whole.isFinite, isPlausibleUnix(Int(whole)) else { return nil }
+        let sec = UInt32(whole)
+        let sub = min(UInt32(((unixSeconds - whole) * 32768).rounded(.down)), 32767)
+        return [UInt8(sec & 0xFF), UInt8(sec >> 8 & 0xFF), UInt8(sec >> 16 & 0xFF), UInt8(sec >> 24 & 0xFF),
+                UInt8(sub & 0xFF), UInt8(sub >> 8 & 0xFF), UInt8(sub >> 16 & 0xFF), UInt8(sub >> 24 & 0xFF)]
+    }
+
+    /// One-shot test verdict from a GET_CLOCK read-back after SET_CLOCK: strap minus host, in seconds, judged against
+    /// `tolerance` (the app's own re-set threshold is 2 s; the BLE round trip adds well under 1 s).
+    public static func readbackOffset(strap: Whoop5Clock, hostSeconds: Double) -> Double { strap.seconds - hostSeconds }
+    public static func readbackAccepted(offset: Double, tolerance: Double = 2) -> Bool { abs(offset) < tolerance }
 }
 
 /// GET_BATTERY_LEVEL (26) reply: percent in body[0] (equalled the standard 0x2A19 value on the strap).

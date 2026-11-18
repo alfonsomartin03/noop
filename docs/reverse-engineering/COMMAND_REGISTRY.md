@@ -17,7 +17,7 @@ Wire differences from 4.0 documented by Goose and not yet tested here: alarm com
 | 2 | GET_MAX_PROTOCOL_VERSION | R | [] | UNSUPPORTED | 20 | CONFIRMED | auto (read-only) | result 3 on fw 50.43.1.0 (E02). |
 | 3 | TOGGLE_REALTIME_HR | U | [1] then [0] | SUCCESS | 20 | CONFIRMED | reversible, approval per experiment | E04: [1] starts 1 Hz type-40 on fd4b0005 within 1 s; [0] stops it (0 frames in the next 23 s). 34 ms responses. |
 | 7 | REPORT_VERSION_INFO | R | [] | UNSUPPORTED | 20 | CONFIRMED | auto (read-only) | result 3 (E02 and every NOOP connect). Firmware version is in DIS 2A26 instead. |
-| 10 | SET_CLOCK | U |  |  |  | SUPPORTED | restricted: needs reviewed procedure + approval | 8-byte [sec u32][subsec u32, 1/32768 s] (Goose + 4.0 docs). NOOP never sends it on 5.0; strap clock runs ~15 s slow. |
+| 10 | SET_CLOCK | U |  |  |  | SUPPORTED | restricted: needs reviewed procedure + approval | 8-byte [sec u32][subsec u32, 1/32768 s] (Goose + 4.0 docs). One-shot test K01 prepared 2026-11-18 (`ble_probe --k01`, CAPABILITY_MATRIX §7); not run. NOOP never sends it on 5.0; strap clock runs ~15 s slow. |
 | 11 | GET_CLOCK | R | [] | SUCCESS | 28 | CONFIRMED | auto (read-only) | body: unix sec u32 @0, subsec u32 @4 (1/32768 s per Goose), 3 zero bytes. 5.7 s latency as first command after attach (E02). |
 | 14 | TOGGLE_GENERIC_HR_PROFILE | U | [0]/[1] | SUCCESS | 20 | CONFIRMED | reversible, approval per experiment | HR broadcast off/on; on starts 2A37 within seconds (NOOP, 2026-10-21); off logs event 25 on next history pull. |
 | 16 | TOGGLE_R7_DATA_COLLECTION | U |  |  |  | SUPPORTED | restricted: needs reviewed procedure + approval |  |
