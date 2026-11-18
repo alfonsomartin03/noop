@@ -2,8 +2,9 @@ import Foundation
 
 // WHOOP 5.0 named configuration reads: GET_DEVICE_CONFIG_VALUE (121) and GET_FF_VALUE (128).
 //
-// Layout source: ryanbr/noop `docs/PROTOCOL_CONFIGURATION.md` at 2a1de76 (fw 50.42.1.0; ours is 50.43.1.0). ONE
-// external source, no capture: everything here is an UNVERIFIED hypothesis until C08 runs (CAPABILITY_MATRIX §7).
+// Layout source: ryanbr/noop `docs/PROTOCOL_CONFIGURATION.md` at 2a1de76 (fw 50.42.1.0). CONFIRMED on fw 50.43.1.0 by
+// C08 (2026-11-18, EXPERIMENT_LOG): all four reads answered SUCCESS with this exact shape (67-byte body, key echoed).
+// Value meanings and the FAILURE/fallback shapes still rest on the reference alone.
 // NOOP never sends these; only `ble_probe --c08` does, and only the four fixed reads below.
 //
 //   request  = [01][key: ≤ 31 ASCII bytes, NUL-padded to 32]                       (33 bytes)

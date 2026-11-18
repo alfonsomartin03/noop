@@ -193,6 +193,20 @@ accepted every command. Details: ALARM_CAPABILITIES.md. **Wearer confirmed feeli
 - **After:** DIS/battery read normally in every run (fw 50.43.1.0, 2A19 90 %); NOOP kept its link and pulled history again.
 - Capture: `captures/C06a-C07-afe-pack-reads.jsonl` (redacted; fd4b0007 fragments dropped).
 
+## C08 — named configuration reads 121/128 (2026-11-18 13:23–13:25 EST, owner-approved)
+
+- **Setup:** NOOP running and connected, 2.5 min after a completed history pull; next alarm the following morning.
+  `ble_probe --c08 --c08-approved --seconds 90` attached to NOOP's shared link; one attempt per read, seq 201–204, payloads
+  from `Whoop5ConfigRead.requestPayload` (48-byte frames). DIS: fw 50.43.1.0, hw WG50_r52; 2A19 85 %.
+- **Results (all result 1 = SUCCESS, 84-byte frames, decoded body 67 = 65 semantic + 2 zero alignment bytes, revision 1,
+  key echoed exactly):** `121 sigproc_wear_detect` → `0` (5.8 s); `121 cont_collection_mode` → `0` (2.6 s);
+  `121 max_collection_backlog` → `8.3` (62 ms); `128 disable_pip_r26_packets` → `2` (31 ms). No stop condition fired.
+- **Reading (reference semantics, fw 50.42.1.0, not verified here):** R26 publication permitted (consistent with the R26
+  records already archived); continuous optical/IMU collection mode off; backlog threshold 8.3 (% of capacity, tenths);
+  wear-detect tri-state value 0 (meaning unresolved). Nothing was written; no setting changed.
+- **After:** no console lines or events during the run; the probe dropped only its own claim and NOOP stayed connected.
+- Capture: `captures/C08-config-reads.jsonl` (redacted like C06a/C07: serial redacted, session id dropped, no fd4b0007 bytes).
+
 ## Offline analysis — v0x1a optical bursts, events 110/120/14 (2026-11-17)
 
 - **v0x1a:** 287 bursts (Nov 14–17 archive copy); 25 samples/s reconstructed from base + cumulative deltas. In 161/279

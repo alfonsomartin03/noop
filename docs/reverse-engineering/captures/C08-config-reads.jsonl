@@ -1,0 +1,84 @@
+{"exp": "C08", "kind": "note", "t": 1795026228.286862, "text": "central state=5 auth=3"}
+{"exp": "C08", "kind": "note", "t": 1795026228.295686, "text": "strap already connected to this Mac (shared link) \u2014 attaching"}
+{"exp": "C08", "kind": "note", "t": 1795026228.2966099, "text": "connected; discovering all services"}
+{"exp": "C08", "kind": "service", "primary": true, "t": 1795026228.2974858, "uuid": "180D"}
+{"exp": "C08", "kind": "service", "primary": true, "t": 1795026228.2976708, "uuid": "180A"}
+{"exp": "C08", "kind": "service", "primary": true, "t": 1795026228.297781, "uuid": "180F"}
+{"exp": "C08", "kind": "service", "primary": true, "t": 1795026228.297885, "uuid": "FD4B0001-CCE1-4033-93CE-002D5875F58A"}
+{"exp": "C08", "kind": "characteristic", "notifying": false, "props": ["notify"], "service": "180D", "t": 1795026228.2983952, "uuid": "2A37"}
+{"exp": "C08", "kind": "characteristic", "notifying": false, "props": ["read"], "service": "180A", "t": 1795026228.2988029, "uuid": "2A29"}
+{"exp": "C08", "kind": "characteristic", "notifying": false, "props": ["read"], "service": "180A", "t": 1795026228.29901, "uuid": "2A24"}
+{"exp": "C08", "kind": "characteristic", "notifying": false, "props": ["read"], "service": "180A", "t": 1795026228.29921, "uuid": "2A25"}
+{"exp": "C08", "kind": "characteristic", "notifying": false, "props": ["read"], "service": "180A", "t": 1795026228.299371, "uuid": "2A26"}
+{"exp": "C08", "kind": "characteristic", "notifying": false, "props": ["read"], "service": "180A", "t": 1795026228.29953, "uuid": "2A27"}
+{"exp": "C08", "kind": "characteristic", "notifying": false, "props": ["read", "notify"], "service": "180F", "t": 1795026228.299728, "uuid": "2A19"}
+{"exp": "C08", "kind": "characteristic", "notifying": false, "props": ["writeNoResp", "write"], "service": "FD4B0001-CCE1-4033-93CE-002D5875F58A", "t": 1795026228.299909, "uuid": "FD4B0002-CCE1-4033-93CE-002D5875F58A"}
+{"exp": "C08", "kind": "characteristic", "notifying": false, "props": ["notify"], "service": "FD4B0001-CCE1-4033-93CE-002D5875F58A", "t": 1795026228.300026, "uuid": "FD4B0003-CCE1-4033-93CE-002D5875F58A"}
+{"exp": "C08", "kind": "characteristic", "notifying": false, "props": ["notify"], "service": "FD4B0001-CCE1-4033-93CE-002D5875F58A", "t": 1795026228.3001509, "uuid": "FD4B0004-CCE1-4033-93CE-002D5875F58A"}
+{"exp": "C08", "kind": "characteristic", "notifying": false, "props": ["notify"], "service": "FD4B0001-CCE1-4033-93CE-002D5875F58A", "t": 1795026228.300293, "uuid": "FD4B0005-CCE1-4033-93CE-002D5875F58A"}
+{"exp": "C08", "kind": "characteristic", "notifying": false, "props": ["notify"], "service": "FD4B0001-CCE1-4033-93CE-002D5875F58A", "t": 1795026228.300432, "uuid": "FD4B0007-CCE1-4033-93CE-002D5875F58A"}
+{"characteristic": "2A37", "exp": "C08", "kind": "descriptor", "t": 1795026228.3006902, "uuid": "2902"}
+{"exp": "C08", "hex": "57484f4f5020496e632e", "kind": "read", "len": 10, "service": "180A", "t": 1795026229.019367, "uuid": "2A29", "value": "WHOOP Inc."}
+{"exp": "C08", "kind": "note", "t": 1795026229.019592, "text": "READ 2A29 = WHOOP Inc."}
+{"exp": "C08", "hex": "352e3000", "kind": "read", "len": 4, "service": "180A", "t": 1795026229.530329, "uuid": "2A24", "value": "5.0\u0000"}
+{"exp": "C08", "kind": "note", "t": 1795026229.530601, "text": "READ 2A24 = 5.0\u0000"}
+{"ch": "FD4B0002-CCE1-4033-93CE-002D5875F58A", "cmd": 121, "dir": "tx", "exp": "C08", "hex": "aa0128000001edb123c9790173696770726f635f776561725f646574656374000000000000000000000000005d9ac0cb", "kind": "frame", "len": 48, "name": "GET_DEVICE_CONFIG_VALUE", "seq": 201, "t": 1795026229.870026}
+{"exp": "C08", "kind": "note", "t": 1795026229.870453, "text": "TX cmd=121 GET_DEVICE_CONFIG_VALUE seq=201 aa0128000001edb123c9790173696770726f635f776561725f646574656374000000000000000000000000005d9ac0cb"}
+{"exp": "C08", "kind": "read", "len": 11, "service": "180A", "t": 1795026230.039393, "uuid": "2A25", "value": "<redacted>"}
+{"exp": "C08", "kind": "note", "t": 1795026230.039861, "text": "READ 2A25 = <redacted>"}
+{"exp": "C08", "hex": "35302e34332e312e30", "kind": "read", "len": 9, "service": "180A", "t": 1795026230.80471, "uuid": "2A26", "value": "50.43.1.0"}
+{"exp": "C08", "kind": "note", "t": 1795026230.804974, "text": "READ 2A26 = 50.43.1.0"}
+{"exp": "C08", "hex": "574735305f723532", "kind": "read", "len": 8, "service": "180A", "t": 1795026231.3140922, "uuid": "2A27", "value": "WG50_r52"}
+{"exp": "C08", "kind": "note", "t": 1795026231.314359, "text": "READ 2A27 = WG50_r52"}
+{"characteristic": "2A19", "exp": "C08", "kind": "descriptor", "t": 1795026231.31452, "uuid": "2902"}
+{"exp": "C08", "kind": "read", "len": 1, "service": "180F", "t": 1795026231.826343, "uuid": "2A19", "value": 85}
+{"exp": "C08", "kind": "note", "t": 1795026231.8267322, "text": "READ 2A19 = 85"}
+{"characteristic": "FD4B0003-CCE1-4033-93CE-002D5875F58A", "exp": "C08", "kind": "descriptor", "t": 1795026231.826911, "uuid": "2902"}
+{"error": "", "exp": "C08", "kind": "subscribe", "notifying": true, "t": 1795026232.588369, "uuid": "FD4B0003-CCE1-4033-93CE-002D5875F58A"}
+{"characteristic": "FD4B0004-CCE1-4033-93CE-002D5875F58A", "exp": "C08", "kind": "descriptor", "t": 1795026232.588791, "uuid": "2902"}
+{"error": "", "exp": "C08", "kind": "subscribe", "notifying": true, "t": 1795026233.098248, "uuid": "FD4B0004-CCE1-4033-93CE-002D5875F58A"}
+{"characteristic": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "exp": "C08", "kind": "descriptor", "t": 1795026233.0984511, "uuid": "2902"}
+{"error": "", "exp": "C08", "kind": "subscribe", "notifying": true, "t": 1795026233.8637261, "uuid": "FD4B0005-CCE1-4033-93CE-002D5875F58A"}
+{"characteristic": "FD4B0007-CCE1-4033-93CE-002D5875F58A", "exp": "C08", "kind": "descriptor", "t": 1795026233.864023, "uuid": "2902"}
+{"error": "", "exp": "C08", "kind": "subscribe", "notifying": true, "t": 1795026234.3739948, "uuid": "FD4B0007-CCE1-4033-93CE-002D5875F58A"}
+{"characteristic": "2A37", "exp": "C08", "kind": "descriptor_value", "t": 1795026235.138921, "uuid": "2902", "value": "1"}
+{"error": "", "exp": "C08", "kind": "write_ack", "t": 1795026235.648453, "uuid": "FD4B0002-CCE1-4033-93CE-002D5875F58A"}
+{"ch": "FD4B0003-CCE1-4033-93CE-002D5875F58A", "exp": "C08", "kind": "fragment", "len": 84, "t": 1795026235.650398}
+{"exp": "C08", "kind": "note", "t": 1795026235.650813, "text": "RX response cmd=121 seq=201 result=1 len=84 latency=5780ms"}
+{"cmd": 121, "exp": "C08", "key": "sigproc_wear_detect", "kind": "c08", "outcome": "value 0", "raw_body": "0173696770726f635f776561725f6465746563740000000000000000000000000030000000000000000000000000000000000000000000000000000000000000000000", "raw_body_len": 67, "t": 1795026235.6518378}
+{"exp": "C08", "kind": "note", "t": 1795026235.651995, "text": "C08 121 sigproc_wear_detect: value 0"}
+{"cmd": 121, "exp": "C08", "kind": "result", "latency_ms": 5780, "outcome": "result 1", "seq": 201, "t": 1795026235.6520848}
+{"ch": "FD4B0003-CCE1-4033-93CE-002D5875F58A", "cmd": 121, "crc32": true, "dir": "rx", "exp": "C08", "hdr_crc": true, "hex": "aa014c00010032d1240079c9010173696770726f635f776561725f646574656374000000000000000000000000003000000000000000000000000000000000000000000000000000000000000000000076d65a51", "kind": "frame", "latency_ms": 5780, "len": 84, "result": 1, "seq": 201, "t": 1795026235.652808, "type": 36}
+{"ch": "FD4B0002-CCE1-4033-93CE-002D5875F58A", "cmd": 121, "dir": "tx", "exp": "C08", "hex": "aa0128000001edb123ca7901636f6e745f636f6c6c656374696f6e5f6d6f6465000000000000000000000000c05137c9", "kind": "frame", "len": 48, "name": "GET_DEVICE_CONFIG_VALUE", "seq": 202, "t": 1795026235.960346}
+{"exp": "C08", "kind": "note", "t": 1795026235.9606938, "text": "TX cmd=121 GET_DEVICE_CONFIG_VALUE seq=202 aa0128000001edb123ca7901636f6e745f636f6c6c656374696f6e5f6d6f6465000000000000000000000000c05137c9"}
+{"characteristic": "2A19", "exp": "C08", "kind": "descriptor_value", "t": 1795026236.4146152, "uuid": "2902", "value": "1"}
+{"characteristic": "FD4B0003-CCE1-4033-93CE-002D5875F58A", "exp": "C08", "kind": "descriptor_value", "t": 1795026236.923706, "uuid": "2902", "value": "1"}
+{"characteristic": "FD4B0004-CCE1-4033-93CE-002D5875F58A", "exp": "C08", "kind": "descriptor_value", "t": 1795026237.689115, "uuid": "2902", "value": "1"}
+{"characteristic": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "exp": "C08", "kind": "descriptor_value", "t": 1795026238.4563231, "uuid": "2902", "value": "1"}
+{"characteristic": "FD4B0007-CCE1-4033-93CE-002D5875F58A", "exp": "C08", "kind": "descriptor_value", "t": 1795026238.485538, "uuid": "2902", "value": "1"}
+{"error": "", "exp": "C08", "kind": "write_ack", "t": 1795026238.515872, "uuid": "FD4B0002-CCE1-4033-93CE-002D5875F58A"}
+{"ch": "FD4B0003-CCE1-4033-93CE-002D5875F58A", "exp": "C08", "kind": "fragment", "len": 84, "t": 1795026238.516135}
+{"exp": "C08", "kind": "note", "t": 1795026238.516434, "text": "RX response cmd=121 seq=202 result=1 len=84 latency=2556ms"}
+{"cmd": 121, "exp": "C08", "key": "cont_collection_mode", "kind": "c08", "outcome": "value 0", "raw_body": "01636f6e745f636f6c6c656374696f6e5f6d6f646500000000000000000000000030000000000000000000000000000000000000000000000000000000000000000000", "raw_body_len": 67, "t": 1795026238.517165}
+{"exp": "C08", "kind": "note", "t": 1795026238.517307, "text": "C08 121 cont_collection_mode: value 0"}
+{"cmd": 121, "exp": "C08", "kind": "result", "latency_ms": 2556, "outcome": "result 1", "seq": 202, "t": 1795026238.5173922}
+{"ch": "FD4B0003-CCE1-4033-93CE-002D5875F58A", "cmd": 121, "crc32": true, "dir": "rx", "exp": "C08", "hdr_crc": true, "hex": "aa014c00010032d1240179ca0101636f6e745f636f6c6c656374696f6e5f6d6f646500000000000000000000000030000000000000000000000000000000000000000000000000000000000000000000c8cc3292", "kind": "frame", "latency_ms": 2556, "len": 84, "result": 1, "seq": 202, "t": 1795026238.518105, "type": 36}
+{"ch": "FD4B0002-CCE1-4033-93CE-002D5875F58A", "cmd": 121, "dir": "tx", "exp": "C08", "hex": "aa0128000001edb123cb79016d61785f636f6c6c656374696f6e5f6261636b6c6f67000000000000000000001d9b37cb", "kind": "frame", "len": 48, "name": "GET_DEVICE_CONFIG_VALUE", "seq": 203, "t": 1795026238.829293}
+{"exp": "C08", "kind": "note", "t": 1795026238.8299642, "text": "TX cmd=121 GET_DEVICE_CONFIG_VALUE seq=203 aa0128000001edb123cb79016d61785f636f6c6c656374696f6e5f6261636b6c6f67000000000000000000001d9b37cb"}
+{"error": "", "exp": "C08", "kind": "write_ack", "t": 1795026238.8883119, "uuid": "FD4B0002-CCE1-4033-93CE-002D5875F58A"}
+{"ch": "FD4B0003-CCE1-4033-93CE-002D5875F58A", "exp": "C08", "kind": "fragment", "len": 84, "t": 1795026238.890661}
+{"exp": "C08", "kind": "note", "t": 1795026238.8909779, "text": "RX response cmd=121 seq=203 result=1 len=84 latency=62ms"}
+{"cmd": 121, "exp": "C08", "key": "max_collection_backlog", "kind": "c08", "outcome": "value 8.3", "raw_body": "016d61785f636f6c6c656374696f6e5f6261636b6c6f6700000000000000000000382e3300000000000000000000000000000000000000000000000000000000000000", "raw_body_len": 67, "t": 1795026238.891752}
+{"exp": "C08", "kind": "note", "t": 1795026238.891901, "text": "C08 121 max_collection_backlog: value 8.3"}
+{"cmd": 121, "exp": "C08", "kind": "result", "latency_ms": 62, "outcome": "result 1", "seq": 203, "t": 1795026238.89199}
+{"ch": "FD4B0003-CCE1-4033-93CE-002D5875F58A", "cmd": 121, "crc32": true, "dir": "rx", "exp": "C08", "hdr_crc": true, "hex": "aa014c00010032d1240279cb01016d61785f636f6c6c656374696f6e5f6261636b6c6f6700000000000000000000382e33000000000000000000000000000000000000000000000000000000000000007920183d", "kind": "frame", "latency_ms": 62, "len": 84, "result": 1, "seq": 203, "t": 1795026238.892379, "type": 36}
+{"ch": "FD4B0002-CCE1-4033-93CE-002D5875F58A", "cmd": 128, "dir": "tx", "exp": "C08", "hex": "aa0128000001edb123cc800164697361626c655f7069705f7232365f7061636b6574730000000000000000000296d708", "kind": "frame", "len": 48, "name": "GET_FF_VALUE", "seq": 204, "t": 1795026239.2049642}
+{"exp": "C08", "kind": "note", "t": 1795026239.205658, "text": "TX cmd=128 GET_FF_VALUE seq=204 aa0128000001edb123cc800164697361626c655f7069705f7232365f7061636b6574730000000000000000000296d708"}
+{"error": "", "exp": "C08", "kind": "write_ack", "t": 1795026239.235931, "uuid": "FD4B0002-CCE1-4033-93CE-002D5875F58A"}
+{"ch": "FD4B0003-CCE1-4033-93CE-002D5875F58A", "exp": "C08", "kind": "fragment", "len": 84, "t": 1795026239.23614}
+{"exp": "C08", "kind": "note", "t": 1795026239.236409, "text": "RX response cmd=128 seq=204 result=1 len=84 latency=31ms"}
+{"cmd": 128, "exp": "C08", "key": "disable_pip_r26_packets", "kind": "c08", "outcome": "value 2", "raw_body": "0164697361626c655f7069705f7232365f7061636b65747300000000000000000032000000000000000000000000000000000000000000000000000000000000000000", "raw_body_len": 67, "t": 1795026239.2371302}
+{"exp": "C08", "kind": "note", "t": 1795026239.237288, "text": "C08 128 disable_pip_r26_packets: value 2"}
+{"cmd": 128, "exp": "C08", "kind": "result", "latency_ms": 31, "outcome": "result 1", "seq": 204, "t": 1795026239.2373738}
+{"ch": "FD4B0003-CCE1-4033-93CE-002D5875F58A", "cmd": 128, "crc32": true, "dir": "rx", "exp": "C08", "hdr_crc": true, "hex": "aa014c00010032d1240380cc010164697361626c655f7069705f7232365f7061636b657473000000000000000000320000000000000000000000000000000000000000000000000000000000000000000e4e28a4", "kind": "frame", "latency_ms": 31, "len": 84, "result": 1, "seq": 204, "t": 1795026239.238076, "type": 36}
+{"exp": "C08", "kind": "note", "t": 1795026321.06412, "text": "finished: capture window 90 s elapsed"}
