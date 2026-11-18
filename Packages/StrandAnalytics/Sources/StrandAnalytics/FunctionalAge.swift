@@ -5,14 +5,15 @@ import Foundation
 /// Lane chosen by the owner 2026-11-18: a WEARABLE functional-age estimate in a hazard-equivalent ("effective age")
 /// framework, not clinical/lab biological age, not cardiovascular/fitness age, and not WHOOP numerical parity.
 ///
-/// This version is deliberately GATED (`numericRelease == false`): the manifest below holds only MARGINAL associations
-/// (each predictor studied mostly on its own), and correlated predictors cannot be summed without a documented joint
-/// (dependence) model. Until that exists, `evaluate` never returns a number; it reports what is missing. The arithmetic
-/// (risk → years, pace from dated projections, fractional age) is implemented and tested now so the numeric release
-/// is a parameter change with its own review, not new math. Method and sources: `docs/HEALTH_MODELS.md`.
+/// Combination (v1, owner decision 2026-11-18 after a search found no published joint model for these wearable
+/// inputs): ONE contributor per correlated group — activity/fitness (measured VO₂max, else steps), resting heart
+/// rate, sleep duration — each mapped through its cited marginal curve and summed. This is a NOOP simplification:
+/// residual overlap between groups is not removed. `estimate` computes it deterministically; `evaluate` (what the
+/// Health page reads) stays GATED (`numericRelease == false`) until input windows, a birth date and the UI exist.
+/// Method and sources: `docs/HEALTH_MODELS.md`.
 public enum FunctionalAge {
-    public static let modelVersion = "noop-functional-age-v0-manifest"
-    /// No numeric age/pace until joint parameters, input windows and coverage rules are documented and reviewed.
+    public static let modelVersion = "noop-functional-age-v1-groups"
+    /// No numeric age/pace on screen until input windows, coverage rules, a birth date and the UI are in place.
     public static let numericRelease = false
 
     // MARK: Risk → years
@@ -112,18 +113,18 @@ public enum FunctionalAge {
                   ci95: 1.22...1.38, outcome: "all-cause mortality", population: "16 cohorts, ~1.38 M participants, self-reported sleep",
                   citation: "Cappuccio FP et al. Sleep 2010;33(5):585–592", doi: "10.1093/sleep/33.5.585",
                   status: .verifiedMarginal, caveat: "Long sleep likely reflects illness (reverse causation); categorical cut-offs."),
-        Parameter(contributor: .steps, contrast: "quartile 2 vs quartile 1 of daily steps", hazardRatio: 0.60, ci95: 0.51...0.71,
+        Parameter(contributor: .steps, contrast: "quartile 2 (median 5,801/day) vs quartile 1 (median 3,553/day)", hazardRatio: 0.60, ci95: 0.51...0.71,
                   outcome: "all-cause mortality", population: "15 cohorts, device-measured steps",
                   citation: "Paluch AE et al. Lancet Public Health 2022;7(3):e219–e228", doi: "10.1016/S2468-2667(21)00302-9",
-                  status: .verifiedMarginal, caveat: "Quartile step ranges not yet confirmed from the full text; plateau differs by age."),
-        Parameter(contributor: .steps, contrast: "quartile 3 vs quartile 1 of daily steps", hazardRatio: 0.55, ci95: 0.49...0.62,
+                  status: .verifiedMarginal, caveat: "Plateau differs by age (6–8k ≥ 60 y, 8–10k < 60 y)."),
+        Parameter(contributor: .steps, contrast: "quartile 3 (median 7,842/day) vs quartile 1", hazardRatio: 0.55, ci95: 0.49...0.62,
                   outcome: "all-cause mortality", population: "15 cohorts, device-measured steps",
                   citation: "Paluch AE et al. Lancet Public Health 2022;7(3):e219–e228", doi: "10.1016/S2468-2667(21)00302-9",
-                  status: .verifiedMarginal, caveat: "Quartile step ranges not yet confirmed from the full text."),
-        Parameter(contributor: .steps, contrast: "quartile 4 vs quartile 1 of daily steps", hazardRatio: 0.47, ci95: nil,
+                  status: .verifiedMarginal, caveat: "Categorical; NOOP interpolates between medians (engineering choice)."),
+        Parameter(contributor: .steps, contrast: "quartile 4 (median 10,901/day) vs quartile 1", hazardRatio: 0.47, ci95: nil,
                   outcome: "all-cause mortality", population: "15 cohorts, device-measured steps",
                   citation: "Paluch AE et al. Lancet Public Health 2022;7(3):e219–e228", doi: "10.1016/S2468-2667(21)00302-9",
-                  status: .verifiedMarginal, caveat: "Confidence interval not confirmed; quartile ranges not confirmed."),
+                  status: .verifiedMarginal, caveat: "Confidence interval not confirmed; no extrapolation beyond the top median."),
         Parameter(contributor: .sleepRegularity, contrast: "top four vs bottom quintile of Sleep Regularity Index", hazardRatio: nil, ci95: nil,
                   outcome: "all-cause mortality", population: "~61,000 UK Biobank, accelerometer SRI",
                   citation: "Windred DP et al. Sleep 2024;47(1):zsad253", doi: "10.1093/sleep/zsad253",
@@ -162,6 +163,106 @@ public enum FunctionalAge {
         }
     }
 
+    // MARK: v1 combination — one contributor per group
+
+    public enum Group: String, CaseIterable, Sendable {
+        case activityFitness, restingHR, sleep
+        public var label: String {
+            switch self {
+            case .activityFitness: return "Activity or fitness (measured VO₂max, or daily steps)"
+            case .restingHR: return "Resting heart rate"
+            case .sleep: return "Sleep duration"
+            }
+        }
+    }
+
+    /// Per-contributor mapping from a measured value to a hazard ratio vs the referent. `clipped` = the value was
+    /// outside the supported range and was held at its edge (no extrapolation). nil = not used in v1.
+    public static func hazardRatio(for c: Contributor, value v: Double) -> (hr: Double, clipped: Bool)? {
+        guard v.isFinite else { return nil }
+        switch c {
+        case .restingHR:
+            // Zhang 2016: 1.09 per +10 bpm (log-linear). Referent 60 bpm, range 40–100: NOOP choices.
+            let x = min(max(v, 40), 100)
+            return (pow(1.09, (x - 60) / 10), x != v)
+        case .vo2max:
+            // Kodama 2009: 0.87 per +1 MET (3.5 ml/kg/min). Referent 7.9 METs (the paper's suggested minimum),
+            // range 4–16 METs: NOOP choices. Input in ml/kg/min.
+            let mets = v / 3.5, x = min(max(mets, 4), 16)
+            return (pow(0.87, x - 7.9), x != mets)
+        case .steps:
+            // Paluch 2022 quartile medians → HR vs Q1, log-interpolated between medians (NOOP choice); flat
+            // outside [Q1, Q4] medians (below Q1 = referent; above Q4 = plateau, no extrapolation).
+            let knots: [(Double, Double)] = [(3_553, 1.0), (5_801, 0.60), (7_842, 0.55), (10_901, 0.47)]
+            if v <= knots[0].0 { return (1.0, v < knots[0].0) }
+            if v >= knots[3].0 { return (knots[3].1, v > knots[3].0) }
+            for (a, b) in zip(knots, knots.dropFirst()) where v <= b.0 {
+                let f = (v - a.0) / (b.0 - a.0)
+                return (exp(log(a.1) + f * (log(b.1) - log(a.1))), false)
+            }
+            return nil
+        case .sleepDuration:
+            // Cappuccio 2010 categories (study-specific cut-offs; NOOP uses < 6 h short, > 9 h long). Hours/night.
+            guard v > 0, v < 24 else { return nil }
+            return (v < 6 ? 1.12 : v > 9 ? 1.30 : 1.0, false)
+        case .sleepRegularity, .moderateActivity, .vigorousActivity, .strength, .leanMass:
+            return nil
+        }
+    }
+
+    public static func group(of c: Contributor) -> Group? {
+        switch c {
+        case .vo2max, .steps: return .activityFitness
+        case .restingHR: return .restingHR
+        case .sleepDuration: return .sleep
+        default: return nil
+        }
+    }
+
+    public struct ContributorImpact: Equatable, Sendable {
+        public let group: Group
+        public let contributor: Contributor
+        public let value: Double
+        public let hazardRatio: Double
+        public let years: Double
+        public let clipped: Bool
+    }
+
+    public struct Estimate: Equatable, Sendable {
+        public let modelVersion: String
+        public let chronologicalAge: Double
+        public let impacts: [ContributorImpact]
+        public var totalImpact: Double { impacts.reduce(0) { $0 + $1.years } }
+        public var functionalAge: Double { chronologicalAge + totalImpact }
+    }
+
+    /// Deterministic v1 estimate, or nil with the reasons when a required group has no usable input. Measured VO₂max
+    /// (manual source) represents activity/fitness when present, else steps; never both.
+    public static func estimate(inputs: [Input], chronologicalAge: Double?) -> (Estimate?, [String]) {
+        var reasons: [String] = []
+        guard let age = chronologicalAge, age.isFinite, age >= 0 else {
+            return (nil, ["Chronological age (birth date or age in Profile)"])
+        }
+        let usable = inputs.filter { inputProblems($0).isEmpty && hazardRatio(for: $0.contributor, value: $0.value ?? .nan) != nil }
+        func pick(_ g: Group) -> Input? {
+            let cands = usable.filter { group(of: $0.contributor) == g }
+            if g == .activityFitness, let v = cands.first(where: { $0.contributor == .vo2max }) { return v }
+            return cands.first
+        }
+        var impacts: [ContributorImpact] = []
+        for g in Group.allCases {
+            guard let i = pick(g), let v = i.value, let m = hazardRatio(for: i.contributor, value: v),
+                  let y = ageImpactYears(hazardRatio: m.hr) else {
+                reasons.append("\(g.label): no usable input yet")
+                continue
+            }
+            impacts.append(ContributorImpact(group: g, contributor: i.contributor, value: v, hazardRatio: m.hr,
+                                             years: y, clipped: m.clipped))
+        }
+        guard reasons.isEmpty else { return (nil, reasons) }
+        return (Estimate(modelVersion: modelVersion, chronologicalAge: age, impacts: impacts), [])
+    }
+
     public enum Availability: Equatable, Sendable {
         /// Never returned while `numericRelease` is false.
         case ready(ageImpactYears: Double)
@@ -182,22 +283,19 @@ public enum FunctionalAge {
         return out
     }
 
-    /// Current model state for the Health page. Gated: returns `.unsupported` with every reason (unverified
-    /// parameters, missing joint model, unusable inputs) and never a number while `numericRelease` is false.
+    /// Current model state for the Health page. Gated: while `numericRelease` is false it returns `.unsupported` with
+    /// every reason and never a number, even when `estimate` could compute one.
     public static func evaluate(inputs: [Input], chronologicalAge: Double?) -> Availability {
         var reasons: [String] = []
-        if chronologicalAge == nil { reasons.append("Chronological age (birth date or age in Profile)") }
-        let unverified = Set(manifest.filter { $0.status == .needsVerification }.map(\.contributor))
-        for c in Contributor.allCases where unverified.contains(c) {
-            reasons.append("\(c.label): published effect size not yet verified")
-        }
         for i in inputs { reasons += inputProblems(i) }
+        let (est, missing) = estimate(inputs: inputs, chronologicalAge: chronologicalAge)
+        reasons += missing
         guard numericRelease else {
-            return .unsupported(reason: "The joint model that combines correlated contributors (sleep, activity, resting HR, fitness) is not established yet, so NOOP does not add their separate risks together. No number is shown until it is.",
+            return .unsupported(reason: "The age model is defined but not switched on: NOOP still needs a birth date, measured input windows and the Health page view before it shows a number.",
                                 reasons: reasons)
         }
-        let usable = inputs.filter { inputProblems($0).isEmpty }
-        let progress = inputs.isEmpty ? 0 : Double(usable.count) / Double(inputs.count)
-        return .calibrating(progress: progress, reasons: reasons)
+        if let est { return .ready(ageImpactYears: est.totalImpact) }
+        let required = Double(Group.allCases.count)
+        return .calibrating(progress: (required - Double(missing.count)) / required, reasons: reasons)
     }
 }

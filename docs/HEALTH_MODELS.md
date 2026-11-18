@@ -40,7 +40,7 @@ No subset of NOOP's inputs (age, sex, height, weight, sleep-derived HR/HRV, resp
 
 Issue #16 re-review: still unavailable. The VO₂max estimate below is a *fitness* measure, not biological age, and no fitness-age mapping is shown because the published age/sex reference medians (HUNT) and waist/activity inputs are not in NOOP; the hero keeps its unavailable state.
 
-## Functional age and pace (issue #49, `noop-functional-age-v0-manifest`, model core only, **gated**)
+## Functional age and pace (issue #49, `noop-functional-age-v1-groups`, implemented in analytics, **gated in the UI**)
 
 Lane chosen by the owner (2026-11-18): a **wearable functional-age** estimate in the hazard-equivalent ("effective
 age") framework. It is not lab biological age, not fitness age, and not WHOOP numerical parity. Code:
@@ -69,22 +69,44 @@ Implemented and unit-tested (synthetic only):
 | VO₂max (measured) | +1 MET | 0.87 (0.84–0.90) | Kodama 2009, JAMA, doi:10.1001/jama.2009.681 | verified (marginal) |
 | Sleep duration | short vs reference | 1.12 (1.06–1.18) | Cappuccio 2010, Sleep, doi:10.1093/sleep/33.5.585 | verified (marginal, categorical) |
 | Sleep duration | long vs reference | 1.30 (1.22–1.38) | same | verified (marginal, categorical) |
-| Daily steps | Q2 / Q3 / Q4 vs Q1 | 0.60 (0.51–0.71) / 0.55 (0.49–0.62) / 0.47 (CI unconfirmed) | Paluch 2022, Lancet Public Health, doi:10.1016/S2468-2667(21)00302-9 | verified (marginal); quartile step ranges unconfirmed |
+| Daily steps | Q2 / Q3 / Q4 vs Q1 (medians 5,801 / 7,842 / 10,901 vs 3,553 steps/day) | 0.60 (0.51–0.71) / 0.55 (0.49–0.62) / 0.47 (CI unconfirmed) | Paluch 2022, Lancet Public Health, doi:10.1016/S2468-2667(21)00302-9 | verified (marginal) |
 | Sleep regularity | top four vs bottom SRI quintile | 20–48 % lower (range only) | Windred 2024, Sleep, doi:10.1093/sleep/zsad253 | needs per-quintile HRs |
 | Strength training | 30–60 min/week vs none | 10–20 % lower (range only) | Momma 2022, BJSM, doi:10.1136/bjsports-2021-105061 | needs exact RR |
 | Moderate / vigorous HR-zone minutes, lean mass | — | — | not chosen | needs a source |
 
-**Why still no number:**
+**Combining correlated contributors — search, then fallback (2026-11-18).** A bounded search found no published
+model that estimates steps, resting HR and sleep (or fitness) together with usable mutually adjusted
+coefficients:
 
-- The rows are marginal and correlated: steps, zone minutes, RHR and fitness overlap. Summing their age impacts
-  would double count. A joint (dependence-adjusted) model is required; WHOOP describes one (structural-equation
-  adjustment on member covariance) but publishes no coefficients.
-- Office RHR and self-reported sleep are not the same measurements as NOOP's nightly RHR and staged sleep.
-- Steps need #42 completeness, and zone minutes need HRR-based zones scoped to activity.
+- UK Biobank accelerometer papers model pairs (activity × sleep, sleep duration × efficiency), not this set.
+- A 2025 wearable mortality model (steps plus cadence; UK Biobank, validated on NHANES) does not expose
+  coefficients that could be reused.
+- An arXiv "health age" model uses literature-assumed effects, the same approach as here.
+- Fitness and RHR: the Henry Ford cohort found RHR ≥ 90 still predicted mortality after fitness adjustment
+  (HR 1.22), so RHR carries information beyond fitness, but no paper gives both effects mutually adjusted.
 
-**Next:** choose and document the dependence policy (e.g. a published multivariable model, or one contributor per
-correlated cluster), fill the needs-verification rows, add a birth date, then build input snapshots and the Health
-UI.
+**v1 combination (owner decision): one contributor per group, summed.** This is a NOOP simplification. Residual
+overlap between groups (fit people sleep better and have a lower RHR) is not removed, so totals may overstate.
+
+| Group | Contributor | Mapping | NOOP choices |
+| --- | --- | --- | --- |
+| Activity / fitness | measured VO₂max (manual, method stated) if present, else daily steps; never both | 0.87^(METs − 7.9); steps log-interpolated between the Paluch medians (HR 1.0 / 0.60 / 0.55 / 0.47) | referent 7.9 METs (Kodama's suggested minimum); range 4–16 METs; flat below 3,553 and above 10,901 steps (no extrapolation) |
+| Resting HR | resting heart rate | 1.09^((RHR − 60) / 10) | referent 60 bpm; range 40–100 bpm; clinic RHR vs NOOP nightly RHR is a known protocol mismatch |
+| Sleep | sleep duration (h/night) | short 1.12, long 1.30, otherwise 1.0 | cut-offs < 6 h and > 9 h (the paper's studies vary) |
+
+- Each impact is ln(HR) / 0.1 years, and functional age = chronological age + their sum.
+- Clipped values are flagged. Every group is required: a missing group gives no number, never a neutral value.
+- Not used in v1: sleep regularity and strength (exact ratios unconfirmed), zone minutes (no HRR-compatible
+  source) and lean mass.
+
+**Still gated in the UI** (`numericRelease = false`; `evaluate` returns `.unsupported` with reasons). Before
+release:
+
+- Input windows and coverage (e.g. 180-day and 30-day; engineering values to freeze before evaluation).
+- A birth date in Profile.
+- #42 step completeness.
+- The Health hero, contributors and calibration states.
+- Evaluation, including agreement with imported WHOOP values only as a comparison.
 
 ## VO₂max estimate (issue #16, `vo2-hr-ratio-v1`, implemented, **not validated**)
 
