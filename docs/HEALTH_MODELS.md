@@ -40,6 +40,52 @@ No subset of NOOP's inputs (age, sex, height, weight, sleep-derived HR/HRV, resp
 
 Issue #16 re-review: still unavailable. The VO₂max estimate below is a *fitness* measure, not biological age, and no fitness-age mapping is shown because the published age/sex reference medians (HUNT) and waist/activity inputs are not in NOOP; the hero keeps its unavailable state.
 
+## Functional age and pace (issue #49, `noop-functional-age-v0-manifest`, model core only, **gated**)
+
+Lane chosen by the owner (2026-11-18): a **wearable functional-age** estimate in the hazard-equivalent ("effective
+age") framework. It is not lab biological age, not fitness age, and not WHOOP numerical parity. Code:
+`StrandAnalytics/FunctionalAge.swift`.
+
+Implemented and unit-tested (synthetic only):
+
+- **Risk → years:** `ageImpactYears = ln(HR) / 0.1` (WHOOP 2025 Healthspan white paper p. 12; hazard-equivalent age
+  per Spiegelhalter 2016). The 0.1 log-hazard/year slope is a population approximation.
+- **Pace:** `pace = 1 + (D_projected − D_current) / H`, with `H` taken from the real dates (mean Gregorian year), so
+  stable inputs give exactly 1.0× and chronological aging counts once. The raw value is kept; clamping is a display
+  choice.
+- **Chronological age:** continuous from a birth date, with no step on birthdays. The Profile still stores an
+  integer age; a birth date is needed before release.
+- **Gate:** `evaluate(inputs:chronologicalAge:)` returns `.unsupported` with every reason (missing age, unverified
+  parameters, sparse inputs, refused derived inputs) while `numericRelease == false`. It never returns a number.
+- **Input policy:** a value derived from other contributors is refused. The HR-ratio VO₂max (`vo2-hr-ratio-v1`) is
+  15.3 × HRmax / RHR, a function of age and RHR, so it would count them twice. Sparse coverage is reported as
+  coverage, never imputed as zero.
+
+**Parameter manifest v0 (marginal associations, all-cause mortality; checked 2026-11-18):**
+
+| Contributor | Contrast | HR (95 % CI) | Source | Status |
+| --- | --- | --- | --- | --- |
+| Resting HR | +10 bpm | 1.09 (1.07–1.12) | Zhang 2016, CMAJ, doi:10.1503/cmaj.150535 | verified (marginal) |
+| VO₂max (measured) | +1 MET | 0.87 (0.84–0.90) | Kodama 2009, JAMA, doi:10.1001/jama.2009.681 | verified (marginal) |
+| Sleep duration | short vs reference | 1.12 (1.06–1.18) | Cappuccio 2010, Sleep, doi:10.1093/sleep/33.5.585 | verified (marginal, categorical) |
+| Sleep duration | long vs reference | 1.30 (1.22–1.38) | same | verified (marginal, categorical) |
+| Daily steps | Q2 / Q3 / Q4 vs Q1 | 0.60 (0.51–0.71) / 0.55 (0.49–0.62) / 0.47 (CI unconfirmed) | Paluch 2022, Lancet Public Health, doi:10.1016/S2468-2667(21)00302-9 | verified (marginal); quartile step ranges unconfirmed |
+| Sleep regularity | top four vs bottom SRI quintile | 20–48 % lower (range only) | Windred 2024, Sleep, doi:10.1093/sleep/zsad253 | needs per-quintile HRs |
+| Strength training | 30–60 min/week vs none | 10–20 % lower (range only) | Momma 2022, BJSM, doi:10.1136/bjsports-2021-105061 | needs exact RR |
+| Moderate / vigorous HR-zone minutes, lean mass | — | — | not chosen | needs a source |
+
+**Why still no number:**
+
+- The rows are marginal and correlated: steps, zone minutes, RHR and fitness overlap. Summing their age impacts
+  would double count. A joint (dependence-adjusted) model is required; WHOOP describes one (structural-equation
+  adjustment on member covariance) but publishes no coefficients.
+- Office RHR and self-reported sleep are not the same measurements as NOOP's nightly RHR and staged sleep.
+- Steps need #42 completeness, and zone minutes need HRR-based zones scoped to activity.
+
+**Next:** choose and document the dependence policy (e.g. a published multivariable model, or one contributor per
+correlated cluster), fill the needs-verification rows, add a birth date, then build input snapshots and the Health
+UI.
+
 ## VO₂max estimate (issue #16, `vo2-hr-ratio-v1`, implemented, **not validated**)
 
 - Method: Uth, Sørensen, Overgaard & Pedersen (2004), "heart rate ratio method": VO₂max ≈ 15.3 × HRmax ÷ HRrest mL/kg/min. Only heart rate is needed, which is all NOOP has (no pace, power, GPS or lab test). Code: `FitnessEstimates.swift` (`VO2MaxEstimate`); UI: `VO2MaxCard` on the Health page.
