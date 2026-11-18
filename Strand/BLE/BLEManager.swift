@@ -191,6 +191,9 @@ public final class BLEManager: NSObject, ObservableObject {
     /// Research frames already kept this pull: only byte-identical repeats (a re-sent chunk) are dropped, never a
     /// distinct frame that shares a record time with another.
     private var researchFramesSeen = ResearchFrameFilter()
+    /// Which HISTORY_ENDs of the current pull may be acked: never a repeat END while an earlier one is still being
+    /// saved, never anything after a refused chunk (#38).
+    private var ackGate = HistoryAckGate()
     /// The research capture this pull writes for (read once at pull start; nil = none).
     private var whoop5ResearchCapture: ResearchCapture?
     private lazy var researchArchive: RawHistoryArchive? = try? RawHistoryArchive.research()
@@ -1146,6 +1149,8 @@ public final class BLEManager: NSObject, ObservableObject {
     /// 2. Save first: records + events in one SQLite transaction; ack only once that commit returned.
     /// 3. Ack only for the pull that received the END (session id), with end_data from this CRC-checked END frame.
     /// 4. Never ack when "keep data on strap" is on (the strap then stops after one chunk — the cost of keeping it).
+    /// 5. `HistoryAckGate`: an END arriving while an earlier END of this pull is still being saved is a repeat (same
+    ///    end_data) and is never acked; after a refused chunk nothing in the pull is acked (#38).
     /// The ack is what lets the strap send the next chunk; it also moves the strap's trim pointer (firmware log),
     /// and whether trimmed records stay readable is UNKNOWN — so a local save is NOT a guarantee the strap keeps a copy.
     private func commitWhoop5HistoryChunk(_ frame: [UInt8]) {
@@ -1177,7 +1182,10 @@ public final class BLEManager: NSObject, ObservableObject {
             log("History: END frame could not be decoded — not acknowledging")
             return
         }
+        let holdsAckSlot = ackGate.begin(session: session)
         if let problem {
+            ackGate.refuse(session: session)   // synchronously: a repeat END must not ack this chunk meanwhile
+            if holdsAckSlot { ackGate.finish(session: session) }
             log("History: chunk not acknowledged — \(problem). The strap keeps it; stopping this pull.")
             Task { @MainActor in
                 _ = await self.persistWhoop5Records(recs, events: events)   // keep what could be decoded
@@ -1185,8 +1193,15 @@ public final class BLEManager: NSObject, ObservableObject {
             }
             return
         }
+        guard holdsAckSlot else {
+            log("History: repeated END (earlier chunk still saving, or a chunk was refused) — saved, not acknowledged")
+            Task { @MainActor in _ = await self.persistWhoop5Records(recs, events: events) }
+            return
+        }
         Task { @MainActor in
+            defer { self.ackGate.finish(session: session) }
             guard let n = await self.persistWhoop5Records(recs, events: events) else {
+                self.ackGate.refuse(session: session)
                 self.log("History: chunk NOT saved (store unavailable) — not acknowledging")
                 self.endWhoop5History("could not save to the database")
                 return
@@ -1204,6 +1219,10 @@ public final class BLEManager: NSObject, ObservableObject {
             }
             self.onStoredDataChanged?()
             guard !BLEManager.keepDataOnStrap else { return }
+            guard self.ackGate.mayAck(session: session) else {
+                self.log("History: a chunk of this pull was refused — not acknowledging")
+                return
+            }
             self.send(.historicalDataResult, payload: [0x01] + endData, writeType: .withResponse)
             if self.historyEndLogged < 3 {
                 self.historyEndLogged += 1
