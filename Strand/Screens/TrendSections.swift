@@ -76,6 +76,18 @@ enum TrendWindow {
         return f
     }()
     static func date(_ day: String) -> Date? { dayParser.date(from: day) }
+
+    /// The local calendar day containing `ts`, keyed like the stored rows (UTC midnight of that yyyy-MM-dd). With no
+    /// `zone`, the zone history NOOP scores with (`AnalyticsEngine.dayString`); a fixed zone is for tests (UTC/local
+    /// disagreement, DST).
+    static func localDay(at ts: Int, in zone: TimeZone? = nil) -> Date? {
+        guard let zone else { return date(AnalyticsEngine.dayString(ts)) }
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = zone
+        let c = cal.dateComponents([.year, .month, .day], from: Date(timeIntervalSince1970: TimeInterval(ts)))
+        guard let y = c.year, let m = c.month, let d = c.day else { return nil }
+        return date(String(format: "%04d-%02d-%02d", y, m, d))
+    }
     /// Daily series: a missing day (> 1 day between readings, with slack for DST-free UTC day keys) breaks the line.
     static let dailyGap: TimeInterval = 1.5 * 86_400
 
@@ -118,19 +130,22 @@ enum TrendWindow {
 
     /// The selected window against the equal window before it (`TrendPeriodComparison` holds the rule). Nil for "all
     /// history". Uses the series' effective range, so a widened window compares like with like.
+    /// `today` is the in-progress local calendar day as a UTC-midnight key (`localDay(at:)`); nil = from the clock now.
+    /// Tests pass it explicitly so results don't depend on when (or west/east of UTC) they run.
     static func change(_ days: [DailyMetric], _ value: (DailyMetric) -> Double?, series: TrendSeries, anchor: Date?,
-                       unit: String, tolerance: Double, format: @escaping (Double) -> String) -> TrendChange? {
+                       today: Date? = nil, unit: String, tolerance: Double, format: @escaping (Double) -> String) -> TrendChange? {
         let all = days.compactMap { d -> (date: Date, value: Double)? in
             guard let v = value(d), let dt = date(d.day) else { return nil }
             return (dt, v)
         }
-        return change(all, range: series.effective, anchor: anchor, unit: unit, tolerance: tolerance, format: format)
+        return change(all, range: series.effective, anchor: anchor, today: today, unit: unit, tolerance: tolerance, format: format)
     }
 
-    static func change(_ all: [(date: Date, value: Double)], range: TrendRange, anchor: Date?, unit: String, tolerance: Double,
-                       format: @escaping (Double) -> String) -> TrendChange? {
+    static func change(_ all: [(date: Date, value: Double)], range: TrendRange, anchor: Date?, today: Date? = nil, unit: String,
+                       tolerance: Double, format: @escaping (Double) -> String) -> TrendChange? {
         guard let n = range.days, let anchor,
-              let c = TrendPeriodComparison.compare(all, days: n, latest: anchor, today: date(AnalyticsEngine.dayString(Int(Date().timeIntervalSince1970))),
+              let c = TrendPeriodComparison.compare(all, days: n, latest: anchor,
+                                                    today: today ?? localDay(at: Int(Date().timeIntervalSince1970)),
                                                     tolerance: tolerance) else { return nil }
         return TrendChange(comparison: c, unit: unit, format: format)
     }

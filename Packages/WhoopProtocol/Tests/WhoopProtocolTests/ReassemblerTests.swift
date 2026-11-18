@@ -201,9 +201,9 @@ final class Whoop5HistoricalTests: XCTestCase {
                                 unknownSeconds: 0))
         XCTAssertEqual(StepCounterSample.window(cp, from: 3, to: 5).steps, 1, "increase at `from` belongs before the window")
         XCTAssertFalse(StepCounterSample.window(cp, from: -5, to: 10).hasStartReference)
-        // A drop is a reset: counted as a reset, never as negative or as the new total.
+        // A drop is a reset: never negative, never the old total; the post-reset value is steps since the reset.
         let reset = StepCounterSample.window([s(0, 10_000), s(5, 10_010), s(6, 3), s(9, 8)], from: 0, to: 10)
-        XCTAssertEqual(reset.steps, 15)
+        XCTAssertEqual(reset.steps, 10 + 3 + 5)
         XCTAssertEqual(reset.resets, 1)
     }
 
@@ -237,6 +237,14 @@ final class Whoop5HistoricalTests: XCTestCase {
         XCTAssertEqual(full.activityOneSeconds, 400)
         XCTAssertEqual(full.unknownSeconds, 0)
         XCTAssertTrue(full.isComplete)
+        // An older row is a reference only if `from` itself synced: across a gap it could carry another day's steps.
+        let late = [s(-7200, 5_000, 0), s(1200, 5_900, 0), s(1300, 6_000, 0)]
+        let noRef = StepCounterSample.window(late, from: 0, to: 2000, until: 2000,
+                                             known: StepCounterSample.knownRuns(Array(1200..<2000)))
+        XCTAssertFalse(noRef.hasStartReference)
+        XCTAssertEqual(noRef.steps, 100, "the 900 before the first synced row may belong to yesterday")
+        XCTAssertEqual(StepCounterSample.window(late, from: 0, to: 2000, until: 2000,
+                                                known: StepCounterSample.knownRuns(Array(-7200..<2000))).steps, 1_000)
         // Time past the end of known data is not "unknown inside the window": it is clipped, as before.
         XCTAssertEqual(StepCounterSample.window(rows, from: 0, to: 1000, until: 600, known: known).unknownSeconds, 300)
     }

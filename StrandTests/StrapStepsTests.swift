@@ -26,11 +26,12 @@ final class StrapStepsTests: XCTestCase {
         _ = try await store.insert(Streams(hr: hr, steps: rows), deviceId: device)
         let day = await repo.strapSteps(from: r.from, to: r.to)
         let w = try XCTUnwrap(day)
-        XCTAssertEqual(w.steps, 416, "increases only: the reset never subtracts, the 4 counted at the reset are not guessed")
+        XCTAssertEqual(w.steps, 420, "the reset never subtracts; the 4 read just after it are steps since the reset")
+        XCTAssertFalse(w.isComplete, "reset boundary not yet established: shown as at least")
         XCTAssertEqual(w.resets, 1)
         XCTAssertEqual(w.activityOneSeconds, 120)
         XCTAssertEqual(w.activityTwoSeconds, 60)
-        XCTAssertEqual(StrainDetailView.stepDetails(w), ["Walking 2m · Running 1m", "Counter reset detected; steps at the reset are not included.", "Reset timing and accuracy are unverified; this may be an incomplete daily count."])
+        XCTAssertEqual(StrainDetailView.stepDetails(w), ["Walking 2m · Running 1m", "Counter reset detected; steps after it are counted from the strap's new count.", "Reset timing and accuracy are unverified; this may be an incomplete daily count."])
     }
 
     func testNoStepRowsMeansNoTileAndMissingReferenceIsSaid() async throws {
@@ -44,7 +45,7 @@ final class StrapStepsTests: XCTestCase {
         let w = try XCTUnwrap(some)
         XCTAssertEqual(w.steps, 30)
         XCTAssertEqual(w.activityTwoSeconds, 1, "without HR, activity stops at the last known step second")
-        XCTAssertEqual(StrainDetailView.stepDetails(w), ["Counted from the first synced step of the day.", "No synced data for 1h 1m; walking and running time there is not counted.", "Reset timing and accuracy are unverified; this may be an incomplete daily count."])
+        XCTAssertEqual(StrainDetailView.stepDetails(w), ["Counted from the first synced step of the day.", "No synced data for \(DayMath.hm(3_699.0 / 60)); walking and running time there is not counted.", "Reset timing and accuracy are unverified; this may be an incomplete daily count."])
         XCTAssertFalse(w.isComplete)
     }
 

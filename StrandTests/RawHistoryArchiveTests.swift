@@ -88,6 +88,7 @@ final class RawHistoryArchiveTests: XCTestCase {
         XCTAssertTrue(f.admit(a))
         XCTAssertTrue(f.admit(b), "same timestamp, different bytes: kept")
         XCTAssertFalse(f.admit(a), "an exact repeat (re-sent chunk) is dropped")
-        XCTAssertTrue(ResearchFrameFilter().admit(a), "a new pull starts empty")
+        var next = ResearchFrameFilter()
+        XCTAssertTrue(next.admit(a), "a new pull starts empty")
     }
 }

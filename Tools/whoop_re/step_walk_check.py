@@ -8,7 +8,8 @@ the live file. Read-only. Prints only aggregates for the window you give; nothin
 
 Times are local wall-clock (this Mac's time zone). The counter is UNVALIDATED: this script is how it gets validated.
 Mirrors `StepCounterSample.window` in WhoopProtocol: increases between the last row at/before start and the last row
-before end; a decrease is a reset and is not counted.
+before end; at a decrease (a reset) the post-reset value counts as steps since the reset. Activity seconds are
+not gap-aware here (the app's version stops at missing seconds): use windows with continuous sync.
 """
 import argparse
 import datetime
@@ -29,6 +30,7 @@ def window(rows, start, end):
                 steps += counter - prev
             else:
                 resets += 1
+                steps += counter
         prev = counter
     chain = ([ref] if ref else []) + inside
     active = 0

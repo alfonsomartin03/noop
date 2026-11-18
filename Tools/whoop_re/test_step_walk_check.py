@@ -17,7 +17,7 @@ class StepWalkCheckTests(unittest.TestCase):
                          {"steps": 9, "resets": 0, "has_start_reference": True, "activity_1_seconds": 4, "rows": 5})
         self.assertEqual(s.window(rows, 3, 5)["steps"], 1)
         r = s.window([(0, 10000, 0), (5, 10010, 0), (6, 3, 0), (9, 8, 0)], 0, 10)
-        self.assertEqual((r["steps"], r["resets"]), (15, 1))
+        self.assertEqual((r["steps"], r["resets"]), (18, 1))
 
     def test_cli_on_a_synthetic_database(self):
         with tempfile.TemporaryDirectory() as d:

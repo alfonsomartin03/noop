@@ -81,11 +81,13 @@ public struct StepCounterSample: Equatable, Codable {
     }
 
     public struct Window: Equatable, Sendable {
-        /// Sum of counter increases between the last row at/before `from` and the last row before `to`.
+        /// Sum of counter increases between the last row at/before `from` and the last row before `to`; at a reset
+        /// (a decrease) the post-reset value is added, as steps since the reset.
         public let steps: Int
-        /// Counter decreases inside the window: their steps are NOT counted (reset time unknown).
+        /// Counter decreases inside the window (resets; boundary seen once at waking, S01, not yet established).
         public let resets: Int
-        /// False when no row at/before `from` exists: the first increase can't be measured.
+        /// False when no row at/before `from` exists, or (with `known`) `from` itself was not synced, so an older row
+        /// can't stand for the counter at `from`: the first increase can't be measured.
         public let hasStartReference: Bool
         /// Seconds whose activity code was 1 (walking; SUPPORTED, walks W01–W03) as recorded by change points.
         public let activityOneSeconds: Int
@@ -97,6 +99,7 @@ public struct StepCounterSample: Equatable, Codable {
         public let unknownSeconds: Int
 
         /// True only with a start reference, no reset and no unknown time: otherwise `steps` is "at least".
+        /// Resets also count as incomplete until the reset boundary is established (EVIDENCE_MATRIX S01, two nights).
         public var isComplete: Bool { hasStartReference && resets == 0 && unknownSeconds == 0 }
     }
 
@@ -131,9 +134,14 @@ public struct StepCounterSample: Equatable, Codable {
         let s = samples.sorted { $0.ts < $1.ts }
         let start = s.last { $0.ts <= from }
         let inside = s.filter { $0.ts > from && $0.ts < to }
-        var steps = 0, resets = 0, prev = start?.counter
+        // An older row stands for the counter at `from` only if `from` was synced (change points record every change
+        // in synced data); across a gap it could carry another day's steps into this window.
+        let reference = known.map { covered(from, from + 1, by: $0) == 1 } ?? true ? start : nil
+        var steps = 0, resets = 0, prev = reference?.counter
         for r in inside {
-            if let p = prev { if r.counter >= p { steps += r.counter - p } else { resets += 1 } }
+            if let p = prev {
+                if r.counter >= p { steps += r.counter - p } else { resets += 1; steps += r.counter }
+            }
             prev = r.counter
         }
         var walk = 0, run = 0
@@ -146,7 +154,7 @@ public struct StepCounterSample: Equatable, Codable {
             if r.activity == 1 { walk += n } else { run += n }
         }
         let unknown = known.map { max(0, end - from) - covered(from, end, by: $0) } ?? 0
-        return Window(steps: steps, resets: resets, hasStartReference: start != nil, activityOneSeconds: walk,
+        return Window(steps: steps, resets: resets, hasStartReference: reference != nil, activityOneSeconds: walk,
                       activityTwoSeconds: run, unknownSeconds: unknown)
     }
 }

@@ -23,6 +23,7 @@ Where older prose disagrees with current code or [CAPABILITY_MATRIX.md](CAPABILI
 | [STATE_MACHINE.md](STATE_MACHINE.md) | Connection and history-sync sequence |
 | [SENSOR_STREAMS.md](SENSOR_STREAMS.md) | Which sensor data is reachable and how |
 | [EXPERIMENT_LOG.md](EXPERIMENT_LOG.md) | Chronological evidence |
+| [EVIDENCE_MATRIX.md](EVIDENCE_MATRIX.md) | Evidence levels, competing explanations, proposed (unrun) experiments, firmware feasibility ladder |
 | [UNKNOWN_CAPABILITIES.md](UNKNOWN_CAPABILITIES.md) | Open questions |
 | [SAFETY_MATRIX.md](SAFETY_MATRIX.md) | Allowed, restricted, prohibited operations |
 | [TEST_RESULTS.md](TEST_RESULTS.md) | Repeatable tests and outcomes |
