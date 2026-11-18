@@ -209,6 +209,31 @@ accepted every command. Details: ALARM_CAPABILITIES.md. **Wearer confirmed feeli
   NOOP now re-syncs at most daily (`ClockResyncPolicy`). Stored timestamps before 14:05 keep their old offset
   (option A not done).
 
+## M01 — ordinary-use operating metrics (offline, 2026-11-18, #46)
+
+- **Inputs:** SQLite-backup copy of the app DB (events from 11-02; HR coverage ≥ 97 % on every full day 11-03 → 11-17)
+  and the app's unified log (retained only 11-18 04:23 → 13:41). `Tools/whoop_re/ops_metrics.py`; aggregates only.
+  No strap commands.
+- **Alarm-slot writes (#29):** STRAP_DRIVEN_ALARM_SET (event 56, one per slot write, deduplicated by event identity):
+  median **49/day** over 14 complete days before 11-17 (range 10–64) → **2/day** on 11-17 and 3 on the partial 11-18.
+  Today's log: 3 SET_ALARM_TIME vs 26 GET_ALARM_TIME (read-before-write verifies). Reduction CONFIRMED on this strap.
+- **Battery level reads (#32):** today's log has 6 GET_BATTERY_LEVEL commands and 25 "level pushed … not asking" skips
+  in 9.3 h (≈ 31 polls would have asked before #32). No pre-#32 log is retained, so the baseline is the code's
+  one-per-15-min poll, not a measured count. Pack info (151) is still asked each poll (31).
+- **Connections:** 15–51 BLE_CONNECTION_UP per complete day except 11-09/11-10 (67/282: the idle-silence reconnect bug
+  fixed 11-10). Today's 70 app "Connected" lines include a 09:41–10:17 run driven by the **Mac's Bluetooth powering
+  off/on** (67 poweredOff lines) — a host confound, not a NOOP reconnect loop.
+- **Battery drain, 99 → 85 % per pass:** 11-03 → 11-04 **10.7 %/day**; 11-09 → 11-10 **15.7 %/day** (spans the
+  reconnect storm); 11-16 → 11-18 **6.0 %/day** (after #29; #32 from 11-17). Three passes, wearer activity, realtime-HR
+  use and connection time uncontrolled: consistent with fewer strap writes, **not** an attributed saving.
+- **Clock:** strap behind the Mac by 31.6 s (11-12) → 40.1 s (11-18); drift **+1.40 s/day** (16 ppm) from live
+  alarm-history events, matching the log's GET_CLOCK readings (40.1–40.4 s today). Corrected at 14:05 by K01 (above).
+- **Retention:** across 28 pulls today the strap's oldest record advanced with wall time (Oct 27 07:48 → 16:49 while
+  the clock went 04:23 → 13:41): a ~22-day rolling buffer independent of acks, as before. Trim/erase semantics remain
+  UNKNOWN (no pointer experiments).
+- **Not measured:** per-type command counts before 11-18 (log not retained), transfer bytes/duration per pull, a
+  controlled multi-day battery comparison.
+
 ## C08 — named configuration reads 121/128 (2026-11-18 13:23–13:25 EST, owner-approved)
 
 - **Setup:** NOOP running and connected, 2.5 min after a completed history pull; next alarm the following morning.
