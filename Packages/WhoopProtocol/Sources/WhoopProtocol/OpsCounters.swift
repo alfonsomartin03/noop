@@ -8,8 +8,9 @@ public struct OpsDay: Codable, Equatable {
     public var day: String
     /// Time zone the day was counted in (a trip changes where midnight falls).
     public var timeZone: String
-    /// App version/build that counted (comparisons across app changes need it).
-    public var app: String
+    /// App versions/builds that counted that day, in order (comparisons across app changes need them; a relaunch
+    /// after a rebuild resumes the day and adds its build).
+    public var apps: [String]
     /// Strap firmware versions seen that day.
     public var firmware: [String]
     /// Commands sent, keyed by `WhoopCommand.label`.
@@ -20,8 +21,36 @@ public struct OpsDay: Codable, Equatable {
     public var connectedSeconds: Double
 
     public init(day: String, timeZone: String, app: String) {
-        self.day = day; self.timeZone = timeZone; self.app = app
+        self.day = day; self.timeZone = timeZone; apps = [app]
         firmware = []; commands = [:]; counts = [:]; connectedSeconds = 0
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case day, timeZone, apps, app, firmware, commands, counts, connectedSeconds
+    }
+
+    /// Also reads the first counter build's single `app` string.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        day = try c.decode(String.self, forKey: .day)
+        timeZone = try c.decode(String.self, forKey: .timeZone)
+        apps = try c.decodeIfPresent([String].self, forKey: .apps)
+            ?? [try c.decodeIfPresent(String.self, forKey: .app)].compactMap { $0 }
+        firmware = try c.decodeIfPresent([String].self, forKey: .firmware) ?? []
+        commands = try c.decodeIfPresent([String: Int].self, forKey: .commands) ?? [:]
+        counts = try c.decodeIfPresent([String: Int].self, forKey: .counts) ?? [:]
+        connectedSeconds = try c.decodeIfPresent(Double.self, forKey: .connectedSeconds) ?? 0
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(day, forKey: .day)
+        try c.encode(timeZone, forKey: .timeZone)
+        try c.encode(apps, forKey: .apps)
+        try c.encode(firmware, forKey: .firmware)
+        try c.encode(commands, forKey: .commands)
+        try c.encode(counts, forKey: .counts)
+        try c.encode(connectedSeconds, forKey: .connectedSeconds)
     }
 }
 
@@ -53,7 +82,10 @@ public struct OpsCounterBook {
     public init(calendar: Calendar = .current, app: String, resume: OpsDay? = nil, now: Date = Date()) {
         self.calendar = calendar
         self.app = app
-        if let r = resume, r.day == Self.key(now, calendar) { current = r }
+        if var r = resume, r.day == Self.key(now, calendar) {
+            if !r.apps.contains(app) { r.apps.append(app) }
+            current = r
+        }
     }
 
     public static func key(_ date: Date, _ calendar: Calendar) -> String {

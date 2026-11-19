@@ -166,7 +166,8 @@ def counter_summary(day):
     counts = {k: day.get("counts", {}).get(k, 0) for k in COUNTER_KEYS}
     cmds = dict(day.get("commands", {}))
     rate = (lambda n: n / hours) if hours > 0 else (lambda n: None)
-    return {"day": day["day"], "app": day.get("app"), "firmware": day.get("firmware", []), "hours": hours,
+    apps = day.get("apps") or ([day["app"]] if day.get("app") else [])
+    return {"day": day["day"], "apps": apps, "firmware": day.get("firmware", []), "hours": hours,
             "counts": counts, "commands": cmds,
             "per_hour": {**{k: rate(v) for k, v in counts.items()}, **{f"cmd:{k}": rate(v) for k, v in cmds.items()}}}
 
@@ -180,7 +181,7 @@ def print_counters(directory):
         s = counter_summary(d)
         c = s["counts"]
         tag = "  (newest: partial)" if i == len(days) - 1 else ""
-        print(f"{s['day']}  app {s['app']}  fw {','.join(s['firmware']) or '?'}  connected {s['hours']:.1f} h  "
+        print(f"{s['day']}  app {' | '.join(s['apps']) or '?'}  fw {','.join(s['firmware']) or '?'}  connected {s['hours']:.1f} h  "
               f"connects {c['connect']}  BT off {c['bluetoothOff']}  pulls {c['pullStarted']} "
               f"(complete {c['pullCompleted']}, early {c['pullEndedEarly']})  frames {c['historyFrames']}  "
               f"rx {c['rxBytes'] / 1e6:.2f} MB  level reads skipped {c['batteryReadSkipped']}{tag}")

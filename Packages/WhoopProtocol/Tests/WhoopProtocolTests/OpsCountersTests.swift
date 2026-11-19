@@ -29,7 +29,7 @@ final class OpsCountersTests: XCTestCase {
         XCTAssertEqual(days[0].commands, ["Get Clock": 2])
         XCTAssertEqual(days[0].counts, ["pullStarted": 1, "historyFrames": 120])
         XCTAssertEqual(days[0].firmware, ["50.43.1.0"])
-        XCTAssertEqual(days[0].app, "0.1.0 (1)")
+        XCTAssertEqual(days[0].apps, ["0.1.0 (1)"])
     }
 
     func testConnectedTimeSplitsAtMidnightAndFinishedDaysAreHandedOutOnce() {
@@ -82,13 +82,27 @@ final class OpsCountersTests: XCTestCase {
 
         var same = OpsCounterBook(calendar: cal, app: "b", resume: decoded, now: t(19, 12))
         same.command("Get Clock", at: t(19, 12))
-        XCTAssertEqual(same.snapshot(at: t(19, 12))[0].commands["Get Clock"], 6)
+        let resumed = same.snapshot(at: t(19, 12))[0]
+        XCTAssertEqual(resumed.commands["Get Clock"], 6)
+        XCTAssertEqual(resumed.apps, ["a", "b"], "a rebuild that resumes the day is recorded")
 
         var next = OpsCounterBook(calendar: cal, app: "b", resume: decoded, now: t(20, 0, 1))
         next.command("Get Clock", at: t(20, 0, 1))
         let d = next.snapshot(at: t(20, 0, 1))
         XCTAssertEqual(d.map(\.day), ["2026-11-20"])
         XCTAssertEqual(d[0].commands["Get Clock"], 1)
+        XCTAssertEqual(d[0].apps, ["b"])
+    }
+
+    func testReadsTheFirstBuildsSingleAppField() throws {
+        let json = #"{"app":"1.0 (1)","commands":{"Get Clock":2},"connectedSeconds":90.5,"counts":{"connect":1},"day":"2026-11-19","firmware":["50.43.1.0"],"timeZone":"America/New_York"}"#
+        let d = try JSONDecoder().decode(OpsDay.self, from: Data(json.utf8))
+        XCTAssertEqual(d.apps, ["1.0 (1)"])
+        XCTAssertEqual(d.commands, ["Get Clock": 2])
+        XCTAssertEqual(d.connectedSeconds, 90.5)
+        let out = String(decoding: try JSONEncoder().encode(d), as: UTF8.self)
+        XCTAssertTrue(out.contains("\"apps\""))
+        XCTAssertFalse(out.contains("\"app\""))
     }
 
     func testBackwardClockStepReopensTheEarlierDayInsteadOfDuplicatingIt() {

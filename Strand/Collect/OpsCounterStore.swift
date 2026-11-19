@@ -15,11 +15,16 @@ struct OpsCounterStore {
         return OpsCounterStore(directory: dir)
     }
 
+    /// Version, build and the executable's build time: the version rarely changes between local rebuilds, and
+    /// comparisons across app changes need to tell them apart.
     static var appVersion: String {
         let info = Bundle.main.infoDictionary
         let v = info?["CFBundleShortVersionString"] as? String ?? "?"
         let b = info?["CFBundleVersion"] as? String ?? "?"
-        return "\(v) (\(b))"
+        let built = Bundle.main.executableURL
+            .flatMap { try? $0.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate }
+            .map { ISO8601DateFormatter().string(from: $0) } ?? "?"
+        return "\(v) (\(b)) built \(built)"
     }
 
     func url(for day: String) -> URL { directory.appendingPathComponent("\(day).json") }
