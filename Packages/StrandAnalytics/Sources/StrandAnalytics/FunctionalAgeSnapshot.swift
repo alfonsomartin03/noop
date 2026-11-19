@@ -15,6 +15,11 @@ public enum FunctionalAgeSnapshot {
     public static let longWindowDays = 180, longMinDays = 90
     public static let shortWindowDays = 30, shortMinDays = 20
     public static let horizonMonths = 6
+    /// Pace smoothing (owner decision 2026-11-19; pace is a display feature, not a validated prediction): the
+    /// projected impact is the mean of the 30-day impacts at the as-of date and the 7 weekly dates before it (each
+    /// that is ready; the as-of date itself must be). Replay: week-to-week |Δ pace| median 0.09× → 0.06×,
+    /// p90 0.27× → 0.11× (4 weeks: p90 0.17×, 6 weeks: 0.13×).
+    public static let paceSmoothingWeeks = 8
 
     public struct Reading: Equatable, Sendable {
         public let value: Double
@@ -88,7 +93,7 @@ public enum FunctionalAgeSnapshot {
     }
 
     public static func summarize(days: [Day], birth: Date?, asOf: Date, calendar: Calendar,
-                                 measuredVO2: MeasuredVO2? = nil) -> Summary {
+                                 measuredVO2: MeasuredVO2? = nil, smoothingWeeks: Int = paceSmoothingWeeks) -> Summary {
         var reasons: [String] = []
         let age = birth.flatMap { FunctionalAge.chronologicalAge(birth: $0, asOf: asOf) }
         if age == nil { reasons.append("Birth date (Settings ▸ Profile)") }
@@ -110,7 +115,17 @@ public enum FunctionalAgeSnapshot {
         for i in long { reasons += FunctionalAge.inputProblems(i).map { "Last \(longWindowDays) days — \($0)" } }
         for i in short { reasons += FunctionalAge.inputProblems(i).map { "Last \(shortWindowDays) days — \($0)" } }
         let current = age.flatMap { FunctionalAge.estimate(inputs: long, chronologicalAge: $0).0 }
-        let projected = age.flatMap { FunctionalAge.estimate(inputs: short, chronologicalAge: $0).0 }?.totalImpact
+        let projected = age.flatMap { a -> Double? in
+            guard let now = FunctionalAge.estimate(inputs: short, chronologicalAge: a).0?.totalImpact else { return nil }
+            var impacts = [now]
+            for k in stride(from: 1, to: max(smoothingWeeks, 1), by: 1) {
+                guard let t = calendar.date(byAdding: .day, value: -7 * k, to: asOf) else { continue }
+                let w = inputs(days: days, window: windowDays(asOf: t, length: shortWindowDays, calendar: calendar),
+                               minDays: shortMinDays, measuredVO2: measuredVO2)
+                if let i = FunctionalAge.estimate(inputs: w, chronologicalAge: a).0?.totalImpact { impacts.append(i) }
+            }
+            return impacts.reduce(0, +) / Double(impacts.count)
+        }
         let end = calendar.date(byAdding: .month, value: horizonMonths, to: asOf)
         let pace = current.flatMap { c in projected.flatMap { p in end.flatMap {
             FunctionalAge.pace(currentImpact: c.totalImpact, projectedImpact: p, from: asOf, to: $0) } } }

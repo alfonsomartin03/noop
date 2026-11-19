@@ -132,6 +132,66 @@ overlap between groups (fit people sleep better and have a lower RHR) is not rem
 - **Not done:** evaluation (replay or held-out), comparison with imported WHOOP values, a VoiceOver pass and an
   in-app check. Renders were checked from synthetic summaries.
 
+**Replay evaluation design (frozen 2026-11-19, before any replay output was seen).** No outcome (mortality,
+lab age) exists for one person, so this checks what the model *claims* about its own numbers, not validity.
+
+- **What is checked:** the pace's 6-month projection. At as-of date *t* the model predicts that, at the horizon end
+  *t + 6 months*, functional age − chronological age will equal the 30-day impact D_projected(t). The realized value
+  is the 180-day impact D_current(t + 6 months) computed by the same model at that later date. Chronological age
+  cancels, so only impacts are compared and no birth date is needed.
+- **Baseline:** no change, i.e. D_current(t). The projection is useful only if it beats this.
+- **Activity / fitness group:** held at a neutral measured VO₂max (27.65 ml/kg/min = the 7.9-MET referent, impact 0)
+  dated at each as-of date. One measured test is constant over time, so it would cancel in both the error and the
+  week-to-week change. The replay therefore covers resting HR, sleep, the windows and the source rule only.
+- **Inputs:** the same daily rows the Health page uses (NOOP and imported, never mixed within a contributor and
+  window). The model and its window rules are unchanged; nothing is fitted or tuned on the replay.
+- **As-of grid:** every 7 days, from the first date with a ready estimate to the last date whose horizon end is a
+  completed day. A point counts only when both *t* and *t + 6 months* give a ready estimate; others are counted as
+  skipped, with the reason.
+- **Reported (aggregates only, never absolute ages):**
+  - n points;
+  - n non-overlapping points (spaced ≥ 6 months apart; weekly points overlap heavily and are not independent);
+  - MAE, median absolute error and bias, in years, for the projection and for the baseline;
+  - the share of points where the projection is closer;
+  - week-to-week |Δ D_current| (median, p90) as a stability check;
+  - the input source per point.
+- **Decision rule:** if the projection's MAE is not lower than the baseline's, pace is reported as "not supported by
+  replay". The UI then needs a product decision (keep it labelled, or hide it). No re-tuning on the same data.
+
+**Replay result (2026-11-19; `FunctionalAgeReplay`, `perf_probe --fa-replay`; one person's SQLite-backup copy).**
+
+| | n | MAE (y) | median AE (y) | bias (y) |
+| --- | --- | --- | --- | --- |
+| Projection, all weekly points | 51 | 0.144 | 0.086 | −0.041 |
+| No-change baseline, all points | 51 | 0.068 | 0.086 | −0.068 |
+| Projection, non-overlapping | 2 | 0.086 | 0.086 | −0.086 |
+| Baseline, non-overlapping | 2 | 0.043 | 0.043 | −0.043 |
+
+- **Verdict: pace projection NOT SUPPORTED by replay.** The projection was closer on 33 % of points.
+- **Sources:** every evaluated point used imported WHOOP resting HR and sleep. NOOP's own rows cover too few days for
+  a 180-day window, so NOOP-sourced inputs are not evaluated yet.
+- **Skipped:** 5 grid dates had too few resting-HR days.
+- **Stability:** week-to-week |Δ impact| had median 0.000 y and p90 0.043 y.
+- **Limits:** only 2 independent 6-month points, one person and about 1.5 years of history. Errors are quantized:
+  integer resting HR moves the impact in steps of 0.086 y per bpm.
+- **What this means for the display:** pace = 1 + (D_projected − D_current) / H with H = 0.5 y. The projection's
+  typical miss of 0.09–0.14 y is therefore a pace error of about ±0.2–0.3×, and a 1-bpm difference between the
+  30- and 180-day medians alone moves pace by 0.17×. Month-to-month noise dominates the displayed pace. The
+  functional-age value itself (180-day window) is stable.
+- **Owner decision (2026-11-19):** keep pace. It is a display feature for interest, not a validated prediction,
+  and is labelled that way ("A projection for interest, not a prediction").
+  - **Smoothing:** the projected impact is now the mean of the 30-day impacts at the as-of date and the 7 weekly
+    dates before it (`paceSmoothingWeeks` = 8). Each window must be ready on its own; one that isn't is left out,
+    never counted as zero. The as-of date itself must be ready.
+  - **Replay, unsmoothed → 8 weeks:** week-to-week |Δ pace| median 0.09× → 0.06×, p90 0.27× → 0.11× (4 weeks gave
+    p90 0.17×, 6 weeks 0.13×). Projection MAE 0.144 → 0.116 y, still above no change (0.068 y), so the verdict is
+    unchanged. 8 weeks was picked for steadiness, not accuracy.
+- **Display floor (owner decision 2026-11-19):** a functional age below 18 is shown as "<18" (`FunctionalAge.display`).
+  - The Difference line then shows the bound, e.g. "−10.0 y or more", so it never reveals the hidden value. When
+    chronological age is 18 or under, it shows "—" instead.
+  - The model value, the pace and the per-contributor years are unchanged; the contributor rows still sum to the
+    real impact.
+
 ## VO₂max estimate (issue #16, `vo2-hr-ratio-v1`, implemented, **not validated**)
 
 - Method: Uth, Sørensen, Overgaard & Pedersen (2004), "heart rate ratio method": VO₂max ≈ 15.3 × HRmax ÷ HRrest mL/kg/min. Only heart rate is needed, which is all NOOP has (no pace, power, GPS or lab test). Code: `FitnessEstimates.swift` (`VO2MaxEstimate`); UI: `VO2MaxCard` on the Health page.

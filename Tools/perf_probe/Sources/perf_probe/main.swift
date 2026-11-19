@@ -43,11 +43,47 @@ let store = try await WhoopStore(path: args[1])
 ZoneTimeline.shared.refreshFromSystem()
 
 // --score: one incremental scoring pass, reporting what it recomputed. --hash: a digest of every derived result.
+// --fa-replay: #49 functional-age pace projection vs no change on impacts (aggregates only).
 // --sleepperf: NOOP sleep performance (and its asleep/need inputs) vs the imported WHOOP export, nights paired by sleep interval.
 // Prints aggregates only; nothing is fitted, so every paired night is out-of-sample (issue #16).
 if let mode = args.dropFirst(5).first {
     let computed = rawId + "-noop"
-    if mode == "--sleepperf" {
+    if mode == "--fa-replay" {
+        // #49 replay evaluation (design frozen in docs/HEALTH_MODELS.md): the pace's 6-month projection vs no change,
+        // on impacts only. Prints aggregates only — never an age, an impact level or a date range of the person's data.
+        let rows = FunctionalAgeSnapshot.days(
+            computed: try await store.dailyMetrics(deviceId: computed, from: "0000-00-00", to: "9999-99-99"),
+            imported: try await store.dailyMetrics(deviceId: rawId, from: "0000-00-00", to: "9999-99-99"))
+        let cal = Calendar.current
+        let f = DateFormatter(); f.calendar = cal; f.timeZone = cal.timeZone
+        f.locale = Locale(identifier: "en_US_POSIX"); f.dateFormat = "yyyy-MM-dd"
+        guard let first = rows.map(\.day).min().flatMap(f.date(from:)),
+              let yesterday = cal.date(byAdding: .day, value: -1, to: cal.startOfDay(for: Date())),
+              let last = cal.date(byAdding: .month, value: -FunctionalAgeSnapshot.horizonMonths, to: yesterday),
+              let start = cal.date(byAdding: .day, value: FunctionalAgeSnapshot.longMinDays, to: first) else {
+            print("no rows"); exit(1)
+        }
+        for weeks in [1, FunctionalAgeSnapshot.paceSmoothingWeeks] {
+            print(weeks == 1 ? "\n== unsmoothed pace (single 30-day window)" : "\n== pace smoothed over \(weeks) weekly 30-day windows (shipped)")
+            let run = FunctionalAgeReplay.run(days: rows, from: start, to: last, calendar: cal, smoothingWeeks: weeks)
+            print("model", FunctionalAge.modelVersion, "| rows", rows.count, "(imported", rows.filter { $0.restingHR?.imported ?? $0.sleepHours?.imported ?? false }.count, ")",
+                  "| grid points ready at t:", run.currentImpacts.count, "| evaluated", run.points.count)
+            var skipped: [String: Int] = [:]   // numbers masked so one reason prints once
+            for (k, v) in run.skipped { skipped[k.replacingOccurrences(of: "[0-9]+ of", with: "N of", options: .regularExpression), default: 0] += v }
+            for (k, v) in skipped.sorted(by: { $0.value > $1.value }) { print("  skipped \(v): \(k)") }
+            var src: [String: Int] = [:]
+            for p in run.points { src[p.sources.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }.joined(separator: ",") , default: 0] += 1 }
+            for (k, v) in src.sorted(by: { $0.value > $1.value }) { print("  sources \(v): \(k)") }
+            guard let r = FunctionalAgeReplay.report(run) else { print("nothing to evaluate"); continue }
+            func e(_ x: FunctionalAgeReplay.Errors) -> String { String(format: "MAE %.3f  medianAE %.3f  bias %+.3f y", x.mae, x.medianAE, x.bias) }
+            print("all \(r.n):           projection [\(e(r.projection))]  baseline [\(e(r.baseline))]")
+            print("non-overlapping \(r.nonOverlapping): projection [\(e(r.nonOverlappingProjection))]  baseline [\(e(r.nonOverlappingBaseline))]")
+            print(String(format: "projection closer on %.0f %% of points; week-to-week |dD| median %.3f p90 %.3f y",
+                         r.projectionCloser * 100, r.weeklyChangeMedian ?? .nan, r.weeklyChangeP90 ?? .nan))
+            print("decision rule (projection MAE < baseline MAE):", r.projectionSupported ? "SUPPORTED" : "NOT SUPPORTED")
+            print(String(format: "week-to-week |d pace| median %.2fx p90 %.2fx", r.weeklyPaceChangeMedian ?? .nan, r.weeklyPaceChangeP90 ?? .nan))
+        }
+    } else if mode == "--sleepperf" {
         // Pairs by sleep interval; WHOOP values only from the cycle that declares the matched sleep (SleepPairing).
         // Cycles imported before 2026-11-13 lack sleep_onset_ts/wake_onset_ts: re-import the export to add them.
         let inputs = try await SleepPairing.load(store: store, rawId: rawId, computedId: computed)

@@ -364,12 +364,7 @@ final class Repository: ObservableObject {
     /// `official`), so `FunctionalAgeSnapshot` can pick one source per window and never mix them. Resting HR in bpm,
     /// sleep in hours; missing fields stay missing.
     func functionalAgeDays() -> [FunctionalAgeSnapshot.Day] {
-        func day(_ m: DailyMetric, imported: Bool) -> FunctionalAgeSnapshot.Day? {
-            let rhr = m.restingHr.map { FunctionalAgeSnapshot.Reading(value: Double($0), imported: imported) }
-            let sleep = m.totalSleepMin.flatMap { $0 > 0 ? FunctionalAgeSnapshot.Reading(value: $0 / 60, imported: imported) : nil }
-            return rhr == nil && sleep == nil ? nil : FunctionalAgeSnapshot.Day(day: m.day, restingHR: rhr, sleepHours: sleep)
-        }
-        return estimates.values.compactMap { day($0, imported: false) } + official.values.compactMap { day($0, imported: true) }
+        FunctionalAgeSnapshot.days(computed: Array(estimates.values), imported: Array(official.values))
     }
 
     func latestHRTimestamp() async -> Int? {
