@@ -14,6 +14,8 @@ The app is named **NOOP**. `Strand` remains the internal app target, Xcode schem
 
 Primary navigation uses Overview, Trends, and Settings (⌘1–⌘3). See [features](docs/FEATURES.md) and the [screen map](docs/SCREEN_INVENTORY.md).
 
+For a plain-language overview of completed work, hardware evidence, and open research, see [project progress](docs/PROJECT_PROGRESS.md).
+
 This repository builds a **macOS app only**. Apple Health parsing remains in `StrandImport`, but there is no Apple Health import screen in the current app. Package platform declarations are not shipped mobile apps. Removed stress, coaching, automation, and standalone insights screens are not current features.
 
 ## Build and run

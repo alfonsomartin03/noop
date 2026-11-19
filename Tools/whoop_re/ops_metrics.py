@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Ordinary-use operating metrics from data NOOP already stores (issue #46). Read-only, stdlib only.
 
-    python3 -I ops_metrics.py COPY.sqlite [--split YYYY-MM-DD ...] [--log UNIFIED_LOG.txt]
+    python3 -I ops_metrics.py COPY.sqlite [--split YYYY-MM-DD ...] [--log UNIFIED_LOG.txt] [--counters DIR]
+    python3 -I ops_metrics.py --counters DIR
 
 Run on a COPY of NOOP's database (SQLite backup or the app's export), never the live file. Prints aggregates only.
 
@@ -18,7 +19,14 @@ a few days are descriptive: wearer activity, charging and connection time are no
 
 `--log` reads a `log show --style compact` export of subsystem com.noopapp.noop and counts commands NOOP sent by label
 (`→ 5.0 <label> seq=`), connects, and Mac Bluetooth power-offs (an exposure confound, not a NOOP reconnect).
+
+`--counters` reads NOOP's own per-day counter files (a copy of Application Support/OpenWhoop/ops-counters, written by
+the app since the #46 counter build): connected hours, connects, Mac Bluetooth power-offs, pulls, frames, received
+bytes and every command label, each also per connected hour. They survive log rotation. The newest day is partial.
 """
+import glob
+import json
+import os
 import datetime
 import re
 import sqlite3
@@ -132,20 +140,83 @@ def log_counts(lines):
     return cmds, connects, poweroff, first, last
 
 
+COUNTER_KEYS = ("connect", "disconnect", "bluetoothOff", "setupAttempt", "pullStarted", "pullCompleted",
+                "pullEndedEarly", "historyFrames", "rxBytes", "batteryReadSkipped", "batteryCharRead")
+
+
+def load_counter_days(directory):
+    """-> [day dict] sorted by day, from `yyyy-MM-dd.json` files; unreadable files are skipped and named."""
+    days, bad = [], []
+    for path in sorted(glob.glob(os.path.join(directory, "????-??-??.json"))):
+        try:
+            with open(path, encoding="utf-8") as f:
+                d = json.load(f)
+            if d.get("day") != os.path.basename(path)[:10]:
+                raise ValueError("day does not match file name")
+            days.append(d)
+        except (OSError, ValueError) as e:
+            bad.append(f"{os.path.basename(path)}: {e}")
+    return days, bad
+
+
+def counter_summary(day):
+    """One day file -> dict: connected hours, every counter (0 when absent), commands, and per-connected-hour rates
+    (None without connected time, so an offline day is not read as zero activity)."""
+    hours = day.get("connectedSeconds", 0) / 3600
+    counts = {k: day.get("counts", {}).get(k, 0) for k in COUNTER_KEYS}
+    cmds = dict(day.get("commands", {}))
+    rate = (lambda n: n / hours) if hours > 0 else (lambda n: None)
+    apps = day.get("apps") or ([day["app"]] if day.get("app") else [])
+    return {"day": day["day"], "apps": apps, "firmware": day.get("firmware", []), "hours": hours,
+            "counts": counts, "commands": cmds,
+            "per_hour": {**{k: rate(v) for k, v in counts.items()}, **{f"cmd:{k}": rate(v) for k, v in cmds.items()}}}
+
+
+def print_counters(directory):
+    days, bad = load_counter_days(directory)
+    print(f"\nNOOP counter files in {directory}: {len(days)} day(s)" + (f", {len(bad)} unreadable" if bad else ""))
+    for b in bad:
+        print(f"  skipped {b}")
+    for i, d in enumerate(days):
+        s = counter_summary(d)
+        c = s["counts"]
+        tag = "  (newest: partial)" if i == len(days) - 1 else ""
+        print(f"{s['day']}  app {' | '.join(s['apps']) or '?'}  fw {','.join(s['firmware']) or '?'}  connected {s['hours']:.1f} h  "
+              f"connects {c['connect']}  BT off {c['bluetoothOff']}  pulls {c['pullStarted']} "
+              f"(complete {c['pullCompleted']}, early {c['pullEndedEarly']})  frames {c['historyFrames']}  "
+              f"rx {c['rxBytes'] / 1e6:.2f} MB  level reads skipped {c['batteryReadSkipped']}{tag}")
+        for k, v in sorted(s["commands"].items(), key=lambda kv: -kv[1]):
+            ph = s["per_hour"][f"cmd:{k}"]
+            print(f"    {v:5d}  {k}" + (f"  ({ph:.2f}/connected h)" if ph is not None else ""))
+
+
 def main(argv):
     if len(argv) < 2:
         print(__doc__)
         return 2
-    path, splits, log_path = argv[1], [], None
-    it = iter(argv[2:])
+    path, splits, log_path, counters = None, [], None, None
+    it = iter(argv[1:])
     for a in it:
         if a == "--split":
             splits.append(datetime.date.fromisoformat(next(it)))
         elif a == "--log":
             log_path = next(it)
-        else:
+        elif a == "--counters":
+            counters = next(it)
+        elif a.startswith("--"):
             print(f"unknown option {a}")
             return 2
+        elif path is None:
+            path = a
+        else:
+            print(f"unexpected argument {a}")
+            return 2
+    if path is None:
+        if counters is None:
+            print(__doc__)
+            return 2
+        print_counters(counters)
+        return 0
     db = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
     hr = (t for (t,) in db.execute("SELECT ts FROM hrSample WHERE deviceId=?", (DEVICE,)))
     kinds = tuple(k for ks in EVENT_KINDS.values() for k in ks)
@@ -177,6 +248,8 @@ def main(argv):
         print(f"\nUnified log {first} → {last}: {connects} connects, {poweroff} Mac Bluetooth power-offs")
         for k, v in sorted(cmds.items(), key=lambda kv: -kv[1]):
             print(f"  {v:5d}  {k}")
+    if counters:
+        print_counters(counters)
     return 0
 
 
