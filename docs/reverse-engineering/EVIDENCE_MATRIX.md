@@ -115,6 +115,27 @@ client unless stated; no probe runs.
 Transport ≠ install ≠ boot ≠ recover: even a captured image proves only the first. Nothing in this ladder involves
 triggering an update, probing private endpoints, interception, signature bypass, unlock or flashing.
 
+**Decision (#47, 2026-11-19, owner): NO-GO for firmware work, for now.**
+- **Acquisition:** no artifact. No public 5.0 package. The `tanarchytan/whoop-firmware` lead returned 404 on every
+  route (repository, contents, README, releases); its status is unknown. WHOOP's release notes list 50.43.2.0 but
+  ship no binary. The tested strap reports 50.43.1.0 (DIS), so that is the locally observed version, not
+  necessarily the latest. No owner app package was inspected (stage A not run).
+- **Readout:** no read path is known (no dump command; 143 exists only inside an update load; 40/42/44 are
+  UNSUPPORTED).
+- **Kept distinct:**
+  - image integrity (container CRCs);
+  - image acceptance, signature verification and rollback at boot;
+  - certificate/session authorisation (155–159, labels only).
+
+  None of these is observed for 5.0.
+- **Unknown:** the exact MCU part and flash map; whether WHOOP provisioned secure boot; debug-port exposure and
+  readout protection; recovery after a failed update; whether the charging pack has its own firmware.
+- **Spare-device prerequisites** (only for any future scope): a dedicated spare strap, a separately reviewed and
+  approved scope, and a known recovery path. None of them exist.
+- **Reopen when:** a provenance-backed artifact or the owner's app package is available, or more is known about the
+  strap's functions. Companion-side decoding continues independently. No update was triggered, no protected service
+  was queried and no debug port was attached.
+
 ## 6 · Ranked next steps
 
 | # | Step | Information gained | Prerequisites | Effort | Risk | Stopping rule |
