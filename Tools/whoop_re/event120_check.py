@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Test competing explanations for WHOOP 5.0 event 120 fields (issue #25). Offline, stdlib only, read-only.
 
-    python3 -I event120_check.py COPY.sqlite
+    python3 -I event120_check.py COPY.sqlite                 # exploratory scan (every field x explanation)
+    python3 -I event120_check.py COPY.sqlite --holdout       # frozen candidates on reports from HOLDOUT_FROM only
 
 Run on a SQLite-backup COPY of NOOP's database. Prints correlations and counts only (no per-report values).
 
@@ -19,6 +20,12 @@ Controls:
     (normal approximation, r_crit = z / sqrt(n - 3) on Fisher z);
   - replication: a pass must hold in BOTH halves of the reports (split by time), with the same sign.
 Fields constant over all reports are listed as constant. A field that passes nothing stays UNKNOWN.
+
+--holdout (issue #45, frozen 2026-11-19 before any report from HOLDOUT_FROM existed): tests only the FROZEN candidates
+that came closest on the exploratory scan, with their predicted sign, on reports at or after HOLDOUT_FROM (local), with
+the same time-of-day residuals and a Bonferroni threshold over len(FROZEN) tests. Below MIN_HOLDOUT reports it prints
+UNDERPOWERED and no verdict. A candidate is SUPPORTED only with the predicted sign and |r| above the threshold; its
+meaning stays a hypothesis either way (correlation with NOOP's own streams is not a decode).
 """
 import json
 import math
@@ -29,6 +36,12 @@ import sys
 from statistics import NormalDist
 
 WIN = 7200
+HOLDOUT_FROM = "2026-11-20"
+MIN_HOLDOUT = 80
+# (field, explanation, predicted sign): exploratory 2026-11-19 on 219 reports (11-02 .. 11-19), r after time-of-day
+# removal: u16@18 ~ hr_prev +0.32, u16@21 ~ hr_next -0.31, u8@9 ~ move_prev -0.43 (halves agreed in sign; per-half
+# Bonferroni not reached).
+FROZEN = (("u16@18", "hr_prev", +1), ("u16@21", "hr_next", -1), ("u8@9", "move_prev", -1))
 
 
 def pearson(x, y):
@@ -97,7 +110,26 @@ def analyse(rows, explanations, min_distinct=3):
     return out, crit, [f for f in names if f not in varying]
 
 
+def holdout(rows, frozen=FROZEN, min_n=MIN_HOLDOUT):
+    """rows: [(ts, hour, fields, expl)] already limited to the hold-out period.
+    -> (n, crit, [(field, explanation, sign, r, verdict)]); verdict SUPPORTED / NOT SUPPORTED / UNDERPOWERED."""
+    n = len(rows)
+    crit = bonferroni_r(n, len(frozen)) if n > 3 else float("nan")
+    hours = [r[1] // 3 for r in rows]
+    out = []
+    for f, e, sign in frozen:
+        if n < min_n:
+            out.append((f, e, sign, float("nan"), "UNDERPOWERED"))
+            continue
+        r = pearson(residualize([float(x[2][f]) for x in rows], hours), residualize([float(x[3][e]) for x in rows], hours))
+        ok = r == r and abs(r) > crit and (r > 0) == (sign > 0)
+        out.append((f, e, sign, r, "SUPPORTED" if ok else "NOT SUPPORTED"))
+    return n, crit, out
+
+
 def main(argv):
+    hold = "--holdout" in argv
+    argv = [a for a in argv if a != "--holdout"]
     if len(argv) != 1:
         print(__doc__)
         return 2
@@ -113,6 +145,14 @@ def main(argv):
             continue
         rows.append((ts, datetime.datetime.fromtimestamp(ts).hour, fields(body), e))
     total = con.execute("select count(*) from event where kind='EVENT_120'").fetchone()[0]
+    if hold:
+        start = datetime.datetime.fromisoformat(HOLDOUT_FROM).timestamp()
+        kept = [r for r in rows if r[0] >= start]
+        n, crit, res = holdout(kept)
+        print(f"hold-out from {HOLDOUT_FROM}: {n} usable reports (need {MIN_HOLDOUT}); Bonferroni |r| > {crit:.2f} over {len(FROZEN)}")
+        for f, e, sign, r, verdict in res:
+            print(f"  {f:8s} ~ {e:10s} predicted {'+' if sign > 0 else '-'}  r={r:+.2f}  {verdict}")
+        return 0
     print(f"event 120 reports {total}; with >= 10 min HR before and after and movement data: {len(rows)}")
     if len(rows) < 20:
         return 1

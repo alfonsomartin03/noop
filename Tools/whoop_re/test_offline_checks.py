@@ -9,6 +9,7 @@ import tempfile
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import event120_check as E  # noqa: E402
 import ppg_burst_check as P  # noqa: E402
 import step_reset_scan as S  # noqa: E402
 import strap_clock_offset as C  # noqa: E402
@@ -83,6 +84,35 @@ def v1a_frame(ts, burst, state, samples):
     for i in range(24):
         struct.pack_into("<h", p, 19 + 2 * i, samples[i + 1] - samples[i])
     return bytes(8) + bytes(p) + bytes(4)
+
+
+class Event120HoldoutTests(unittest.TestCase):
+    def rows(self, n, slope, seed=1):
+        import random
+        rnd = random.Random(seed)
+        out = []
+        for i in range(n):
+            hr = 60 + rnd.random() * 30
+            mv = rnd.random()
+            f = {"u16@18": int(1000 + slope * hr + rnd.random() * 5), "u16@21": int(500 - slope * hr + rnd.random() * 5),
+                 "u8@9": int(100 - slope * 50 * mv + rnd.random() * 5)}
+            out.append((i * 7200, (i * 2) % 24, f, {"hr_prev": hr, "hr_next": hr, "move_prev": mv}))
+        return out
+
+    def test_underpowered_gives_no_verdict(self):
+        n, _, res = E.holdout(self.rows(40, 5))
+        self.assertEqual(n, 40)
+        self.assertEqual({v for *_, v in res}, {"UNDERPOWERED"})
+
+    def test_predicted_relations_pass_and_noise_does_not(self):
+        _, crit, res = E.holdout(self.rows(120, 5))
+        self.assertTrue(all(v == "SUPPORTED" for *_, v in res), res)
+        _, _, noise = E.holdout(self.rows(120, 0))
+        self.assertTrue(all(v == "NOT SUPPORTED" for *_, v in noise), noise)
+
+    def test_wrong_sign_is_not_supported(self):
+        _, _, res = E.holdout(self.rows(120, -5))
+        self.assertTrue(all(v == "NOT SUPPORTED" for *_, v in res), res)
 
 
 class PPGBurstTests(unittest.TestCase):
