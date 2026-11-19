@@ -348,7 +348,10 @@ private struct MonitorTile: View {
 
     private var caption: String {
         guard let l = reading.latest else {
-            return reading.metric == .skinTemp ? "NOOP's nightly skin-temperature change; none stored yet" : "Nothing stored from either source"
+            // #43: nightly values can exist while the change still waits for its baseline, so say what it waits for.
+            return reading.metric == .skinTemp
+                ? "Change appears after \(SkinTemperature.reference.minPrior) nights of NOOP skin temperature"
+                : "Nothing stored from either source"
         }
         var s = "Night of \(HighlightsContent.long(l.day)) · \(reading.source)"
         if let b = reading.baseline { s += " · range \(HealthFormat.value(b.low, reading.metric))–\(HealthFormat.value(b.high, reading.metric))" }
