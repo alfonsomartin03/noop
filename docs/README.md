@@ -4,6 +4,7 @@ Current guides describe the macOS app and its retained packages. Research and ex
 
 ## Current guides
 
+- [Project progress](PROJECT_PROGRESS.md) — plain-language summary of completed work, evidence limits, and open research
 - [Project overview](../README.md)
 - [Contributing](CONTRIBUTING.md) and [build/test](BUILD.md)
 - [Features](FEATURES.md) and [screen map](SCREEN_INVENTORY.md)
@@ -28,4 +29,4 @@ Additional background: [protocol](PROTOCOL.md), [BLE reverse engineering](BLE_RE
 
 ## Scope of this refresh
 
-On November 2, 2026, remote `main` was verified at `6e5ecda`; the local committed app was at `d14c607`. The two intervening remote commits only removed unrelated cinema-project artifacts. Existing uncommitted sleep/session, alarm, storage and protocol work was preserved, and is not advertised as released. Obsolete mobile-port and rejected API-integration plans were removed from current documentation.
+Updated November 18, 2026. The current `main` branch includes the merged sleep, alarm, storage, and strap-research work described in the guides. For a plain-language summary of completed work and remaining validation, see [project progress](PROJECT_PROGRESS.md). Research documents are dated evidence snapshots; check their scope and status before treating a finding as general hardware support.
