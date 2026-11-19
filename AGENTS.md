@@ -310,6 +310,8 @@ Format: `file` — purpose. Tests list `Suite(methods)`. Fixtures/resources are 
 
 ## 8 · Verification record
 
+- 2026-11-19 #43 T03 wearer-timed removal (passive, SQLite-backup copy): WRIST_OFF 18:29:03 / WRIST_ON 18:52:37 vs wearer 18:29 / ~18:52; no HR or skin-temp history while off; first ~30 s after re-wear read cool (26.7–29.1 °C). Docs only, no tests. NOT done: Overview caption seen in the app, removal inside a night, VoiceOver.
+
 - 2026-11-19 Settings profile card cleanup: PASS app build + hosted 110 (7 env skips, 0 failures; new `ProfileStoreAgeTests`). **Looked at** renders before/after (empty + filled, 760 light/dark, 420 light): groups, aligned steppers, notes under labels, no clipping. NOT done: in-app check, VoiceOver, keyboard focus.
 
 - 2026-11-19 #43 offline (T02): nightly skin temperature checked on a SQLite-backup copy (`EXPERIMENT_LOG.md`); off-wrist render case added and **looked at** (760 dark, 420 light: caption + warning correct); Health skin-temp waiting caption fixed. PASS app build + hosted 108 (6 env skips). NOT done: wearer-timed removal, real off-wrist night, VoiceOver, reference thermometer.
@@ -516,6 +518,7 @@ git ls-files --cached --others --exclude-standard | grep -v -e '^AGENTS.md$' -e 
 
 | Date | Change | Checks / remaining |
 | --- | --- | --- |
+| 2026-11-19 | #43 T03: wearer-timed 24-min removal — strap off/on events within a minute of the wearer's times; no history recorded while off; cool re-wear readings noted. | Docs only; app caption check and a night-time removal remain. |
 | 2026-11-19 | Settings ▸ Profile card cleanup: Body / Health-age groups, aligned value+stepper column, notes and actions under labels; age derived from birth date when set. | Hosted 110 pass; renders checked; in-app look pending. |
 | 2026-11-19 | #43: real-night skin-temperature check (3 nights stored, change waits for its baseline as designed); off-wrist coverage caption rendered and checked; Health waiting caption corrected. | Hosted 108 pass; timed removal + VoiceOver need the wearer. |
 | 2026-11-19 | #44 unblocked by research capture: R18 field inventory; float@33 = dynamic acceleration (SUPPORTED), @29 second HR, @105 activity-linked float; hold-out frozen from 11-20. | Python 69 pass; hold-out ~11-25, scenarios need the wearer. |
@@ -523,4 +526,3 @@ git ls-files --cached --others --exclude-standard | grep -v -e '^AGENTS.md$' -e 
 | 2026-11-19 | #45: R26 optical bursts → no product use (pulse content barely beats controls); event-120 candidates frozen, `event120_check.py --holdout` for reports from 11-20. | Python 66 pass; hold-out due ~11-27. |
 | 2026-11-19 | #49 replay evaluation: `FunctionalAgeReplay` + `perf_probe --fa-replay`; the pace's 6-month projection loses to no change (MAE 0.144 vs 0.068 y, 2 independent points). Shared `FunctionalAgeSnapshot.days` mapping. | Analytics 516 + hosted 108 pass. Owner kept pace: 8-week smoothing (weekly jump p90 0.27× → 0.11×); functional age < 18 shows "<18". |
 | 2026-11-19 | #46 in-app per-day ops counters (`OpenWhoop/ops-counters`, `ops_metrics.py --counters`). Log catch-up: K01 daily re-sync seen live; S01 night 2 (no alarm → no step reset) points to the alarm as reset trigger; two Bluetooth power-cycle storms. | Protocol 182, Python 63, hosted 108 pass; counters running in the app; Fri alarm morning tests the reset prediction. |
-| 2026-11-18 | #39 closed: live R-R words are ms (L01, paired with history). #38 closed: research capture accepted live (A01), backup/restore/replay guide, `research_archive_check.py`. | Python 61 pass; capture left running for #44. |

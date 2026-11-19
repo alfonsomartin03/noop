@@ -394,7 +394,7 @@ accepted every command. Details: ALARM_CAPABILITIES.md. **Wearer confirmed feeli
 - **Change vs baseline:** `skinTempDevC` is unavailable on all three nights with reason "no usable reference" —
   correct, since it needs ≥ 5 earlier nights. **Prediction:** the first provisional change appears for the night
   ending 2026-11-22, if every night stays usable.
-- **Off-wrist:** the only strap-reported off/on pair since storage began is the 2-min C02a test (11-16 14:57/14:59).
+- **Off-wrist:** the only strap-reported off/on pair since storage began (as of T02) is the 2-min C02a test (11-16 14:57/14:59); see T03 for a timed removal.
   None fell in a night, so off-wrist exclusion is still unexercised on real nights; that needs a wearer-timed
   longer removal.
 - **UI:**
@@ -403,3 +403,18 @@ accepted every command. Details: ALARM_CAPABILITIES.md. **Wearer confirmed feeli
   - Overview HR card render with strap-reported off-wrist time (synthetic) looked at, 760 dark and 420 light: the
     caption names it ("Strap reported off the wrist for 1 h 18 min"), and the warning stays for the unexplained 2 h 42 min.
 - **Reference accuracy:** unknown; no reference thermometer.
+
+## T03 — wearer-timed removal (2026-11-19 evening, #43; passive, SQLite-backup copy, no strap commands)
+
+- **Wearer's times:** off 18:29, back on ~18:52 (EST), reported in chat as they happened.
+- **Strap events (synced by the ordinary pulls):** WRIST_OFF (10) at 18:29:03, WRIST_ON (9) at 18:52:37 — both
+  within a minute of the wearer's times; strap clock re-synced the day before (K01), so no offset to correct.
+- **History while off:** no HR and no skin-temperature rows between the two events (HR gap 18:29:02 → 18:52:37, the
+  only gap > 60 s in 18:28–19:10); the strap does not record history off the wrist, at least for this ~24 min.
+- **Skin temperature:** 30.0 °C mean in the 10 min before removal; the first ~30 s after re-wear read 26.7–29.1 °C
+  (strap cooled off the wrist). Observation only: `skin-temp-night-v2` excludes the off interval but not this
+  re-warming tail; it matters only for a removal inside a night and is not changed here.
+- **Result:** wrist-wear pairing (`WristWear`) gets a 23 min 34 s interval, above the 1-min caption threshold, so the
+  Overview HR card should say "Strap reported off the wrist for 23 min" for today. **Not seen in the app** (wearer
+  to check); the caption logic itself is unit-tested and the render was checked in T02.
+- Still open: a removal inside a night (off-wrist exclusion in the nightly skin value), VoiceOver.
