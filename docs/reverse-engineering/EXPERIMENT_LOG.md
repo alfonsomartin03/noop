@@ -369,3 +369,18 @@ accepted every command. Details: ALARM_CAPABILITIES.md. **Wearer confirmed feeli
   - u16@21 ~ hr_next (−)
   - u8@9 ~ move_prev (−)
 - No re-selection after seeing hold-out data. A SUPPORTED result is a correlation with NOOP's own streams, not a decode.
+
+## R18 field inventory (2026-11-19, offline, #44; research-capture copies only)
+
+- **Input:** `r18_field_inventory.py` on copies of `OpenWhoop/research-history`. 74,444 R18 lines, 0 bad CRC, 61
+  same-second repeats; 74,383 unique records (20.7 h of seconds, 2026-11-18/19). Aggregates only.
+- **Inventory:** 112-byte payload — 46 constant, 17 few-valued (≤ 8 values), 49 varying. The only clean f32 fields
+  are the known 33/37/41/45, plus **@105**.
+- **float@33:** never negative; median 0.008 still, 0.164 walk, 0.731 run; r +0.39 with per-second |Δgravity|.
+  The three gravity floats form a unit vector (95.8 % within 1 ± 0.05); adding @33 does not (p99 1.24).
+  → **dynamic-acceleration magnitude SUPPORTED, quaternion REJECTED.** Scale is unassigned.
+- **u8 @29:** r +1.00 with HR @14, equal in 77 %, > 3 bpm apart in 1.1 % → a second HR value; meaning unresolved.
+- **f32 @105:** around −5.2 at rest, −3.0 walking, −2.0 running → activity-linked; meaning unknown.
+- **Few-valued unlabelled bytes:** ≤ 0.023 bits of mutual information with activity code. No motion/rest flag found.
+- **Frozen for hold-out** (EVIDENCE_MATRIX §2 rows "#44"): re-run `--since 2026-11-20` on later copies with the same
+  pass/fail rules. Research capture ends 2026-11-25 (7-day limit), so the hold-out covers ~11-20 → 11-25.
