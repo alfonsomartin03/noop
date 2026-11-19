@@ -18,7 +18,7 @@ final class FunctionalAgeRenderTests: XCTestCase {
         print("HEALTH_RENDER_DIR \(out.path)")
     }
 
-    private func summary(rhrOld: Double, rhrRecent: Double, sleep: Double, vo2: Double?) -> FunctionalAgeSnapshot.Summary {
+    private func summary(rhrOld: Double, rhrRecent: Double, sleep: Double, vo2: Double?, age: Int = 38) -> FunctionalAgeSnapshot.Summary {
         let cal = Calendar.current, asOf = Date()
         let days = (1...200).map { b -> FunctionalAgeSnapshot.Day in
             let d = cal.date(byAdding: .day, value: -b, to: cal.startOfDay(for: asOf))!
@@ -26,7 +26,7 @@ final class FunctionalAgeRenderTests: XCTestCase {
                                              restingHR: .init(value: b <= 30 ? rhrRecent : rhrOld, imported: false),
                                              sleepHours: .init(value: sleep, imported: false))
         }
-        let birth = cal.date(byAdding: .year, value: -38, to: asOf)!
+        let birth = cal.date(byAdding: .year, value: -age, to: asOf)!
         return FunctionalAgeSnapshot.summarize(
             days: days, birth: birth, asOf: asOf, calendar: cal,
             measuredVO2: vo2.map { .init(value: $0, method: "Lab test (CPET)", testedAt: cal.date(byAdding: .month, value: -2, to: asOf)!) })
@@ -49,6 +49,8 @@ final class FunctionalAgeRenderTests: XCTestCase {
     func testRenderStates() throws {
         try render("ready-younger", summary(rhrOld: 52, rhrRecent: 50, sleep: 7.5, vo2: 46), chronological: 38)
         try render("ready-older", summary(rhrOld: 78, rhrRecent: 84, sleep: 5.5, vo2: 24), chronological: 38)
+        // 28 years old, very fit and low resting HR: about 15 → shown as "<18" with the difference as a bound.
+        try render("ready-floored", summary(rhrOld: 41, rhrRecent: 40, sleep: 7.5, vo2: 58, age: 28), chronological: 28)
         try render("calibrating", summary(rhrOld: 60, rhrRecent: 60, sleep: 7.5, vo2: nil), chronological: 38)
         try render("calibrating-no-birth", FunctionalAgeSnapshot.summarize(days: [], birth: nil, asOf: Date(), calendar: .current),
                    chronological: nil)

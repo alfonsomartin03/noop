@@ -47,6 +47,27 @@ public enum FunctionalAge {
         return 1 + (projectedImpact - currentImpact) / h
     }
 
+    /// The display never shows a functional age below this (owner decision 2026-11-19): "<18" instead.
+    public static let displayFloorYears = 18.0
+
+    public struct Display: Equatable, Sendable {
+        /// "42.3", or "<18" below the floor.
+        public let age: String
+        /// The difference as shown: the real one, or, when floored, the bound (floor − chronological age), so the
+        /// difference never reveals the hidden value. nil when floored and chronological age is at or below the floor.
+        public let difference: Double?
+        /// True when floored: the difference is a bound ("at least this much younger").
+        public let floored: Bool
+    }
+
+    public static func display(_ e: Estimate) -> Display {
+        guard e.functionalAge < displayFloorYears else {
+            return Display(age: String(format: "%.1f", e.functionalAge), difference: e.totalImpact, floored: false)
+        }
+        let bound = displayFloorYears - e.chronologicalAge
+        return Display(age: "<\(Int(displayFloorYears))", difference: bound < 0 ? bound : nil, floored: true)
+    }
+
     /// Continuous chronological age at `asOf` from a birth date (no step on birthdays).
     public static func chronologicalAge(birth: Date, asOf: Date) -> Double? {
         let years = asOf.timeIntervalSince(birth) / secondsPerYear

@@ -63,8 +63,9 @@ final class FunctionalAgeSnapshotTests: XCTestCase {
 
     func testRecentImprovementSlowsPace() throws {
         // Resting HR 70 for the older days, 60 for the last 30: current median 70 (150 of 180 days), projected 60.
+        // Single 30-day window (smoothing off): this checks the pace formula; smoothing has its own test.
         let s = S.summarize(days: days(200, rhr: { $0 <= 30 ? 60 : 70 }), birth: birth, asOf: asOf, calendar: cal,
-                            measuredVO2: vo2)
+                            measuredVO2: vo2, smoothingWeeks: 1)
         let c = try XCTUnwrap(s.current)
         XCTAssertEqual(c.totalImpact, log(1.09) / 0.1, accuracy: 1e-9)
         XCTAssertEqual(try XCTUnwrap(s.projectedImpact), 0, accuracy: 1e-12)

@@ -161,14 +161,21 @@ struct FunctionalAgeHeroCard: View {
 
     private var orbValue: String {
         guard let c = summary?.current else { return "—" }
-        return String(format: "%.1f", c.functionalAge)
+        return FunctionalAge.display(c).age
     }
 
     @ViewBuilder private var facts: some View {
         fact("Chronological age", chronological.map { String(format: "%.1f", $0) } ?? "Not set",
              chronological == nil ? "add your birth date in Settings" : "from your birth date")
         if let c = summary?.current {
-            fact("Difference", Self.signedYears(c.totalImpact), c.totalImpact <= 0 ? "younger than your age" : "older than your age")
+            let d = FunctionalAge.display(c)
+            if !d.floored {
+                fact("Difference", Self.signedYears(c.totalImpact), c.totalImpact <= 0 ? "younger than your age" : "older than your age")
+            } else if let bound = d.difference {
+                fact("Difference", Self.signedYears(bound) + " or more", "younger than your age")
+            } else {
+                fact("Difference", "—", "functional age shown from 18")
+            }
         }
         fact("Pace of aging", summary?.pace.map(Self.paceText) ?? "—",
              summary?.pace == nil ? "needs the full model" : "years per year, projected 6 months")
@@ -197,7 +204,7 @@ struct FunctionalAgeHeroCard: View {
                 }
                 .accessibilityElement(children: .combine)
             }
-            Text("From the last \(FunctionalAgeSnapshot.longWindowDays) days; pace compares the last \(FunctionalAgeSnapshot.shortWindowDays) days, held for 6 months.")
+            Text("From the last \(FunctionalAgeSnapshot.longWindowDays) days; pace compares your recent \(FunctionalAgeSnapshot.shortWindowDays)-day stretches (averaged over \(FunctionalAgeSnapshot.paceSmoothingWeeks) weeks), held for 6 months. A projection for interest, not a prediction.")
                 .font(StrandFont.footnote).foregroundStyle(.white.opacity(0.72)).fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: 460, alignment: .leading)
@@ -227,7 +234,10 @@ struct FunctionalAgeHeroCard: View {
             return "Functional age: calibrating. \(summary?.reasons.count ?? 0) inputs still needed."
         }
         let pace = summary?.pace.map { ", pace of aging \(Self.paceText($0)) years per year" } ?? ""
-        return "Functional age \(String(format: "%.1f", c.functionalAge)), \(Self.signedYears(c.totalImpact)) against your age\(pace). Experimental."
+        let d = FunctionalAge.display(c)
+        let diff = d.floored ? (d.difference.map { "at least \(Self.signedYears($0)) against your age" } ?? "shown from 18")
+                             : "\(Self.signedYears(c.totalImpact)) against your age"
+        return "Functional age \(d.floored ? "under 18" : d.age), \(diff)\(pace). Experimental."
     }
 
     static func signedYears(_ y: Double) -> String {
