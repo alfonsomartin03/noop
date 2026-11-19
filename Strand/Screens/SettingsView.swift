@@ -14,169 +14,12 @@ struct SettingsView: View {
         ScreenScaffold(title: "Settings",
                        subtitle: "Your numbers, your strap, and how NOOP works. All on this Mac.") {
             PairingResetNotice()
-            profileCard
+            ProfileCard(profile: profile)
             strapCard
             keepDataCard
             ResearchCaptureCard()
             checkInCard
             aboutCard
-        }
-    }
-
-    // MARK: - Profile
-
-    private var profileCard: some View {
-        SettingsSection(
-            icon: "person.fill",
-            title: "Profile",
-            blurb: "These power heart-rate zones, calorie estimates and recovery baselines."
-        ) {
-            VStack(spacing: 0) {
-                FormRow(label: "Age") {
-                    HStack(spacing: 12) {
-                        Text("\(profile.age)")
-                            .font(StrandFont.bodyNumber)
-                            .foregroundStyle(StrandPalette.textPrimary)
-                            .frame(minWidth: 28, alignment: .trailing)
-                        Stepper("Age", value: $profile.age, in: 13...100)
-                            .labelsHidden()
-                            .accessibilityLabel("Age, \(profile.age) years")
-                    }
-                }
-                rowDivider
-                FormRow(label: "Birth date") {
-                    VStack(alignment: .trailing, spacing: 6) {
-                        if let b = profile.birthDate {
-                            HStack(spacing: 8) {
-                                DatePicker("Birth date", selection: Binding(get: { b }, set: { profile.birthDate = $0 }),
-                                           in: ...Date(), displayedComponents: .date)
-                                    .labelsHidden()
-                                    .accessibilityLabel("Birth date")
-                                Button("Clear") { profile.birthDate = nil }
-                                    .buttonStyle(.borderless)
-                                    .accessibilityLabel("Clear birth date")
-                            }
-                        } else {
-                            Button("Add birth date") {
-                                profile.birthDate = Calendar.current.date(byAdding: .year, value: -profile.age, to: Date())
-                            }
-                            .buttonStyle(.borderless)
-                        }
-                        Text("Optional. Used only for the Health age estimate.")
-                            .font(StrandFont.footnote)
-                            .foregroundStyle(StrandPalette.textTertiary)
-                    }
-                }
-                rowDivider
-                FormRow(label: "Sex") {
-                    Picker("Sex", selection: $profile.sex) {
-                        Text("Male").tag("male")
-                        Text("Female").tag("female")
-                        Text("Non-binary").tag("nonbinary")
-                    }
-                    .labelsHidden()
-                    .pickerStyle(.segmented)
-                    .fixedSize()
-                    .accessibilityLabel("Sex")
-                }
-                rowDivider
-                FormRow(label: "Weight") {
-                    measureField(value: $profile.weightKg, unit: "kg",
-                                 range: 30...250, step: 0.5, format: "%.1f",
-                                 accessibility: "Weight in kilograms")
-                }
-                rowDivider
-                FormRow(label: "Height") {
-                    measureField(value: $profile.heightCm, unit: "cm",
-                                 range: 120...230, step: 1, format: "%.0f",
-                                 accessibility: "Height in centimetres")
-                }
-                rowDivider
-                FormRow(label: "Measured VO₂max") {
-                    VStack(alignment: .trailing, spacing: 6) {
-                        if let v = profile.measuredVO2 {
-                            measureField(value: Binding(get: { v }, set: { profile.measuredVO2 = $0 }), unit: "ml/kg/min",
-                                         range: 10...90, step: 0.5, format: "%.1f",
-                                         accessibility: "Measured VO₂max in millilitres per kilogram per minute")
-                            HStack(spacing: 8) {
-                                Picker("Test", selection: $profile.measuredVO2Method) {
-                                    ForEach(["Lab test (CPET)", "Field test", "Other measured test"], id: \.self) { Text($0).tag($0) }
-                                }
-                                .labelsHidden().fixedSize()
-                                .accessibilityLabel("VO₂max test method")
-                                DatePicker("Test date", selection: $profile.measuredVO2Date, in: ...Date(), displayedComponents: .date)
-                                    .labelsHidden()
-                                    .accessibilityLabel("VO₂max test date")
-                                Button("Clear") { profile.measuredVO2 = nil }
-                                    .buttonStyle(.borderless)
-                                    .accessibilityLabel("Clear measured VO₂max")
-                            }
-                        } else {
-                            Button("Add a test result") { profile.measuredVO2 = 40; profile.measuredVO2Date = Date() }
-                                .buttonStyle(.borderless)
-                        }
-                        Text("Optional. From a fitness test, not a watch estimate. Used only for the Health age estimate.")
-                            .font(StrandFont.footnote)
-                            .foregroundStyle(StrandPalette.textTertiary)
-                            .multilineTextAlignment(.trailing)
-                    }
-                }
-                rowDivider
-                FormRow(label: "Max heart rate") {
-                    VStack(alignment: .trailing, spacing: 6) {
-                        HStack(spacing: 8) {
-                            hrMaxField
-                            Text("bpm")
-                                .font(StrandFont.caption)
-                                .foregroundStyle(StrandPalette.textTertiary)
-                        }
-                        Text(profile.hrMaxOverride > 0
-                             ? "Manual override"
-                             : "Auto · \(profile.hrMax) bpm (Tanaka)")
-                            .font(StrandFont.footnote)
-                            .foregroundStyle(profile.hrMaxOverride > 0
-                                             ? StrandPalette.accentInk
-                                             : StrandPalette.textTertiary)
-                    }
-                }
-            }
-        }
-    }
-
-    /// Numeric weight/height field: tabular value + small +/- stepper.
-    private func measureField(value: Binding<Double>, unit: String,
-                              range: ClosedRange<Double>, step: Double,
-                              format: String, accessibility: String) -> some View {
-        HStack(spacing: 10) {
-            HStack(alignment: .firstTextBaseline, spacing: 4) {
-                Text(String(format: format, value.wrappedValue))
-                    .font(StrandFont.bodyNumber)
-                    .foregroundStyle(StrandPalette.textPrimary)
-                    .frame(minWidth: 48, alignment: .trailing)
-                Text(unit)
-                    .font(StrandFont.caption)
-                    .foregroundStyle(StrandPalette.textTertiary)
-            }
-            Stepper(accessibility, value: value, in: range, step: step)
-                .labelsHidden()
-                .accessibilityLabel(accessibility)
-        }
-    }
-
-    /// HR-max override: 0 = auto. Shown as a compact tabular value with a stepper.
-    // Blank/0 = estimate from age (Tanaka); typing a value overrides it.
-    private var hrMaxField: some View {
-        HStack(spacing: 10) {
-            Text(profile.hrMaxOverride > 0 ? "\(profile.hrMaxOverride)" : "Auto")
-                .font(StrandFont.bodyNumber)
-                .foregroundStyle(profile.hrMaxOverride > 0
-                                 ? StrandPalette.textPrimary
-                                 : StrandPalette.textTertiary)
-                .frame(minWidth: 44, alignment: .trailing)
-            Stepper("Max heart rate override",
-                    value: $profile.hrMaxOverride, in: 0...230, step: 1)
-                .labelsHidden()
-                .accessibilityLabel("Max heart rate override, \(profile.hrMaxOverride == 0 ? "automatic" : "\(profile.hrMaxOverride) bpm")")
         }
     }
 
@@ -444,6 +287,221 @@ private struct SettingsSection<Content: View>: View {
                 content()
             }
         }
+    }
+}
+
+// MARK: - Profile
+
+/// Settings ▸ General ▸ Profile: two groups (body numbers that drive zones/calories/baselines; the optional Health-age
+/// inputs), every row label-left / control-right with notes under the label, values and steppers in one column.
+/// Internal so the render harness can host it with a throwaway `ProfileStore`.
+struct ProfileCard: View {
+    @ObservedObject var profile: ProfileStore
+
+    var body: some View {
+        SettingsSection(
+            icon: "person.fill",
+            title: "Profile",
+            blurb: "These power heart-rate zones, calorie estimates and recovery baselines."
+        ) {
+            VStack(alignment: .leading, spacing: 0) {
+                groupHeader("Body")
+                ageRow
+                rowDivider
+                ProfileRow(label: "Sex") {
+                    Picker("Sex", selection: $profile.sex) {
+                        Text("Male").tag("male")
+                        Text("Female").tag("female")
+                        Text("Non-binary").tag("nonbinary")
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.segmented)
+                    .fixedSize()
+                    .accessibilityLabel("Sex")
+                }
+                rowDivider
+                ProfileRow(label: "Weight") {
+                    stepperValue(String(format: "%.1f", profile.weightKg), unit: "kg") {
+                        Stepper("Weight in kilograms", value: $profile.weightKg, in: 30...250, step: 0.5)
+                    }
+                }
+                rowDivider
+                ProfileRow(label: "Height") {
+                    stepperValue(String(format: "%.0f", profile.heightCm), unit: "cm") {
+                        Stepper("Height in centimetres", value: $profile.heightCm, in: 120...230, step: 1)
+                    }
+                }
+                rowDivider
+                hrMaxRow
+
+                groupHeader("Health age · optional")
+                    .padding(.top, 20)
+                Text("For the functional-age estimate on the Health page. A VO₂max test counts for 2 years.")
+                    .font(StrandFont.footnote)
+                    .foregroundStyle(StrandPalette.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.bottom, 6)
+                birthDateRow
+                rowDivider
+                vo2Rows
+            }
+        }
+    }
+
+    // MARK: Rows
+
+    @ViewBuilder private var ageRow: some View {
+        if profile.birthDate != nil {
+            ProfileRow(label: "Age", note: "From your birth date") {
+                stepperValue("\(profile.age)", unit: "years") { Color.clear.frame(width: 1, height: 1).accessibilityHidden(true) }
+                    .accessibilityElement(children: .combine)
+            }
+        } else {
+            ProfileRow(label: "Age") {
+                stepperValue("\(profile.age)", unit: "years") {
+                    Stepper("Age", value: $profile.age, in: 13...100)
+                        .accessibilityLabel("Age, \(profile.age) years")
+                }
+            }
+        }
+    }
+
+    private var hrMaxRow: some View {
+        ProfileRow(label: "Max heart rate",
+                   note: profile.hrMaxOverride > 0 ? "Set by you" : "Estimated from age (Tanaka)",
+                   action: profile.hrMaxOverride > 0 ? ("Use estimate", { profile.hrMaxOverride = 0 }) : nil) {
+            stepperValue("\(profile.hrMax)", unit: "bpm", dimmed: profile.hrMaxOverride == 0) {
+                Stepper("Max heart rate", value: Binding(get: { profile.hrMax },
+                                                         set: { profile.hrMaxOverride = $0 }),
+                        in: 100...230, step: 1)
+                    .accessibilityLabel("Max heart rate, \(profile.hrMax) bpm, \(profile.hrMaxOverride > 0 ? "set by you" : "estimated")")
+            }
+        }
+    }
+
+    @ViewBuilder private var birthDateRow: some View {
+        if let b = profile.birthDate {
+            ProfileRow(label: "Birth date", action: ("Remove", { profile.birthDate = nil })) {
+                DatePicker("Birth date", selection: Binding(get: { b }, set: { profile.birthDate = $0 }),
+                           in: ...Date(), displayedComponents: .date)
+                    .labelsHidden()
+                    .accessibilityLabel("Birth date")
+            }
+        } else {
+            ProfileRow(label: "Birth date", note: "Keeps your age up to date") {
+                addButton("Add birth date") {
+                    profile.birthDate = Calendar.current.date(byAdding: .year, value: -profile.age, to: Date())
+                }
+            }
+        }
+    }
+
+    @ViewBuilder private var vo2Rows: some View {
+        if let v = profile.measuredVO2 {
+            ProfileRow(label: "Measured VO₂max", action: ("Remove", { profile.measuredVO2 = nil })) {
+                stepperValue(String(format: "%.1f", v), unit: "ml/kg/min") {
+                    Stepper("Measured VO₂max in millilitres per kilogram per minute",
+                            value: Binding(get: { v }, set: { profile.measuredVO2 = $0 }), in: 10...90, step: 0.5)
+                }
+            }
+            rowDivider
+            ProfileRow(label: "Test") {
+                HStack(spacing: 8) {
+                    Picker("Test", selection: $profile.measuredVO2Method) {
+                        ForEach(["Lab test (CPET)", "Field test", "Other measured test"], id: \.self) { Text($0).tag($0) }
+                    }
+                    .labelsHidden().fixedSize()
+                    .accessibilityLabel("VO₂max test method")
+                    DatePicker("Test date", selection: $profile.measuredVO2Date, in: ...Date(), displayedComponents: .date)
+                        .labelsHidden()
+                        .accessibilityLabel("VO₂max test date")
+                }
+            }
+        } else {
+            ProfileRow(label: "Measured VO₂max", note: "From a fitness test, not a watch estimate") {
+                addButton("Add test result") { profile.measuredVO2 = 40; profile.measuredVO2Date = Date() }
+            }
+        }
+    }
+
+    // MARK: Pieces
+
+    private func groupHeader(_ text: String) -> some View {
+        Text(text.uppercased())
+            .font(StrandFont.overline)
+            .tracking(StrandFont.overlineTracking)
+            .foregroundStyle(StrandPalette.textTertiary)
+            .padding(.bottom, 4)
+            .accessibilityAddTraits(.isHeader)
+    }
+
+    /// Tabular value + unit in a fixed-width column, then the stepper (or nothing), so every stepper lines up.
+    private func stepperValue<S: View>(_ value: String, unit: String, dimmed: Bool = false,
+                                       @ViewBuilder stepper: () -> S) -> some View {
+        HStack(spacing: 10) {
+            HStack(alignment: .firstTextBaseline, spacing: 4) {
+                Text(value)
+                    .font(StrandFont.bodyNumber)
+                    .foregroundStyle(dimmed ? StrandPalette.textSecondary : StrandPalette.textPrimary)
+                Text(unit)
+                    .font(StrandFont.caption)
+                    .foregroundStyle(StrandPalette.textTertiary)
+            }
+            stepper()
+                .labelsHidden()
+                .frame(width: 20, alignment: .trailing)
+        }
+    }
+
+    private func addButton(_ title: String, _ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Label(title, systemImage: "plus")
+        }
+        .controlSize(.small)
+    }
+
+    private var rowDivider: some View {
+        Rectangle()
+            .fill(StrandPalette.hairline)
+            .frame(height: 1)
+    }
+}
+
+/// Profile row: label (with an optional note and inline action under it) on the left, control on the right.
+private struct ProfileRow<Control: View>: View {
+    let label: String
+    var note: String? = nil
+    var action: (String, () -> Void)? = nil
+    @ViewBuilder var control: () -> Control
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 16) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(label)
+                    .font(StrandFont.body)
+                    .foregroundStyle(StrandPalette.textPrimary)
+                if note != nil || action != nil {
+                    HStack(spacing: 6) {
+                        if let note {
+                            Text(note)
+                                .font(StrandFont.footnote)
+                                .foregroundStyle(StrandPalette.textTertiary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        if let action {
+                            Button(action.0, action: action.1)
+                                .buttonStyle(.plain)
+                                .font(StrandFont.footnote.weight(.medium))
+                                .foregroundStyle(StrandPalette.accentInk)
+                                .accessibilityLabel("\(action.0) \(label.lowercased())")
+                        }
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            control()
+        }
+        .padding(.vertical, 10)
     }
 }
 

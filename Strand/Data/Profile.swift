@@ -15,7 +15,17 @@ final class ProfileStore: ObservableObject {
     @Published var hrMaxOverride: Int { didSet { d.set(hrMaxOverride, forKey: K.hrMax) } }
     /// Optional; used only by the Health functional-age model (#49) for a continuous age without birthday steps.
     @Published var birthDate: Date? {
-        didSet { if let b = birthDate { d.set(b.timeIntervalSince1970, forKey: K.birth) } else { d.removeObject(forKey: K.birth) } }
+        didSet {
+            if let b = birthDate { d.set(b.timeIntervalSince1970, forKey: K.birth) } else { d.removeObject(forKey: K.birth) }
+            syncAgeFromBirthDate()
+        }
+    }
+
+    /// With a birth date, the whole-year age (zones, Tanaka max HR) follows it instead of being entered separately.
+    func syncAgeFromBirthDate(now: Date = Date()) {
+        guard let b = birthDate, let years = Calendar.current.dateComponents([.year], from: b, to: now).year,
+              (13...100).contains(years), years != age else { return }
+        age = years
     }
 
     /// Optional measured VO₂max (ml/kg/min) with its test method and date; used only by the functional-age model (#49).
@@ -31,14 +41,16 @@ final class ProfileStore: ObservableObject {
         measuredVO2.map { FunctionalAgeSnapshot.MeasuredVO2(value: $0, method: measuredVO2Method, testedAt: measuredVO2Date) }
     }
 
-    private let d = UserDefaults.standard
+    private let d: UserDefaults
     private enum K {
         static let age = "profile.age", sex = "profile.sex", weight = "profile.weightKg"
         static let height = "profile.heightCm", hrMax = "profile.hrMaxOverride", birth = "profile.birthDate"
         static let vo2 = "profile.vo2max", vo2Method = "profile.vo2maxMethod", vo2Date = "profile.vo2maxDate"
     }
 
-    init() {
+    /// `defaults` is for render tests (a throwaway suite); the app uses `.standard`.
+    init(defaults: UserDefaults = .standard) {
+        d = defaults
         age = d.object(forKey: K.age) as? Int ?? 30
         sex = d.string(forKey: K.sex) ?? "male"
         weightKg = d.object(forKey: K.weight) as? Double ?? 75
@@ -48,6 +60,7 @@ final class ProfileStore: ObservableObject {
         measuredVO2 = d.object(forKey: K.vo2) as? Double
         measuredVO2Method = d.string(forKey: K.vo2Method) ?? "Lab test (CPET)"
         measuredVO2Date = (d.object(forKey: K.vo2Date) as? Double).map { Date(timeIntervalSince1970: $0) } ?? Date()
+        syncAgeFromBirthDate()   // a birthday since the last launch moves the age on
     }
 
     /// Tanaka estimate unless overridden.
