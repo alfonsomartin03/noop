@@ -51,14 +51,15 @@ final class HeartRateCardRenderTests: XCTestCase {
 
     private func day(_ d: Date) -> String { Repository.dayString(d) }
 
-    private func card(day: String, hr: [HRSample], now: Date, activation: ActivationAvailability, syncedThrough: Int?) -> some View {
+    private func card(day: String, hr: [HRSample], now: Date, activation: ActivationAvailability, syncedThrough: Int?,
+                      offWrist: [WristWear.OffInterval] = []) -> some View {
         let profile = ProfileStore()
         let stats = DayHRStats(hr: hr, inputs: DayHRStats.Inputs(profile), restingHR: Int(resting), maxHR: maxHR)
         let metric = DailyMetric(day: day, totalSleepMin: nil, efficiency: nil, deepMin: nil, remMin: nil, lightMin: nil,
                                  disturbances: nil, restingHr: Int(resting), avgHrv: nil, recovery: nil, strain: nil,
                                  exerciseCount: nil, spo2Pct: nil, skinTempDevC: nil, respRateBpm: nil)
         return HeartRateDayCard(day: day, metric: metric, days: [], stats: hr.isEmpty ? nil : stats, syncedThrough: syncedThrough,
-                                openLive: {}, fixtureNow: now, fixtureActivation: activation)
+                                offWrist: offWrist, openLive: {}, fixtureNow: now, fixtureActivation: activation)
     }
 
     private func render<V: View>(_ name: String, _ view: V, width: CGFloat, dark: Bool, height: CGFloat = 760) async throws {
@@ -104,6 +105,16 @@ final class HeartRateCardRenderTests: XCTestCase {
         let y0 = Int(yStart.timeIntervalSince1970), y1 = Int(todayStart.timeIntervalSince1970)
         let full = busyDay(y0, until: 24)
         try await both("full-day", card(day: day(yStart), hr: full.hr, now: tenAM, activation: .ready(bins(full, from: y0, to: y1)), syncedThrough: ts0))
+
+        // #43: the same full day where the strap reported itself off the wrist for the 9:42–11:00 gap (explained), while
+        // the 13:00–14:00 gap stays unexplained: the caption names strap-reported time and still counts the other gap.
+        let off = WristWear.offIntervals([(ts: y0 + Int(9.7 * 3600), number: WristWear.offEvent),
+                                          (ts: y0 + 11 * 3600, number: WristWear.onEvent)], until: y1)
+        try await both("full-day-off-wrist", card(day: day(yStart), hr: full.hr, now: tenAM, activation: .ready(bins(full, from: y0, to: y1)),
+                                                  syncedThrough: ts0, offWrist: off))
+        try await render("full-day-off-wrist-420-light", card(day: day(yStart), hr: full.hr, now: tenAM,
+                                                              activation: .ready(bins(full, from: y0, to: y1)), syncedThrough: ts0, offWrist: off),
+                         width: 420, dark: false, height: 1500)
 
         // 25-hour day (2026-11-01, New York when the host is there; otherwise whatever the host zone does that date).
         var c = DateComponents(); c.year = 2026; c.month = 11; c.day = 1

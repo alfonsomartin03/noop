@@ -384,3 +384,22 @@ accepted every command. Details: ALARM_CAPABILITIES.md. **Wearer confirmed feeli
 - **Few-valued unlabelled bytes:** ≤ 0.023 bits of mutual information with activity code. No motion/rest flag found.
 - **Frozen for hold-out** (EVIDENCE_MATRIX §2 rows "#44"): re-run `--since 2026-11-20` on later copies with the same
   pass/fail rules. Research capture ends 2026-11-25 (7-day limit), so the hold-out covers ~11-20 → 11-25.
+
+## T02 — nightly skin temperature on ordinary nights (2026-11-19, offline, #43; SQLite-backup copy, no strap commands)
+
+- **Samples:** 255,907 `centi_celsius` rows from 2026-11-16 14:40, at ~1 Hz all day (86,399 on Nov 17, 86,094 on
+  Nov 18).
+- **Pipeline (`skin-temp-night-v2`):** nightly value stored for the nights ending Nov 17, 18 and 19, each with
+  coverage 1.0 of asleep seconds. Nov 15/16: "no skin-temperature samples" (before storage began).
+- **Change vs baseline:** `skinTempDevC` is unavailable on all three nights with reason "no usable reference" —
+  correct, since it needs ≥ 5 earlier nights. **Prediction:** the first provisional change appears for the night
+  ending 2026-11-22, if every night stays usable.
+- **Off-wrist:** the only strap-reported off/on pair since storage began is the 2-min C02a test (11-16 14:57/14:59).
+  None fell in a night, so off-wrist exclusion is still unexercised on real nights; that needs a wearer-timed
+  longer removal.
+- **UI:**
+  - Health tile caption while waiting changed from "none stored yet" (wrong once nights exist) to "Change appears
+    after 5 nights of NOOP skin temperature".
+  - Overview HR card render with strap-reported off-wrist time (synthetic) looked at, 760 dark and 420 light: the
+    caption names it ("Strap reported off the wrist for 1 h 18 min"), and the warning stays for the unexplained 2 h 42 min.
+- **Reference accuracy:** unknown; no reference thermometer.
