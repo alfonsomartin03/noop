@@ -353,3 +353,19 @@ accepted every command. Details: ALARM_CAPABILITIES.md. **Wearer confirmed feeli
 - **Ordinary pulls:** 61 pulls, all ended HISTORY_COMPLETE; pack info answered FAILURE (unavailable) 61×; battery level
   read skipped 55× because the strap had pushed one. Undecoded records archived on 49 pulls.
 - Log retention this time was ~24 h, still short of multi-day counts → in-app daily counters (#46, `OpsCounterStore`).
+
+## R26 + event 120 rerun (2026-11-19, offline, #45, copies only)
+
+- **R26 optical bursts** (`ppg_burst_check.py`, 18 archive files, 1,220 bursts ≥ 30 s with stored HR):
+  - Default mode: 67 % within 5 bpm, but 334 peaks sit at 57–63 bpm (the 1 Hz record rate), and the within-HR-decile
+    control already reaches 63 %.
+  - With the artifact masked (`--mask-1hz`): 55 % vs 51 % within-decile, ~40 % with HR shifted ±10 min, and 19 %
+    shuffled; 28 % at HR ≥ 80.
+  - **Decision: no product use** — weak burst-specific pulse content, no SpO₂ path, nothing better than existing HR.
+- **Event 120** (`event120_check.py`, 219 reports): nothing passes the exploratory per-half Bonferroni. Three
+  candidates clear the overall threshold with same-sign halves. They are **frozen** in the script (`FROZEN`) with their
+  predicted sign, for a hold-out on reports from **2026-11-20** onward (≥ 80 reports, ~2026-11-27):
+  - u16@18 ~ hr_prev (+)
+  - u16@21 ~ hr_next (−)
+  - u8@9 ~ move_prev (−)
+- No re-selection after seeing hold-out data. A SUPPORTED result is a correlation with NOOP's own streams, not a decode.
