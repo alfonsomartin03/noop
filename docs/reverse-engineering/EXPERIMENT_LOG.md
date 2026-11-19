@@ -327,3 +327,29 @@ accepted every command. Details: ALARM_CAPABILITIES.md. **Wearer confirmed feeli
   value (19,362) is probably the previous wake-to-wake total, but the prior reset was not stored.
 - **Next:** a morning without an alarm (natural wake) and a nap/late-wake day to tell the triggers apart.
 
+
+## S01 night 2 — no-alarm morning (2026-11-18/19, passive, no strap commands)
+
+- **Source:** SQLite-backup copy at 2026-11-19 13:31 EST (16,644 step change points, 11-17 14:07 → 11-19 13:25 strap
+  time); NOOP's unified log for the same 24 h. Aggregates only. The alarm is Mon/Wed/Fri: Thursday had **no alarm**
+  (no alarm lines in the log, no event 58/60).
+- **Result:** **no reset.** `step_reset_scan.py` still finds the single 11-18 08:15:29 drop only. The counter ran
+  continuously across local midnight (12,457 at 00:00, second night with no midnight reset), across NOOP's main-sleep
+  end at 09:20:59 (+510 in the 09:00 hour, activity code 1) and across 08:15 (24 h after the first reset), to 15,267 at
+  13:25. HR coverage was complete 07:00–11:00, so the strap was worn through waking.
+- **Reading:** waking alone and a fixed daily time do not reset the counter. Remaining candidate: the alarm (ring,
+  haptics or dismissal) — **SUPPORTED by one event plus one negative control**, not confirmed.
+- **Frozen prediction for the next alarm morning (Fri 2026-11-20, smart window 07:45–08:30):** one drop to ≈ 0 within
+  ≤ 5 s of the alarm's ring events (58/60); none at waking if the wearer wakes earlier without the alarm. A drop
+  elsewhere, or none at all, falsifies the alarm trigger.
+
+## M02 — log catch-up (2026-11-18 21:12 → 11-19 13:30 EST, offline, no strap commands)
+
+- **K01 daily re-sync observed live:** 05:34:53 after a completed pull — strap 1.0 s behind → SET_CLOCK SUCCESS →
+  read-back 0.1 s behind (±0.5 s). Exactly one SET in 24 h; every other clock measurement read 0.5–0.7 s.
+- **Mac Bluetooth power cycling again:** 22:26–22:58 and 12:00–12:50 (53 + 67 poweredOff states, typically every
+  25–45 s; 108 connects). Same pattern as 11-18 09:41–10:17, and bluetoothd itself reports the power state (not NOOP).
+  NOOP's pulls stayed at 4/h through both storms (`BackfillPolicy`); each reconnect still does hello + setup.
+- **Ordinary pulls:** 61 pulls, all ended HISTORY_COMPLETE; pack info answered FAILURE (unavailable) 61×; battery level
+  read skipped 55× because the strap had pushed one. Undecoded records archived on 49 pulls.
+- Log retention this time was ~24 h, still short of multi-day counts → in-app daily counters (#46, `OpsCounterStore`).

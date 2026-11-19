@@ -1,6 +1,8 @@
 """Synthetic tests for ops_metrics (#46). Stdlib only; no private data."""
 import datetime
+import json
 import os
+import tempfile
 import sys
 import unittest
 
@@ -89,6 +91,38 @@ class LogCountsTests(unittest.TestCase):
         self.assertEqual(cmds, {"Get Battery Level": 1, "Get Clock": 2})
         self.assertEqual((connects, off), (1, 1))
         self.assertEqual((first, last), ("2026-11-18 09:40:17", "2026-11-18 09:41:34"))
+
+
+class CounterFileTests(unittest.TestCase):
+    """Day files in the shape `OpsCounterStore` writes (JSONEncoder, sorted keys)."""
+
+    def write(self, d, name, body):
+        with open(os.path.join(d, name), "w", encoding="utf-8") as f:
+            f.write(body if isinstance(body, str) else json.dumps(body))
+
+    def test_loads_sorted_days_and_skips_bad_files(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.write(d, "2026-11-20.json", {"day": "2026-11-20", "connectedSeconds": 0})
+            self.write(d, "2026-11-19.json", {"day": "2026-11-19", "connectedSeconds": 7200,
+                                              "app": "0.1.0 (1)", "firmware": ["50.43.1.0"],
+                                              "commands": {"Get Clock": 8}, "counts": {"connect": 3}})
+            self.write(d, "2026-11-18.json", "{not json")
+            self.write(d, "2026-11-17.json", {"day": "2026-11-16"})
+            self.write(d, "notes.json", {"day": "x"})
+            days, bad = M.load_counter_days(d)
+        self.assertEqual([x["day"] for x in days], ["2026-11-19", "2026-11-20"])
+        self.assertEqual(len(bad), 2)
+
+    def test_summary_rates_per_connected_hour_and_no_rate_offline(self):
+        s = M.counter_summary({"day": "2026-11-19", "connectedSeconds": 7200, "commands": {"Get Clock": 8},
+                               "counts": {"connect": 3, "rxBytes": 1000}})
+        self.assertEqual(s["hours"], 2)
+        self.assertEqual(s["counts"]["connect"], 3)
+        self.assertEqual(s["counts"]["bluetoothOff"], 0, "absent counter is a zero count, not missing")
+        self.assertEqual(s["per_hour"]["cmd:Get Clock"], 4)
+        self.assertEqual(s["per_hour"]["connect"], 1.5)
+        off = M.counter_summary({"day": "2026-11-20", "connectedSeconds": 0, "counts": {"connect": 1}})
+        self.assertIsNone(off["per_hour"]["connect"], "no connected time: no rate")
 
 
 if __name__ == "__main__":

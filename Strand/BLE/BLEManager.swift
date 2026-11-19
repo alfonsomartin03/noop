@@ -210,6 +210,15 @@ public final class BLEManager: NSObject, ObservableObject {
     private var realtimeRecent: [(frame: [UInt8], ts: Int)] = []
     private var realtimeKeep = false
     private lazy var liveRRArchive: RawHistoryArchive? = try? RawHistoryArchive.liveRR()
+    /// #46 ordinary-use counters (commands by label, link/pull events, connected time) per local day, written to
+    /// `OpenWhoop/ops-counters` at most once a minute and on every disconnect. Counts only.
+    private lazy var opsStore: OpsCounterStore? = LaunchMode.bluetoothEnabled ? try? OpsCounterStore.standard() : nil
+    private lazy var opsBook: OpsCounterBook = {
+        let now = Date()
+        return OpsCounterBook(app: OpsCounterStore.appVersion,
+                              resume: opsStore?.load(day: OpsCounterBook.key(now, .current)), now: now)
+    }()
+    private var opsWrittenAt: Date?
     private var lastRealtimeAt: Date?
     /// Cursor: newest strap second the database holds contiguously from WHOOP 5.0 pulls (progress start).
     static let syncedThroughCursor = "whoop5_synced_through"
@@ -514,6 +523,7 @@ public final class BLEManager: NSObject, ObservableObject {
         let frame = command.frame(seq: seq, payload: payload)
         p.writeValue(Data(frame), for: ch, type: writeType)
         log("→ \(command.label) payload=\(hex(payload))")
+        ops { $0.command(command.label, at: $1) }
         return seq
     }
 
@@ -577,6 +587,7 @@ public final class BLEManager: NSObject, ObservableObject {
         let type: CBCharacteristicWriteType = ch.properties.contains(.writeWithoutResponse) ? writeType : .withResponse
         p.writeValue(Data(frame), for: ch, type: type)
         log("→ 5.0 \(command.label) seq=\(seq) payload=\(hex(data))")
+        ops { $0.command(command.label, at: $1) }
         return seq
     }
 
@@ -863,8 +874,12 @@ public final class BLEManager: NSObject, ObservableObject {
         if BatteryPollPolicy.needsLevelRead(lastPushedAt: lastPushedSocAt?.timeIntervalSince1970,
                                             now: now.timeIntervalSince1970, interval: Self.batteryPollIntervalSeconds) {
             send(.getBatteryLevel, payload: [])
-            if let c = batteryCharacteristic { peripheral?.readValue(for: c) }   // standard 0x2A19 (also covers 5.0)
+            if let c = batteryCharacteristic {
+                peripheral?.readValue(for: c)    // standard 0x2A19 (also covers 5.0)
+                ops { $0.count(.batteryCharRead, at: $1) }
+            }
         } else {
+            ops { $0.count(.batteryReadSkipped, at: $1) }
             log("Battery: level pushed by the strap \(Int(now.timeIntervalSince(lastPushedSocAt ?? now))) s ago — not asking")
         }
         if family == .whoop5 { requestPackInfo() }
@@ -927,6 +942,16 @@ public final class BLEManager: NSObject, ObservableObject {
     private static let logTimeFormatter: DateFormatter = {
         let f = DateFormatter(); f.dateFormat = "HH:mm:ss"; return f
     }()
+
+    /// Applies a counter change and writes the day files when a minute has passed (or `flush`).
+    private func ops(flush: Bool = false, _ change: (inout OpsCounterBook, Date) -> Void) {
+        guard let store = opsStore else { return }
+        let now = Date()
+        change(&opsBook, now)
+        guard flush || opsWrittenAt.map({ now.timeIntervalSince($0) >= 60 }) ?? true else { return }
+        opsWrittenAt = now
+        do { try store.write(opsBook.snapshot(at: now)) } catch { log("Ops counters: could not write (\(error.localizedDescription))") }
+    }
 
     private func log(_ s: String) {
         state.append(log: "[\(timestamp())] \(s)")
@@ -1061,6 +1086,7 @@ public final class BLEManager: NSObject, ObservableObject {
         log(BLEManager.keepDataOnStrap
             ? "History: pull started (keep-on-strap is on: no acknowledgements; the strap keeps its data)"
             : "History: pull started (each chunk is acknowledged only after it is saved; the strap then moves its trim pointer)")
+        ops { $0.count(.pullStarted, at: $1) }
         sendWhoop5(.sendHistoricalData, payload: [], peripheral: p, characteristic: ch, writeType: .withResponse)
         armHistoryIdle()
     }
@@ -1120,6 +1146,11 @@ public final class BLEManager: NSObject, ObservableObject {
         if undecodedArchived > 0 { log("History: \(undecodedArchived) undecoded record(s) archived this pull (Application Support/OpenWhoop/undecoded-history)") }
         undecodedArchived = 0
         log("History: pull ended — \(reason); frames=\(state.historyFrames); chunks=\(historyMetaSeen.filter { $0 == "END" }.count)")
+        let frames = state.historyFrames
+        ops(flush: true) {
+            $0.count(complete ? .pullCompleted : .pullEndedEarly, at: $1)
+            $0.count(.historyFrames, by: frames, at: $1)
+        }
         if reason != "disconnected" { pollBatteryIfOverdue() }
         if complete { resyncWhoop5ClockIfDue() }
         Task { @MainActor in
@@ -1700,6 +1731,13 @@ extension BLEManager: CBCentralManagerDelegate {
     public func centralManagerDidUpdateState(_ central: CBCentralManager) {
         log("Central state: \(BLEManager.stateName(central.state)); authorization=\(BLEManager.authName(CBCentralManager.authorization))")
         rememberAuthorization()
+        if central.state != .poweredOn {
+            // CoreBluetooth drops the link without a didDisconnect when Bluetooth goes off; linkDown is idempotent.
+            ops(flush: true) { book, now in
+                if central.state == .poweredOff { book.count(.bluetoothOff, at: now) }
+                book.linkDown(at: now)
+            }
+        }
         guard central.state == .poweredOn else { return }
         // Bootstrap the async store once on first poweredOn (idempotent if already set).
         Task { @MainActor in await bootstrapStore() }
@@ -1741,6 +1779,7 @@ extension BLEManager: CBCentralManagerDelegate {
         state.connected = true
         state.beginConnection()          // charging facts from a previous connection never carry over
         state.nextReconnectAt = nil
+        ops { $0.linkUp(at: $1) }
         log("Connected — discovering services")
         // nil = discover everything so the log shows what this strap actually exposes (4.0 vs 5.0).
         peripheral.discoverServices(nil)
@@ -1750,6 +1789,7 @@ extension BLEManager: CBCentralManagerDelegate {
                                didDisconnectPeripheral peripheral: CBPeripheral,
                                error: Error?) {
         Task { @MainActor in await collector?.flush() }
+        ops(flush: true) { $0.linkDown(at: $1) }
         state.connected = false
         state.bonded = false
         state.resetTelemetry()
@@ -1964,6 +2004,7 @@ extension BLEManager: CBPeripheralDelegate {
     private func setUpWhoop5(_ peripheral: CBPeripheral, _ chars: [CBCharacteristic]) {
         whoop5Chars = chars
         whoop5SetupAttempts += 1
+        ops { $0.count(.setupAttempt, at: $1) }
         log("WHOOP 5.0 setup attempt \(whoop5SetupAttempts)/\(BLEManager.whoop5MaxSetupAttempts)")
         for c in chars where c.properties.contains(.notify) || c.properties.contains(.indicate) {
             peripheral.setNotifyValue(true, for: c)
@@ -2150,6 +2191,7 @@ extension BLEManager: CBPeripheralDelegate {
         guard let data = characteristic.value else { return }
         let bytes = [UInt8](data)
         lastDataAt = Date()   // feed the liveness watchdog on every notification
+        ops { $0.count(.rxBytes, by: bytes.count, at: $1) }
         // UI telemetry (throttled to ~1 Hz so it can't flood SwiftUI): when did data last arrive?
         if state.lastDataAt.map({ lastDataAt.timeIntervalSince($0) >= 1 }) ?? true { state.lastDataAt = lastDataAt }
 
@@ -2262,7 +2304,7 @@ extension BLEManager {
         if info != state.deviceInfo {
             state.deviceInfo = info
             info.save()
-            if uuid == "2A26" { log("Device: firmware \(text)") }
+            if uuid == "2A26" { log("Device: firmware \(text)"); ops { $0.firmware(text, at: $1) } }
         }
     }
 }
