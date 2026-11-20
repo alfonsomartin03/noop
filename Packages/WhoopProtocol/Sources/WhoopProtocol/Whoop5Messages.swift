@@ -326,16 +326,39 @@ public enum Whoop5Charging {
     public static let liveWindow: Double = 120
     public static func isLive(eventUnix: Int, strapNow: Double) -> Bool { abs(strapNow - Double(eventUnix)) < liveWindow }
 
-    /// GET_BATTERY_PACK_INFO (151) reply, parsed only into captured shapes. Unavailable (E02): FAILURE with a 31-byte
-    /// body `01` + 30 zero bytes is not proof of detachment. SUCCESS has no decoded layout and is NOT read as
-    /// "attached". PENDING (non-final) and every other shape are unrecognized.
+    /// Request payload for 151: revision 1. With `[]` the strap always answers FAILURE (`01` + zeros); with `[01]` it
+    /// answers SUCCESS (C06a pack off, C06b pack on/full/removed; fw 50.43.1.0).
+    public static let packInfoPayload: [UInt8] = [0x01]
+
+    /// GET_BATTERY_PACK_INFO (151) reply. SUCCESS bodies follow the 28-byte reference layout (revision u8, presence u8,
+    /// 6-byte pack id, 16-byte NUL-padded serial, raw charge u16 LE, 2 opaque bytes) plus 3 zero alignment bytes = 31
+    /// decoded bytes. CONFIRMED by C06a/C06b (2026-11-17/20, fw 50.43.1.0): presence 1 with the pack on (charging and
+    /// full), revision + 30 zeros with it off (before attaching and 3 min after removal). The id and serial are never
+    /// kept. Raw charge fell 760 → 418 while the pack charged the strap 70 → 100 % (unit UNKNOWN; not a percentage).
+    /// FAILURE `01` + 30 zeros (the reply to `[]`) is `unavailable`, not proof of detachment. PENDING and every other
+    /// shape are unrecognized; a SUCCESS in any other shape is `answeredUndecoded`.
     public static func packInfo(command: UInt8, result: Whoop5Result, body: [UInt8]) -> PackInfoReply? {
         guard command == packInfoCommand else { return nil }
         switch result {
         case .failure where body.count == 31 && body.first == 1 && body.dropFirst().allSatisfy({ $0 == 0 }): return .unavailable
-        case .success: return .answeredUndecoded
+        case .success:
+            guard body.count == 31, body[0] == 1, body[28...].allSatisfy({ $0 == 0 }) else { return .answeredUndecoded }
+            switch body[1] {
+            case 0: return body[2...].allSatisfy({ $0 == 0 }) ? .absent : .answeredUndecoded
+            case 1: return .present(rawCharge: Int(body[24]) | Int(body[25]) << 8)
+            default: return .answeredUndecoded
+            }
         default: return .unrecognized
         }
+    }
+
+    /// Event 117 body byte 1: the charger's stage. Observed C02b (2026-11-20, fw 50.43.1.0): 2 at attach, 2↔3 while
+    /// charging, 0 when charging paused (93 %), **4 with CHARGING_OFF at 100 %** (= full: predicted before the session,
+    /// one session). Other values are not interpreted.
+    public static let chargerFullStage: UInt8 = 4
+    public static func chargerStage(_ e: Whoop5Event) -> UInt8? {
+        guard e.number == 117, e.body.count >= 2 else { return nil }
+        return e.body[1]
     }
 
     public static func packInfo(_ r: Whoop5CommandResponse) -> PackInfoReply? {

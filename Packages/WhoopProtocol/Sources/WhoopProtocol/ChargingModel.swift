@@ -30,6 +30,8 @@ public struct ChargingEvidence: Equatable, Sendable {
         case batteryEvent4
         /// WHOOP 5.0 BATTERY_LEVEL event (3) charging flag (byte 9), sent ~every 30 s while charging.
         case batteryEvent5
+        /// WHOOP 5.0 event 117 charger stage (4 = full).
+        case chargerStage
     }
     public let value: Bool
     public let source: Source
@@ -49,11 +51,15 @@ public struct ChargingEvidence: Equatable, Sendable {
     public var isHeld: Bool { heldUntil != nil }
 }
 
-/// GET_BATTERY_PACK_INFO reply, parsed only into shapes seen in captures.
+/// GET_BATTERY_PACK_INFO reply, parsed only into shapes seen in captures (`Whoop5Charging.packInfo`).
 public enum PackInfoReply: Equatable, Sendable {
-    /// E02 failure shape. Observed without a pack, but not proof of removal.
+    /// SUCCESS, presence 1: a pack is on. `rawCharge` is the pack's own counter (unit unknown; never shown as %).
+    case present(rawCharge: Int)
+    /// SUCCESS, revision + zeros: no pack.
+    case absent
+    /// E02 failure shape (the reply to an empty payload). Observed without a pack, but not proof of removal.
     case unavailable
-    /// SUCCESS: a pack answered, but the attached layout has never been captured; attachment stays unknown.
+    /// SUCCESS in a shape never captured; attachment stays unknown.
     case answeredUndecoded
     /// Any other shape: not evidence of anything.
     case unrecognized
@@ -63,6 +69,8 @@ public struct ChargingModel: Equatable, Sendable {
     public private(set) var connection: UUID
     public private(set) var attachment: ChargingEvidence?
     public private(set) var activity: ChargingEvidence?
+    /// The charger's own "full" report (event 117 stage 4) vs. any other stage. Not a percentage claim.
+    public private(set) var full: ChargingEvidence?
     /// Percentage readings this connection (time, percent), for the "charging likely" inference.
     public private(set) var percents: [(at: Date, pct: Int)] = []
 
@@ -80,6 +88,11 @@ public struct ChargingModel: Equatable, Sendable {
     /// long after a reconnect (≈3 missed reports) is dropped to unknown: the strap probably left the pack meanwhile.
     public static let chargingReportWindow: TimeInterval = 90
 
+    /// A pack-info reply never contradicts a pack event (21/22) less than this much older than its request: the reply is
+    /// cached accessory state (reference) whose lag after a transition is unmeasured (observed in step 53 s after an
+    /// attach and 3 min after a removal).
+    public static let packInfoEventGrace: TimeInterval = 60
+
     /// How facts carried over from an earlier connection are held.
     public enum Hold: Equatable, Sendable {
         /// Disconnected: kept as they were (surfaces show unknown while disconnected).
@@ -93,7 +106,7 @@ public struct ChargingModel: Equatable, Sendable {
     public init(connection: UUID = UUID()) { self.connection = connection }
 
     public static func == (a: ChargingModel, b: ChargingModel) -> Bool {
-        a.connection == b.connection && a.attachment == b.attachment && a.activity == b.activity
+        a.connection == b.connection && a.attachment == b.attachment && a.activity == b.activity && a.full == b.full
             && a.percents.map(\.pct) == b.percents.map(\.pct) && a.percents.map(\.at) == b.percents.map(\.at)
     }
 
@@ -112,6 +125,7 @@ public struct ChargingModel: Equatable, Sendable {
             }
             next.attachment = carry(attachment)
             next.activity = carry(activity)
+            next.full = carry(full)
         }
         self = next
     }
@@ -131,6 +145,7 @@ public struct ChargingModel: Equatable, Sendable {
         case .batteryPackRemoved:
             set(\.attachment, false, .packEvent, eventAt, receivedAt)
             set(\.activity, false, .packEvent, eventAt, receivedAt)   // the pack is the charger: removed → not charging
+            set(\.full, false, .packEvent, eventAt, receivedAt)
         default: break
         }
     }
@@ -148,14 +163,35 @@ public struct ChargingModel: Equatable, Sendable {
         set(\.activity, charging, .batteryEvent5, eventAt, receivedAt)
     }
 
-    /// A pack-info reply to a request sent at `requestedAt`.
+    /// A pack-info reply to a request sent at `requestedAt`. It describes the moment of the request, so a late reply never
+    /// overrides a newer pack event, and it never contradicts a pack event from just before the request
+    /// (`packInfoEventGrace`). Presence says nothing about current flowing: `present` only clears a "not charging" that
+    /// came from the pack being off; `absent` means no charger, so not charging and not full.
     public mutating func applyPackInfo(_ r: PackInfoReply, requestedAt: Date, receivedAt: Date, connection: UUID) {
         guard connection == self.connection else { return }
+        let on: Bool
         switch r {
+        case .present: on = true
+        case .absent: on = false
         case .unavailable, .answeredUndecoded, .unrecognized:
-            // A failed request is not a removal event; neither captured reply layout establishes attachment.
-            break
+            return   // a failed or unknown reply is not a removal event and establishes nothing
         }
+        if let a = attachment, a.source == .packEvent, a.value != on, a.eventAt <= requestedAt,
+           requestedAt.timeIntervalSince(a.eventAt) < Self.packInfoEventGrace { return }
+        guard attachment.map({ $0.eventAt <= requestedAt }) ?? true else { return }
+        set(\.attachment, on, .packInfo, requestedAt, receivedAt)
+        if on {
+            if let a = activity, a.eventAt <= requestedAt, !a.value, a.source == .packInfo || a.source == .packEvent { activity = nil }
+        } else {
+            set(\.activity, false, .packInfo, requestedAt, receivedAt)
+            set(\.full, false, .packInfo, requestedAt, receivedAt)
+        }
+    }
+
+    /// Event 117 charger stage (live only): stage 4 = full, any other stage = not full.
+    public mutating func applyChargerStage(_ stage: UInt8, eventAt: Date, receivedAt: Date, connection: UUID) {
+        guard connection == self.connection else { return }
+        set(\.full, stage == Whoop5Charging.chargerFullStage, .chargerStage, eventAt, receivedAt)
     }
 
     /// A battery percentage (any source). Feeds only the inference; never refreshes a charging fact.
@@ -190,6 +226,11 @@ public struct ChargingModel: Equatable, Sendable {
     /// The fresh charging fact itself (for "reported 14:02" captions).
     public func chargingEvidence(now: Date) -> ChargingEvidence? { fresh(activity, now: now) }
     public func attachmentEvidence(now: Date) -> ChargingEvidence? { fresh(attachment, now: now) }
+    /// The charger reported full (event 117 stage 4) and no pack removal / absent reply since. Held facts excluded.
+    public func chargerFull(now: Date) -> Bool {
+        guard let f = fresh(full, now: now), f.value, !f.isHeld else { return false }
+        return attached(now: now) != .no
+    }
 
     /// The current sustained rise (first and last reading of the longest non-decreasing tail), if it qualifies.
     private func rise(now: Date) -> (from: Date, to: Date)? {

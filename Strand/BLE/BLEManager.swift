@@ -536,7 +536,7 @@ public final class BLEManager: NSObject, ObservableObject {
         .reportVersionInfo:  { _ in [] },   // UNSUPPORTED on fw 50.43.1.0 (E02); allowed but never sent automatically
         .getClock:           { _ in [] },
         .getBatteryLevel:    { _ in [] },   // verified E02: body[0] = percent, equals 0x2A19
-        .getBatteryPackInfo: { _ in [] },   // read-only, auto in COMMAND_REGISTRY; E02: FAILURE + 01 00… with no pack attached
+        .getBatteryPackInfo: { _ in Whoop5Charging.packInfoPayload },   // read-only, auto in COMMAND_REGISTRY; [01] = revision 1 (C06a/C06b); [] only ever got FAILURE
         .getDataRange:       { _ in [] },
         .sendHistoricalData: { _ in [] },   // history pull (see pullWhoop5History)
         .historicalDataResult: { $0 },      // HISTORY_END ack: [0x01] + end_data (see ackWhoop5HistoryChunk)
@@ -887,7 +887,7 @@ public final class BLEManager: NSObject, ObservableObject {
 
     /// GET_BATTERY_PACK_INFO, remembering when and on which connection it was asked.
     private func requestPackInfo() {
-        if let seq = send(.getBatteryPackInfo, payload: []) { packInfoRequests[seq] = (Date(), state.connectionId) }
+        if let seq = send(.getBatteryPackInfo, payload: Whoop5Charging.packInfoPayload) { packInfoRequests[seq] = (Date(), state.connectionId) }
     }
 
     /// After a history download (when polling was paused), catch up an overdue battery / pack poll at once.
@@ -1543,7 +1543,11 @@ extension BLEManager {
             let req = packInfoRequests.removeValue(forKey: r.appSeq)
             guard let req, let reply = Whoop5Charging.packInfo(r) else { return }   // not our request: no time to bind it to
             state.applyPackInfo(reply, requestedAt: req.at, connection: req.connection)
-            log("Battery pack: reply \(reply) — attachment and charging reports unchanged")
+            switch reply {
+            case .present(let raw): log("Battery pack: attached (raw pack charge \(raw), unit unknown)")
+            case .absent: log("Battery pack: not attached")
+            default: log("Battery pack: reply \(reply) — attachment and charging reports unchanged")
+            }
         case 10:
             guard r.isFinal else { return }
             if r.result == .success {
@@ -1642,6 +1646,9 @@ extension BLEManager {
         let eventAt = min(Date(timeIntervalSince1970: clock.hostTime(fromDevice: Double(e.unix) + Double(e.subseconds) / 32768)), Date())
         if Whoop5Charging.isChargingEvent(e.kind) {
             state.applyChargingEvent(e.kind, eventAt: eventAt)
+        } else if let stage = Whoop5Charging.chargerStage(e) {
+            // Event 117: the charger's stage; 4 = full (C02b). Other stages only clear "full".
+            state.applyChargerStage(stage, eventAt: eventAt)
         } else if e.kind == .batteryLevel, let b = e.batteryCandidate {
             // Pushed by the strap every ~30 s while charging and per ~1 % step otherwise: the charging flag (re-established
             // after a reconnect, since CHARGING_ON is sent only once) and the percentage, stamped with that flag.

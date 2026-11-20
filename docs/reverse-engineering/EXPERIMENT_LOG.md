@@ -438,3 +438,50 @@ accepted every command. Details: ALARM_CAPABILITIES.md. **Wearer confirmed feeli
   the removal (wrist off/on, the handling double taps, or the reconnect) also reset it. A ring at the deadline (not
   early) is still untested. NOOP's Steps tile is unaffected (it never subtracts a drop and counts the post-reset value).
 - **Next:** a short timed removal with no taps and no reconnect, to see whether wrist off/on alone resets the counter.
+
+## C02b + C06b — charging session with pack-info reads (2026-11-20 10:01–11:12 EST, #41; owner-approved reads)
+
+- **Setup:** NOOP connected (relaunched 09:58 after a test run had closed it); fw 50.43.1.0 / WG50_r52; strap clock
+  ≈ Mac (K01 re-sync). Wearer attached the pack at 10:01:10 and removed it at 11:08:48 (noted by hand). Charger events
+  from NOOP's DB (history pulls) and its unified log (live receipt). Three `ble_probe --commands 151 --pack-rev1` runs
+  attached to NOOP's link, one attempt each, after a completed pull. Private raw captures kept outside the repo;
+  `captures/C06b-pack-reads.jsonl` is redacted (pack id + serial → `rr`, strap serial, session id, no fd4b0007 data).
+- **Timeline (strap time):**
+
+  | Time | Strap / pack | 151 `[01]` |
+  |---|---|---|
+  | 10:01:08–09 | 109, then 117 = 2, **7 CHARGING_ON + 21 PACK_CONNECTED** (live) | |
+  | 10:02 | soc 70.6 %, event 3 charging bit 1 | **read 1: SUCCESS, presence 1**, raw charge 760 |
+  | 10:14 | soc 84.5 % | |
+  | 10:21:30–38 | 117 flips 2 ↔ 3 (×6) | |
+  | 10:23:35 | **8 CHARGING_OFF with 117 = 0** at 93.1 % (live); 110 → `…000c000800` | |
+  | 10:28–10:32 | 7 / 8 / 7 / 8 / 7 (charging resumed, paused, resumed); 117 2 ↔ 3 | |
+  | 10:41:39 | last event 3: **100.0 %**, charging bit 1 | |
+  | 10:45:39 | **8 CHARGING_OFF with 117 = 4** (not delivered live; arrived with the next pull) | |
+  | 10:54:41 | 110 → `0101000400000000` | |
+  | 11:07 | pack still on | **read 2: SUCCESS, presence 1**, raw charge 418 |
+  | 11:09:15 | **22 BATTERY_PACK_REMOVED** (live receipt, 27 s after the wearer's time) | |
+  | 11:12 | | **read 3: SUCCESS, revision + 30 zeros** (= C06a pack off) |
+
+- **151 reply layout — CONFIRMED** (3 reads + C06a): 31 decoded bytes = revision u8, presence u8, 6-byte pack id,
+  16-byte NUL-padded ASCII serial, raw charge u16 LE, 2 opaque bytes (`0c 01` both times), 3 zero alignment bytes —
+  the 28-byte reference layout plus padding (the 28-vs-31 discrepancy in #41). Presence followed the pack: on at +53 s
+  after attach, on at full, off 3 min after removal (no stale "present"). The app's `[]` request is answered FAILURE
+  (`01` + zeros) whatever the pack state (seen again 10:28 with the pack on), so `[01]` is required.
+- **Event 109 = the pack's own report** (every ~2–10 min while attached): 28-byte body `01` + the same 6-byte id +
+  16-byte serial + raw charge u16 + `01 0c` + `00`. Raw charge 760 → 749 → 648 → 540 → 490 → 419 → 418 while the strap
+  went 70 → 100 %: **falling as the pack discharges into the strap** — consistent with the pack's own charge in 0.1 %
+  (HYPOTHESIS; no reference for the pack's level). It stayed at 419/418 for 20 min **after** CHARGING_OFF, which
+  rejects the earlier "charge current" reading (CAPABILITY_MATRIX §3: a current would fall to ~0). Never shown as a
+  percentage.
+- **Event 117 stages:** 2 at attach, 2 ↔ 3 while charging, **0 = paused** (with CHARGING_OFF at 93 %), **4 = full**
+  (with CHARGING_OFF at 100 %). The full = 4 prediction (EVIDENCE_MATRIX) was frozen before the session:
+  **SUPPORTED** (one session). 110 byte 3 tracked the same stage (2/3/4; 0 at pause with bytes 4–6 `0c 00 08`).
+- **CHARGING_OFF alone is not full and not removal:** 4 offs, 3 before full, none with a removal.
+- **Live delivery gap:** the final 8 + 117 = 4 at 10:45:39 never arrived live (only with the next history pull);
+  earlier ones did. The event-3 charging bit was still 1 on the last report at 100 %.
+- **App change (this PR):** NOOP sends 151 `[01]`; `present`/`absent` set attachment (`absent` also not charging / not
+  full); a reply never overrides a newer pack event or contradicts one from < 60 s before its request; failed or
+  unknown replies change nothing; live 117 = 4 makes the battery display "Fully charged" while the pack is on.
+- **Not done:** interrupted charge (detach ~60 %, reattach), reconnect with the pack on, pack charge reference, how
+  soon after a transition the 151 cache updates (bounded only by +53 s / +3 min), app display seen on screen.

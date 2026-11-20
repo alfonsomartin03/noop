@@ -30,13 +30,16 @@ struct BatteryPresentation: Equatable {
     /// The charge / attachment fact is the last known one from before a reconnect, held until the strap reports again.
     let chargeHeld: Bool
     let attachmentHeld: Bool
+    /// The charger itself reported full (5.0 event 117 stage 4) and the pack hasn't been reported removed since.
+    let chargerFull: Bool
 
     static let lowBelow = BatteryAlertPolicy().lowPercent
     static let mediumBelow = 35
     static let staleAfter = BatteryAlertPolicy().staleAfter
 
     init(percent: Int?, stale: Bool, charge: Charge, attachment: Attachment = .unknown, connected: Bool, measuredAt: Date?,
-         chargeReportedAt: Date? = nil, contradictedReportAt: Date? = nil, chargeHeld: Bool = false, attachmentHeld: Bool = false) {
+         chargeReportedAt: Date? = nil, contradictedReportAt: Date? = nil, chargeHeld: Bool = false, attachmentHeld: Bool = false,
+         chargerFull: Bool = false) {
         self.percent = percent.map { min(max($0, 0), 100) }
         self.stale = stale
         self.charge = connected ? charge : .unknown
@@ -47,6 +50,7 @@ struct BatteryPresentation: Equatable {
         self.contradictedReportAt = connected && charge == .likely ? contradictedReportAt : nil
         self.chargeHeld = connected && chargeHeld
         self.attachmentHeld = connected && attachmentHeld
+        self.chargerFull = connected && chargerFull && attachment != .detached
     }
 
     /// From the live strap state. A typed reading (`battery`) carries its time and source; the plain `batteryPct`
@@ -68,7 +72,8 @@ struct BatteryPresentation: Equatable {
                   measuredAt: status?.at, chargeReportedAt: m.chargingEvidence(now: now)?.receivedAt,
                   contradictedReportAt: m.likelyContradicts(now: now)?.receivedAt,
                   chargeHeld: m.chargingEvidence(now: now)?.isHeld ?? false,
-                  attachmentHeld: m.attachmentEvidence(now: now)?.isHeld ?? false)
+                  attachmentHeld: m.attachmentEvidence(now: now)?.isHeld ?? false,
+                  chargerFull: m.chargerFull(now: now))
     }
 
     /// What the charging illustration draws, from the same model (never more than it says).
@@ -83,8 +88,9 @@ struct BatteryPresentation: Equatable {
     enum IllustrationState: Equatable { case detached, attached, charging, full, unknown }
 
     var isCharging: Bool { charge == .charging }
-    /// Charging confirmed and a fresh reading of 100 %, the same condition the charging-complete alert uses.
-    var isFull: Bool { isCharging && !stale && (percent ?? 0) >= 100 }
+    /// Charging confirmed and a fresh reading of 100 % (the condition the charging-complete alert uses), or the charger's
+    /// own "full" report: at full the strap sends CHARGING_OFF, so "not charging" with the pack on can mean full.
+    var isFull: Bool { (isCharging && !stale && (percent ?? 0) >= 100) || chargerFull }
 
     /// A fresh reading below the low threshold while nothing says the strap is on its charger. Stale or unknown
     /// readings never raise it (the strap may have been charged since), and charging, "likely" or an attached pack
@@ -202,7 +208,8 @@ struct BatteryPresentation: Equatable {
                 return Fact(id: "charging", label: "Charging", value: "Likely",
                             detail: "Inferred from a rising percentage, not reported by the strap" + conflict, known: false)
             case .notCharging:
-                return Fact(id: "charging", label: "Charging", value: "No", detail: chargeSource, known: true)
+                return Fact(id: "charging", label: "Charging", value: chargerFull ? "Full" : "No",
+                            detail: chargerFull ? "The charger reported full" : chargeSource, known: true)
             case .unknown:
                 return Fact(id: "charging", label: "Charging", value: "Unknown", detail: "No recent report from the strap", known: false)
             }
