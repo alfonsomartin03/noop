@@ -28,7 +28,7 @@ were dropped while their chunk was still acked; 0x2A37 samples were stamped in M
 
 1. **Data-range "newest" is wrong on 5.0.** `logWhoop5DataRange` uses body+41 as newest; E02 shows +41 is
    the last-acked chunk time and +57 is the newest record. The Today sync strip therefore shows a stale end.
-2. **Ack = trim, by default.** `keepDataOnStrap` defaults to `false`, so every 5.0 pull advances the strap's
+2. **Ack = trim.** Every 5.0 pull advances the strap's
    trim pointer (firmware log CONFIRMED). The commit message of `e066c08` describes the opposite default.
    Whether the WHOOP app can still read trimmed data is UNKNOWN. This is behaviour you chose; flagging so
    it is deliberate.

@@ -104,18 +104,23 @@ enum ExploreRange: Int, CaseIterable, Identifiable, Hashable {
 // MARK: - Root: categorized list
 
 /// The "Explore" picker — categories as sections, metrics as rows, each pushing a
-/// MetricDetailView. A faint trailing "•" marks metrics whose series is empty.
-// Explorer: every catalog metric grouped by category; rows with no data are hidden after an emptiness probe.
+/// MetricDetailView. Metrics with no stored series are left out (e.g. Apple Health keys: NOOP has no Apple Health
+/// import), once a quick emptiness probe has run.
+// Explorer: every catalog metric with data, grouped by category.
 struct MetricExplorerView: View {
     @EnvironmentObject var repo: Repository
     /// metric.id → whether its series is empty (loaded once, lazily).
     @State private var emptyByID: [String: Bool] = [:]
+    @State private var probed = false
 
     var body: some View {
         NavigationStack {
             ScreenScaffold(title: "Explore", subtitle: "Every signal, one tap deep.") {
+                if probed && MetricCatalog.all.allSatisfy({ emptyByID[$0.id] ?? true }) {
+                    ComingSoon(what: "Nothing to explore yet. Import a WHOOP export in Settings → Data to fill these metrics.")
+                }
                 ForEach(MetricCatalog.categories, id: \.self) { category in
-                    let metrics = MetricCatalog.inCategory(category)
+                    let metrics = MetricCatalog.inCategory(category).filter { probed && emptyByID[$0.id] == false }
                     if !metrics.isEmpty {
                         VStack(alignment: .leading, spacing: NoopMetrics.gap) {
                             SectionHeader(category, overline: "Category",
@@ -157,6 +162,7 @@ struct MetricExplorerView: View {
             map[metric.id] = s.isEmpty
         }
         emptyByID = map
+        probed = true
     }
 }
 
@@ -181,7 +187,7 @@ private struct MetricRow: View {
                 Text(metric.title)
                     .font(StrandFont.body)
                     .foregroundStyle(StrandPalette.textPrimary)
-                Text(metric.source == "apple-health" ? "Apple Health" : "Whoop")
+                Text(metric.source == "apple-health" ? "Apple Health" : "WHOOP import")
                     .font(StrandFont.footnote)
                     .foregroundStyle(StrandPalette.textTertiary)
             }

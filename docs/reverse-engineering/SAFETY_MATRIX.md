@@ -35,8 +35,9 @@ So NOOP acks only what it has safely stored, and nothing else (`BLEManager.commi
 3. The ack's `end_data` comes from that chunk's own CRC-checked END frame, and is sent only if the same pull
    (session id) is still active. A chunk finishing after its pull ended is saved but not acked.
 4. One pull at a time (`whoop5HistoryActive` / range-wait guards); keep-alive never sends commands mid-pull.
-5. "Never delete data from the strap" (`keepDataOnStrap`) sends no acks at all; each pull then stops after
-   the first chunk. This remains the user's choice; the default is to ack after saving.
+5. Ack after saving is the only mode. The former "Never delete data from the strap" option (`keepDataOnStrap`)
+   sent no acks, so each pull stopped after the first chunk; it was removed 2026-11-20 (the strap cannot keep
+   its data and still serve a full pull).
 6. Crash-safe: an un-acked chunk is re-sent by the strap next pull; duplicates are absorbed by the database keys.
 7. Repeated ENDs (2026-11-18, #38, `HistoryAckGate`): the strap only advances after an ack, so an END that arrives
    while an earlier END of the same pull is still being saved is a repeat with the same `end_data`; it is saved but

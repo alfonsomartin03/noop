@@ -18,6 +18,12 @@ Make General Settings easier to scan on wide windows and compact on narrow windo
 - Changed the charging cue to a brief two-cycle flow on confirmed charging, then a still state; hovering replays the cue. Reduce Motion, app activity, and telemetry dimming continue to gate motion.
 - Kept battery facts and the visible text status as the authoritative state; animation does not carry information by itself.
 
+## Rework (2026-11-20)
+
+- Settings is one reading column (≤ 780 pt): a strap hero card (name, status, battery, Reconnect/Disconnect), then inset-grouped sections with short rows and long explanations moved to section footers. The adaptive two-column grid was dropped: uneven card heights made it harder to scan.
+- Recalculate scores moved from the strap card to Data; check-ins render as flat rows inside their card.
+- The illustration is one filleted strap silhouette (band fading at both ends, pod, level bar). The charging pack is drawn only while charging or full; pack attachment otherwise appears in the text facts only. Charging = bolt pack, lit seam, blue→green level; full = check, all green. The cue is a pack drop-in and two light sweeps, then still.
+
 ## Steps
 
 1. [x] Reorder General Settings around the strap and profile tasks.
@@ -36,4 +42,4 @@ Make General Settings easier to scan on wide windows and compact on narrow windo
 
 ## State
 
-Implementation is present in `Strand/Screens/SettingsView.swift` and `Packages/StrandDesign/Sources/StrandDesign/ChargingIllustration.swift`. Automated tests, app build, visual review, and hardware confirmation have not been run for this issue.
+Implementation is present in `Strand/Screens/SettingsView.swift` and `Packages/StrandDesign/Sources/StrandDesign/ChargingIllustration.swift`. After the rework: StrandDesign 40 and app build + hosted 115 pass; illustration snapshots (light/dark) and the fixture app at 1180 pt light were looked at. Dark mode in the app, narrow widths, keyboard/VoiceOver and a real strap remain (steps 4–6).

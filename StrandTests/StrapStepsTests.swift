@@ -31,7 +31,7 @@ final class StrapStepsTests: XCTestCase {
         XCTAssertEqual(w.resets, 1)
         XCTAssertEqual(w.activityOneSeconds, 120)
         XCTAssertEqual(w.activityTwoSeconds, 60)
-        XCTAssertEqual(StrainDetailView.stepDetails(w), ["Walking 2m · Running 1m", "Counter reset detected; steps after it are counted from the strap's new count.", "Reset timing and accuracy are unverified; this may be an incomplete daily count."])
+        XCTAssertEqual(StrainDetailView.stepDetails(w), ["Walking 2m · Running 1m", "Counter reset detected; steps after it are counted from the strap's new count.", "The strap resets this counter on its own (seen right after alarm wake-ups and once after it was taken off) and its accuracy is unverified, so this may be an incomplete daily count."])
     }
 
     func testNoStepRowsMeansNoTileAndMissingReferenceIsSaid() async throws {
@@ -45,7 +45,7 @@ final class StrapStepsTests: XCTestCase {
         let w = try XCTUnwrap(some)
         XCTAssertEqual(w.steps, 30)
         XCTAssertEqual(w.activityTwoSeconds, 1, "without HR, activity stops at the last known step second")
-        XCTAssertEqual(StrainDetailView.stepDetails(w), ["Counted from the first synced step of the day.", "No synced data for \(DayMath.hm(3_699.0 / 60)); walking and running time there is not counted.", "Reset timing and accuracy are unverified; this may be an incomplete daily count."])
+        XCTAssertEqual(StrainDetailView.stepDetails(w), ["Counted from the first synced step of the day.", "No synced data for \(DayMath.hm(3_699.0 / 60)); walking and running time there is not counted.", "The strap resets this counter on its own (seen right after alarm wake-ups and once after it was taken off) and its accuracy is unverified, so this may be an incomplete daily count."])
         XCTAssertFalse(w.isComplete)
     }
 
@@ -64,6 +64,6 @@ final class StrapStepsTests: XCTestCase {
         XCTAssertEqual(w.activityOneSeconds, 300 + 300, "the 20-min gap is not walking time")
         XCTAssertEqual(w.unknownSeconds, 1_200)
         XCTAssertFalse(w.isComplete)
-        XCTAssertEqual(StrainDetailView.stepDetails(w), ["Walking 10m", "No synced data for 20m; walking and running time there is not counted.", "Reset timing and accuracy are unverified; this may be an incomplete daily count."])
+        XCTAssertEqual(StrainDetailView.stepDetails(w), ["Walking 10m", "No synced data for 20m; walking and running time there is not counted.", "The strap resets this counter on its own (seen right after alarm wake-ups and once after it was taken off) and its accuracy is unverified, so this may be an incomplete daily count."])
     }
 }

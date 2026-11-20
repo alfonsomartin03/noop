@@ -772,7 +772,8 @@ struct VitalsTrendsContent: View {
 
 // MARK: Activity
 
-/// Load and movement over time: day strain, stored workouts, and Apple Health steps and energy when imported.
+/// Load and movement over time: day strain, stored workouts, and steps/energy from older Apple Health rows when a
+/// database holds them (NOOP has no Apple Health import; nothing is shown without rows).
 struct ActivityTrendsView: View {
     @EnvironmentObject var repo: Repository
     @State private var workouts: [WorkoutRow] = []
@@ -839,7 +840,7 @@ struct ActivityTrendsContent: View {
             let energy = appleSeries({ $0.activeKcal }, anchor: anchor)
 
             if strain.points.isEmpty && workouts.isEmpty && steps.points.isEmpty && energy.points.isEmpty {
-                ComingSoon(what: loaded ? "No activity stored yet. Day strain and workouts appear as the strap records, or import your WHOOP export or Apple Health in Settings → Data."
+                ComingSoon(what: loaded ? "No activity stored yet. Day strain appears as the strap records, and workouts come with a WHOOP export imported in Settings → Data."
                                         : "Loading your activity…")
             } else {
                 TrendRangeBar(range: $range, sparseNote: strain.widened ? strain.caption : nil)
@@ -894,8 +895,6 @@ struct ActivityTrendsContent: View {
     private func charts(sessions: WorkoutWindow, steps: TrendSeries, energy: TrendSeries) -> some View {
         if steps.points.isEmpty && energy.points.isEmpty {
             workoutsCard(sessions)
-            Text("Steps and active energy appear here after an Apple Health import in Settings → Data.")
-                .font(StrandFont.footnote).foregroundStyle(StrandPalette.textTertiary)
         } else {
             TrendCardGrid {
                 workoutsCard(sessions)

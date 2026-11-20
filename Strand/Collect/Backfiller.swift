@@ -47,10 +47,6 @@ final class Backfiller {
     /// record). Injected for tests; backed by UserDefaults in the production init site.
     private let enableRawCapture: Bool
 
-    /// When false, chunks are stored but never acknowledged, so the strap keeps its copy for another app
-    /// (e.g. the WHOOP phone app) to sync. Read per chunk so the setting takes effect immediately.
-    var acknowledgesChunks: () -> Bool = { true }
-
     /// The clock reference set by BLEManager when GET_CLOCK confirms (required for decoding).
     var clockRef: ClockRef?
 
@@ -157,10 +153,6 @@ final class Backfiller {
                 do { try await store.enqueueRawBatch(meta, frames: frames) } catch { return }
             }
         }
-        // Keep-on-strap mode: data is durably stored above; skip the cursor and the ack so the strap
-        // does not discard its copy.
-        // 'Keep data on strap' mode: store everything but never ack, so another app can still sync from the strap.
-        guard acknowledgesChunks() else { return }
         do { try await store.setCursor("strap_trim", Int(trim)) } catch { return }
 
         ackTrim(trim, endData)

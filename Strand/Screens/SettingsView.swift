@@ -2,77 +2,62 @@ import SwiftUI
 import StrandDesign
 import WhoopStore
 
-/// Settings — profile (powers zones / calories / recovery), strap connection, and about.
-/// Grouped cards on surface.raised with a two-column form feel.
-// Settings: profile (feeds zones/calories/baselines), strap connection, keep-data-on-strap, and About.
+/// Settings ▸ General: a strap hero (status, battery, actions), then labelled groups of rows — connection, battery
+/// alerts, profile, data, check-ins and about — in one reading column.
 struct SettingsView: View {
     @EnvironmentObject var model: AppModel
     @EnvironmentObject var live: LiveState
     @EnvironmentObject var profile: ProfileStore
 
+    /// Settings read best as one calm column; wider windows leave the rest as margin.
+    static let columnWidth: CGFloat = 780
+
     var body: some View {
         ScreenScaffold(title: "Settings",
-                       subtitle: "Your strap, profile, and data — stored on this Mac.") {
-            PairingResetNotice()
-            strapCard
-            ProfileCard(profile: profile)
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 360), spacing: NoopMetrics.gap, alignment: .top)],
-                      alignment: .leading, spacing: NoopMetrics.gap) {
-                keepDataCard
-                ResearchCaptureCard()
-                checkInCard
-                aboutCard
+                       subtitle: "Your strap, profile and data — all stored on this Mac.") {
+            VStack(alignment: .leading, spacing: 32) {
+                PairingResetNotice()
+                strapHero
+                connectionSection
+                batteryAlertsSection
+                ProfileCard(profile: profile)
+                dataSection
+                checkInSection
+                aboutSection
             }
+            .frame(maxWidth: Self.columnWidth, alignment: .leading)
         }
     }
 
-    // MARK: - Strap
+    // MARK: - Strap hero
 
-    /// Remembered Bluetooth choice, the system's own answer when it blocks NOOP, and the next periodic reconnect.
-    @ViewBuilder private var bluetoothAccess: some View {
-        FormRow(label: "Use Bluetooth") {
-            Toggle("Use Bluetooth", isOn: Binding(get: { live.bluetoothChoice != .declined },
-                                                  set: { model.setBluetoothAllowed($0) }))
-                .labelsHidden()
-                .toggleStyle(.switch)
-        }
-        if live.bluetoothChoice == .declined {
-            Text("Bluetooth is off for NOOP, and stays off after relaunch until you turn it on here.")
-                .font(StrandFont.footnote).foregroundStyle(StrandPalette.textTertiary)
-        } else if live.bluetoothDeniedBySystem {
-            HStack(spacing: 12) {
-                Text("macOS is blocking Bluetooth for NOOP.")
-                    .font(StrandFont.footnote).foregroundStyle(StrandPalette.statusWarningInk)
-                Button("Open Privacy Settings") { model.openBluetoothPrivacySettings() }
-                    .buttonStyle(.strandSecondary)
-            }
-        } else if let next = live.nextReconnectAt, !live.connected {
-            Text("Connection lost — NOOP retries every 15 minutes while open. Next attempt \(next.formatted(date: .omitted, time: .shortened)).")
-                .font(StrandFont.footnote).foregroundStyle(StrandPalette.textTertiary)
-        }
+    private var strapName: String {
+        if let m = live.deviceInfo?.model { return "WHOOP \(m)" }
+        return "Your strap"
     }
 
-    private var strapCard: some View {
-        SettingsSection(
-            icon: "antenna.radiowaves.left.and.right",
-            title: "Strap",
-            blurb: "NOOP pairs directly with your WHOOP over Bluetooth — no WHOOP app, no cloud."
-        ) {
-            VStack(alignment: .leading, spacing: 16) {
-                HStack(spacing: 12) {
+    private var strapHero: some View {
+        StrandCard(padding: 24) {
+            VStack(alignment: .leading, spacing: 22) {
+                HStack(alignment: .top, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(strapName)
+                            .font(.system(size: 22, weight: .semibold)).tracking(-0.2)
+                            .foregroundStyle(StrandPalette.textPrimary)
+                        Text(strapStatusDetail)
+                            .font(StrandFont.subhead)
+                            .foregroundStyle(StrandPalette.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: 8)
                     StatePill(strapStatusTitle, tone: strapTone, pulsing: live.connected)
-                    Spacer(minLength: 0)
                 }
-                bluetoothAccess
                 StrapBatteryPanel()
-                Text(strapStatusDetail)
-                    .font(StrandFont.subhead)
-                    .foregroundStyle(StrandPalette.textSecondary)
-                HStack(spacing: 12) {
+                HStack(spacing: 10) {
                     Button {
                         model.scan()
                     } label: {
-                        Label("Re-scan", systemImage: "arrow.clockwise")
+                        Label(live.bonded ? "Reconnect" : "Scan for strap", systemImage: "arrow.clockwise")
                             .padding(.horizontal, 6)
                     }
                     .buttonStyle(.strandPrimary)
@@ -81,76 +66,21 @@ struct SettingsView: View {
                     Button {
                         model.disconnect()
                     } label: {
-                        Label("Disconnect", systemImage: "xmark.circle")
+                        Label("Disconnect", systemImage: "xmark")
                             .padding(.horizontal, 6)
                     }
                     .buttonStyle(.strandSecondary)
                     .disabled(!live.connected && !live.bonded)
-
-                    Button {
-                        Task { await model.intelligence.recomputeAll() }
-                    } label: {
-                        Label(model.intelligence.computing ? "Recalculating…" : "Recalculate all scores",
-                              systemImage: "function")
-                            .padding(.horizontal, 6)
-                    }
-                    .buttonStyle(.strandSecondary)
-                    .disabled(model.intelligence.computing)
+                    Spacer(minLength: 0)
                 }
-                if let info = live.deviceInfo {
-                    // From the strap's standard Device Information service (read once per connection).
-                    Text([info.model.map { "WHOOP \($0)" }, info.firmware.map { "firmware \($0)" }, info.hardware.map { "hardware \($0)" }]
-                            .compactMap { $0 }.joined(separator: " · "))
-                        .font(StrandFont.footnote).foregroundStyle(StrandPalette.textSecondary)
-                }
-                if let c = live.clock {
-                    Text(String(format: "Strap clock: %.0f s %@ this Mac (stored times use the strap clock)",
-                                abs(c.offset), c.offset >= 0 ? "behind" : "ahead of"))
-                        .font(StrandFont.footnote).foregroundStyle(StrandPalette.textTertiary)
-                }
-                Divider()
-                Toggle("Notify when the battery drops below 20%", isOn: $notifyLow)
-                    .toggleStyle(.switch)
-                    .onChange(of: notifyLow) { on in if on { BatteryMonitor.requestAuthorization() } }
-                Toggle("Notify when charging reaches 100%", isOn: $notifyFull)
-                    .toggleStyle(.switch)
-                    .onChange(of: notifyFull) { on in if on { BatteryMonitor.requestAuthorization() } }
-                Text("Charging is what the strap reports: its charging events, or whether the charging pack is attached (NOOP asks a WHOOP 5.0 each time it reads the battery). The full-charge alert fires when the strap reports charging at 100%.")
-                    .font(StrandFont.footnote).foregroundStyle(StrandPalette.textTertiary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-    }
-
-    @AppStorage(BatteryMonitor.lowEnabledKey) private var notifyLow = true
-    @AppStorage(BatteryMonitor.fullEnabledKey) private var notifyFull = true
-
-    // MARK: - Keep data on strap
-
-    @AppStorage(BLEManager.keepDataOnStrapKey) private var keepDataOnStrap = false
-
-    // When ON, data is stored but never acknowledged, so the strap keeps its copy for another app (the trade-off: the strap stops after ~50 records per sync).
-    private var keepDataCard: some View {
-        SettingsSection(
-            icon: "externaldrive.badge.checkmark",
-            title: "Keep data on strap",
-            blurb: "Each time NOOP confirms a batch of history, the strap moves its trim pointer past it (seen in the strap's own log); whether the WHOOP app can still read a trimmed batch is not known. With this on, NOOP saves everything it reads but never confirms."
-        ) {
-            VStack(alignment: .leading, spacing: 12) {
-                Toggle("Never delete data from the strap", isOn: $keepDataOnStrap)
-                    .toggleStyle(.switch)
-                Text("Limitation: the strap normally waits for a confirmation before sending the next batch, so with this on each sync may only reach the first batch of history. Sync with NOOP first, then let the WHOOP app clear the strap.")
-                    .font(StrandFont.footnote)
-                    .foregroundStyle(StrandPalette.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
 
     private var strapStatusTitle: String {
-        if live.bonded && live.connected { return "Bonded · streaming" }
-        if live.connected { return "Connected" }
-        if live.bonded { return "Bonded · idle" }
+        if live.bonded && live.connected { return "Connected" }
+        if live.connected { return "Pairing" }
+        if live.bonded { return "Paired · idle" }
         return "Disconnected"
     }
 
@@ -161,140 +91,246 @@ struct SettingsView: View {
     }
 
     private var strapStatusDetail: String {
-        if live.bonded && live.connected {
-            return "Your strap is paired and sending data. Open Live for a real-time heart rate."
-        }
+        if live.bonded && live.connected { return "Paired and sending data over Bluetooth — no WHOOP app, no cloud." }
         if live.connected { return "Connected. Finishing the secure pairing handshake…" }
-        if live.bonded { return "Previously paired but not currently connected. Re-scan to reconnect." }
-        return "No strap connected. Put your WHOOP nearby and tap Re-scan to pair."
+        if live.bonded { return "Paired before but not connected right now." }
+        return "Put your WHOOP nearby and scan to pair."
+    }
+
+    // MARK: - Connection
+
+    private var connectionSection: some View {
+        SettingsSection(icon: "antenna.radiowaves.left.and.right", title: "Connection") {
+            SettingsRow(title: "Use Bluetooth", detail: bluetoothDetail) {
+                Toggle("Use Bluetooth", isOn: Binding(get: { live.bluetoothChoice != .declined },
+                                                      set: { model.setBluetoothAllowed($0) }))
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+            }
+            if live.bluetoothChoice != .declined, live.bluetoothDeniedBySystem {
+                SettingsDivider()
+                SettingsRow(title: "macOS is blocking Bluetooth", detail: "Allow NOOP in Privacy & Security.",
+                            detailTone: StrandPalette.statusWarningInk) {
+                    Button("Open Settings") { model.openBluetoothPrivacySettings() }
+                        .buttonStyle(.strandSecondary)
+                }
+            }
+            if let info = live.deviceInfo, info.firmware != nil || info.hardware != nil {
+                SettingsDivider()
+                SettingsRow(title: "Firmware", detail: info.hardware.map { "Hardware \($0)" }) {
+                    SettingsValue(info.firmware ?? "Unknown")
+                }
+            }
+            if let c = live.clock {
+                SettingsDivider()
+                SettingsRow(title: "Strap clock", detail: "Stored times use the strap clock.") {
+                    SettingsValue(String(format: "%.0f s %@", abs(c.offset), c.offset >= 0 ? "behind" : "ahead"))
+                }
+            }
+        }
+    }
+
+    private var bluetoothDetail: String? {
+        if live.bluetoothChoice == .declined { return "Off for NOOP — stays off after relaunch until you turn it on." }
+        if !live.bluetoothDeniedBySystem, let next = live.nextReconnectAt, !live.connected {
+            return "Retrying every 15 minutes while open · next at \(next.formatted(date: .omitted, time: .shortened))"
+        }
+        return nil
+    }
+
+    // MARK: - Battery alerts
+
+    @AppStorage(BatteryMonitor.lowEnabledKey) private var notifyLow = true
+    @AppStorage(BatteryMonitor.fullEnabledKey) private var notifyFull = true
+
+    private var batteryAlertsSection: some View {
+        SettingsSection(
+            icon: "bell.badge",
+            title: "Battery alerts",
+            footer: "Charging is what the strap reports: its charging events and, on WHOOP 5.0, whether the pack is attached. A rising percentage alone shows as “likely”, never as charging."
+        ) {
+            SettingsRow(title: "Low battery", detail: "When the strap drops below 20%") {
+                Toggle("Low battery alert", isOn: $notifyLow)
+                    .labelsHidden().toggleStyle(.switch)
+                    .onChange(of: notifyLow) { on in if on { BatteryMonitor.requestAuthorization() } }
+            }
+            SettingsDivider()
+            SettingsRow(title: "Fully charged", detail: "When the strap reports charging at 100%") {
+                Toggle("Fully charged alert", isOn: $notifyFull)
+                    .labelsHidden().toggleStyle(.switch)
+                    .onChange(of: notifyFull) { on in if on { BatteryMonitor.requestAuthorization() } }
+            }
+        }
+    }
+
+    // MARK: - Data
+
+    private var dataSection: some View {
+        SettingsSection(icon: "externaldrive", title: "Data") {
+            ResearchCaptureRow()
+            SettingsDivider()
+            SettingsRow(title: "Recalculate scores", detail: "Re-score every stored day with the current methods") {
+                Button(model.intelligence.computing ? "Recalculating…" : "Recalculate") {
+                    Task { await model.intelligence.recomputeAll() }
+                }
+                .buttonStyle(.strandSecondary)
+                .disabled(model.intelligence.computing)
+            }
+        }
     }
 
     // MARK: - Check-ins
 
-    private var checkInCard: some View {
+    private var checkInSection: some View {
         SettingsSection(
             icon: "checklist",
             title: "Check-ins",
-            blurb: "Optional morning and evening questions about things the strap can't see. Answers never change your scores."
+            subtitle: "Optional morning and evening questions about things the strap can't see. Answers never change your scores.",
+            footer: CheckInSettingsForm.intro
         ) {
-            CheckInSettingsForm()
+            CheckInSettingsForm(grouped: true)
         }
     }
 
     // MARK: - About
 
-    private var aboutCard: some View {
-        SettingsSection(
-            icon: "info.circle.fill",
-            title: "About",
-            blurb: "NOOP — all your data, none of the cloud."
-        ) {
-            VStack(alignment: .leading, spacing: 16) {
-                HStack(spacing: 10) {
-                    Text("NOOP")
-                        .font(StrandFont.title2)
-                        .foregroundStyle(StrandPalette.textPrimary)
-                    StatePill("v0.1.0", tone: .neutral, showsDot: false)
-                }
+    private var appVersion: String {
+        let info = Bundle.main.infoDictionary
+        let v = info?["CFBundleShortVersionString"] as? String ?? "–"
+        let b = info?["CFBundleVersion"] as? String
+        return b.map { "\(v) (\($0))" } ?? v
+    }
 
-                Text("A standalone macOS companion for your WHOOP. Everything stays on this Mac — your history, your live stream, your numbers. Nothing is uploaded.")
-                    .font(StrandFont.subhead)
+    private var aboutSection: some View {
+        SettingsSection(icon: "info.circle", title: "About") {
+            SettingsRow(title: "NOOP", detail: "A standalone Mac companion for your WHOOP. Your history, live stream and numbers stay on this Mac; nothing is uploaded.") {
+                SettingsValue("Version \(appVersion)")
+            }
+            SettingsDivider()
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: "cross.case")
+                    .font(.system(size: 13))
+                    .foregroundStyle(StrandPalette.statusWarningInk)
+                    .accessibilityHidden(true)
+                Text("NOOP is not a medical device. It is for informational and personal-insight purposes only and is not intended to diagnose, treat, cure or prevent any condition. Talk to a clinician for medical advice.")
+                    .font(StrandFont.footnote)
                     .foregroundStyle(StrandPalette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
-
-                // Medical disclaimer
-                HStack(alignment: .top, spacing: 10) {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundStyle(StrandPalette.statusWarningInk)
-                        .font(.system(size: 13))
-                        .accessibilityHidden(true)
-                    Text("NOOP is not a medical device. It is for informational and personal-insight purposes only and is not intended to diagnose, treat, cure or prevent any condition. Talk to a clinician for medical advice.")
-                        .font(StrandFont.footnote)
-                        .foregroundStyle(StrandPalette.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .padding(12)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(StrandPalette.surfaceInset,
-                            in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .stroke(StrandPalette.statusWarning.opacity(0.25), lineWidth: 1)
-                )
-
-                rowDivider
-
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Built on").strandOverline()
-                    attribution(repo: "johnmiddleton12/my-whoop", note: "WHOOP 4.0 protocol")
-                    attribution(repo: "b-nnett/goose", note: "WHOOP 5.0 protocol")
-                }
-
-                Text("Open-source BLE reverse-engineering work. Thank you.")
-                    .font(StrandFont.footnote)
-                    .foregroundStyle(StrandPalette.textTertiary)
             }
+            .padding(.vertical, 14)
+            SettingsDivider()
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Built on open-source BLE reverse-engineering work — thank you.")
+                    .font(StrandFont.footnote).foregroundStyle(StrandPalette.textTertiary)
+                attribution(repo: "johnmiddleton12/my-whoop", note: "WHOOP 4.0 protocol")
+                attribution(repo: "b-nnett/goose", note: "WHOOP 5.0 protocol")
+            }
+            .padding(.vertical, 14)
         }
     }
 
     private func attribution(repo: String, note: String) -> some View {
         HStack(spacing: 8) {
-            Image(systemName: "chevron.right")
-                .font(.system(size: 9, weight: .semibold))
-                .foregroundStyle(StrandPalette.accentInk)
-                .accessibilityHidden(true)
             Text(repo)
                 .font(StrandFont.mono(12))
                 .foregroundStyle(StrandPalette.textPrimary)
-            Text("· \(note)")
+            Text(note)
                 .font(StrandFont.footnote)
                 .foregroundStyle(StrandPalette.textTertiary)
         }
         .accessibilityElement(children: .combine)
     }
-
-    // MARK: - Shared bits
-
-    private var rowDivider: some View {
-        Rectangle()
-            .fill(StrandPalette.hairline)
-            .frame(height: 1)
-            .padding(.vertical, 4)
-    }
 }
 
-// MARK: - Section card
+// MARK: - Section, rows
 
-/// A grouped settings card with a compact title-and-description header.
+/// A settings group: a small title (and optional subtitle) above a card of rows, with an optional footnote below —
+/// the inset-grouped pattern, so each card holds only controls and short labels.
 private struct SettingsSection<Content: View>: View {
     let icon: String
     let title: String
-    let blurb: String
+    var subtitle: String? = nil
+    var footer: String? = nil
     @ViewBuilder var content: () -> Content
 
     var body: some View {
-        StrandCard(padding: 20) {
-            VStack(alignment: .leading, spacing: 16) {
-                HStack(alignment: .top, spacing: 12) {
-                    Image(systemName: icon)
-                        .foregroundStyle(StrandPalette.accentInk)
-                        .accessibilityHidden(true)
-                        .frame(width: 32, height: 32)
-                        .background(StrandPalette.accent.opacity(0.10),
-                                    in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(title)
-                            .font(StrandFont.headline)
-                            .foregroundStyle(StrandPalette.textPrimary)
-                        Text(blurb)
-                            .font(StrandFont.subhead)
-                            .foregroundStyle(StrandPalette.textSecondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
+        VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 3) {
+                Label {
+                    Text(title)
+                } icon: {
+                    Image(systemName: icon).foregroundStyle(StrandPalette.accentInk)
                 }
-                content()
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(StrandPalette.textPrimary)
+                .accessibilityAddTraits(.isHeader)
+                if let subtitle {
+                    Text(subtitle)
+                        .font(StrandFont.caption)
+                        .foregroundStyle(StrandPalette.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .padding(.leading, 4)
+            VStack(alignment: .leading, spacing: 0) { content() }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 4)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .strandSurface(cornerRadius: 18)
+            if let footer {
+                Text(footer)
+                    .font(StrandFont.footnote)
+                    .foregroundStyle(StrandPalette.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 4)
             }
         }
+    }
+}
+
+/// One settings row: title (and a short detail under it) on the left, the control on the right.
+private struct SettingsRow<Trailing: View>: View {
+    let title: String
+    var detail: String? = nil
+    var detailTone: Color? = nil
+    @ViewBuilder var trailing: () -> Trailing
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 16) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(StrandPalette.textPrimary)
+                if let detail {
+                    Text(detail)
+                        .font(StrandFont.caption)
+                        .foregroundStyle(detailTone ?? StrandPalette.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            trailing()
+        }
+        .padding(.vertical, 13)
+        .accessibilityElement(children: .contain)
+    }
+}
+
+/// A read-only value on the right of a row.
+private struct SettingsValue: View {
+    let text: String
+    init(_ text: String) { self.text = text }
+    var body: some View {
+        Text(text)
+            .font(.system(size: 13).monospacedDigit())
+            .foregroundStyle(StrandPalette.textSecondary)
+            .multilineTextAlignment(.trailing)
+    }
+}
+
+private struct SettingsDivider: View {
+    var body: some View {
+        Rectangle().fill(StrandPalette.hairline).frame(height: 1)
     }
 }
 
@@ -310,10 +346,11 @@ struct ProfileCard: View {
         SettingsSection(
             icon: "person.fill",
             title: "Profile",
-            blurb: "These power heart-rate zones, calorie estimates and recovery baselines."
+            subtitle: "These power heart-rate zones, calorie estimates and recovery baselines."
         ) {
             VStack(alignment: .leading, spacing: 0) {
                 groupHeader("Body")
+                    .padding(.top, 14)
                 ageRow
                 rowDivider
                 ProfileRow(label: "Sex") {
@@ -513,25 +550,6 @@ private struct ProfileRow<Control: View>: View {
     }
 }
 
-// MARK: - Two-column form row
-
-/// Label on the left, control on the right — the two-column form feel.
-private struct FormRow<Control: View>: View {
-    let label: String
-    @ViewBuilder var control: () -> Control
-
-    var body: some View {
-        HStack(alignment: .center, spacing: 16) {
-            Text(label)
-                .font(StrandFont.body)
-                .foregroundStyle(StrandPalette.textPrimary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            control()
-        }
-        .frame(minHeight: 32)
-    }
-}
-
 // MARK: - Preview
 
 #if DEBUG
@@ -550,31 +568,22 @@ private struct FormRow<Control: View>: View {
 }
 #endif
 
-/// Settings ▸ General: start/stop the bounded full-frame research capture (`ResearchCapture`, #25).
-private struct ResearchCaptureCard: View {
+/// Settings ▸ General ▸ Data: start/stop the bounded full-frame research capture (`ResearchCapture`, #25).
+/// For up to 7 days every history record's complete bytes are kept with firmware and strap time, on this Mac only
+/// (Application Support/OpenWhoop/research-history, about 20 MB a day); nothing is changed on the strap.
+private struct ResearchCaptureRow: View {
     @State private var capture = ResearchCapture.load()
     @State private var now = Date()
 
     var body: some View {
-        SettingsSection(
-            icon: "doc.badge.clock",
-            title: "Research capture",
-            blurb: "NOOP keeps only the history fields it understands. For up to 7 days, this also keeps every history record's complete bytes, with the strap's firmware and time, so fields not decoded yet can be studied later. Saved on this Mac only (Application Support/OpenWhoop/research-history, about 20 MB a day); nothing is changed on the strap."
-        ) {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(spacing: 12) {
-                    if let c = capture, c.isActive(at: now) {
-                        Button("Stop capture") { var s = c; s.stoppedReason = "stopped by you"; s.save(); refresh() }
-                            .buttonStyle(.strandSecondary)
-                    } else {
-                        Button("Capture for 7 days") { ResearchCapture.start().save(); refresh() }
-                            .buttonStyle(.strandSecondary)
-                    }
-                }
-                Text(status)
-                    .font(StrandFont.footnote)
-                    .foregroundStyle(StrandPalette.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
+        SettingsRow(title: "Research capture",
+                    detail: "Keep complete history records for 7 days so undecoded fields can be studied (about 20 MB a day, this Mac only). " + status) {
+            if let c = capture, c.isActive(at: now) {
+                Button("Stop") { var s = c; s.stoppedReason = "stopped by you"; s.save(); refresh() }
+                    .buttonStyle(.strandSecondary)
+            } else {
+                Button("Start") { ResearchCapture.start().save(); refresh() }
+                    .buttonStyle(.strandSecondary)
             }
         }
         .onAppear(perform: refresh)
@@ -583,10 +592,10 @@ private struct ResearchCaptureCard: View {
     private func refresh() { capture = ResearchCapture.load(); now = Date() }
 
     private var status: String {
-        guard let c = capture else { return "Off. Captures only during syncs while it is on." }
+        guard let c = capture else { return "Off." }
         let size = ByteCountFormatter.string(fromByteCount: Int64(c.bytesWritten), countStyle: .file)
         let end = c.until.formatted(date: .abbreviated, time: .shortened)
-        if c.isActive(at: now) { return "On until \(end) · \(size) kept so far. Applies from the next sync." }
+        if c.isActive(at: now) { return "On until \(end) · \(size) kept. Applies from the next sync." }
         return "Off (\(c.stoppedReason ?? "ended \(end)")) · \(size) kept."
     }
 }

@@ -20,7 +20,7 @@ struct TodayView: View {
     @State private var selectedDay: String?
     /// Which square is open, or nil for the dashboard.
     @State private var detail: TodayDetail?
-    /// Apple Health steps for the picked day, when imported (the strap itself doesn't count steps).
+    /// Apple Health steps for the picked day from older imported rows, if any (the strap's own counter is shown in Strain detail).
     @State private var steps: Int?
     /// The picked day's strap heart-rate samples, summarised once per load.
     @State private var dayStats: DayHRStats?
@@ -201,7 +201,7 @@ struct TodayView: View {
 
     // MARK: - Loading
 
-    // Per picked day: the strap's stored heart-rate samples (summarised once) and Apple Health steps if imported.
+    // Per picked day: the strap's stored heart-rate samples (summarised once) and Apple Health steps from older rows, if any.
     private func loadAll() async {
         let key = activeDay
         if let r = DayMath.range(key) {
