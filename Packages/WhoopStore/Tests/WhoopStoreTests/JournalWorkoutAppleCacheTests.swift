@@ -158,49 +158,5 @@ final class JournalWorkoutAppleCacheTests: XCTestCase {
         XCTAssertEqual(limited.map { $0.startTs }, [100], "limit honoured, oldest first")
     }
 
-    // MARK: - appleDaily
 
-    func testAppleDailyUpsertReadAndIdempotency() async throws {
-        let store = try await WhoopStore.inMemory()
-        let a = AppleDaily(day: "2026-05-23", steps: 9123, activeKcal: 540.2, basalKcal: 1600.0,
-                           vo2max: 48.5, avgHr: 62, maxHr: 171, walkingHr: 98, weightKg: 78.4)
-        try await store.upsertAppleDaily([a], deviceId: "devA")
-
-        var rows = try await store.appleDaily(deviceId: "devA", from: "2026-05-01", to: "2026-05-31")
-        XCTAssertEqual(rows.count, 1)
-        XCTAssertEqual(rows[0], a)
-
-        // Re-upsert same day with new values → no duplicate, value updated.
-        let a2 = AppleDaily(day: "2026-05-23", steps: 10000, activeKcal: 600, basalKcal: 1620,
-                            vo2max: 49.0, avgHr: 60, maxHr: 175, walkingHr: 95, weightKg: 78.0)
-        try await store.upsertAppleDaily([a2], deviceId: "devA")
-        rows = try await store.appleDaily(deviceId: "devA", from: "2026-05-01", to: "2026-05-31")
-        XCTAssertEqual(rows.count, 1, "same (deviceId,day) must not duplicate")
-        XCTAssertEqual(rows[0], a2)
-    }
-
-    func testAppleDailyNullableMetricsRoundTripAsNil() async throws {
-        let store = try await WhoopStore.inMemory()
-        let a = AppleDaily(day: "2026-05-25", steps: nil, activeKcal: nil, basalKcal: nil,
-                           vo2max: nil, avgHr: nil, maxHr: nil, walkingHr: nil, weightKg: nil)
-        try await store.upsertAppleDaily([a], deviceId: "devA")
-        let rows = try await store.appleDaily(deviceId: "devA", from: "2026-05-01", to: "2026-05-31")
-        XCTAssertEqual(rows.count, 1)
-        let r = try XCTUnwrap(rows.first)
-        XCTAssertNil(r.steps); XCTAssertNil(r.activeKcal); XCTAssertNil(r.basalKcal)
-        XCTAssertNil(r.vo2max); XCTAssertNil(r.avgHr); XCTAssertNil(r.maxHr)
-        XCTAssertNil(r.walkingHr); XCTAssertNil(r.weightKg)
-    }
-
-    func testAppleDailyDayRangeFilter() async throws {
-        let store = try await WhoopStore.inMemory()
-        try await store.upsertAppleDaily([
-            AppleDaily(day: "2026-05-01", steps: 1, activeKcal: nil, basalKcal: nil, vo2max: nil,
-                       avgHr: nil, maxHr: nil, walkingHr: nil, weightKg: nil),
-            AppleDaily(day: "2026-05-20", steps: 2, activeKcal: nil, basalKcal: nil, vo2max: nil,
-                       avgHr: nil, maxHr: nil, walkingHr: nil, weightKg: nil),
-        ], deviceId: "devA")
-        let rows = try await store.appleDaily(deviceId: "devA", from: "2026-05-10", to: "2026-05-31")
-        XCTAssertEqual(rows.map { $0.day }, ["2026-05-20"])
-    }
 }

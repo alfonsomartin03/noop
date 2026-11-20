@@ -74,7 +74,7 @@ public struct RecoveryAssessment: Equatable, Sendable {
 }
 
 public enum RecoveryAssessor {
-    /// RecoveryScorer weights/logistic fitted to a single WHOOP export (docs/WHOOP_REVERSE_ENGINEERING.md), raw-unit
+    /// RecoveryScorer weights/logistic fitted to a single WHOOP export (docs/archive/WHOOP_REVERSE_ENGINEERING.md), raw-unit
     /// RMSSD, EWMA mean-abs-dev baselines. Any change to that model must change this string.
     public static let legacyModelVersion = "legacy-whoop-fit-v1"
     /// Valid 5-min HRV windows (and spread over ≥ 2 thirds of the night) for a night to count as good quality.

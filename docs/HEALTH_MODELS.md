@@ -211,7 +211,7 @@ lab age) exists for one person, so this checks what the model *claims* about its
 
 - `SleepPerformance`: 100 × min(1, asleep ÷ need), need = max(7.5 h, mean asleep over up to 14 earlier NOOP nights) (`SleepNeed` fallback). Causal; NOOP rows only; a night without minutes asleep has no value (not 0 %).
 - Shown in Trends ▸ Sleep ("Sleep performance — NOOP estimate") and Highlights (NOOP source: Best sleep + sleep streak, labelled "NOOP sleep performance … hours vs estimated need").
-- WHOOP research: `docs/WHOOP_REVERSE_ENGINEERING.md` in-sample fit = hours-vs-need + consistency + efficiency (MAE 3.0). `Tools/reverse_engineer/sleep_performance_eval.py` now gives a **held-out** (time-split) MAE for the hours-vs-need hypothesis and the 3-term fit on a user-supplied export. No parity is claimed. NOOP v1 deliberately uses hours-vs-need only (NOOP has no WHOOP consistency score or sleep-stress input).
+- WHOOP research: `docs/archive/WHOOP_REVERSE_ENGINEERING.md` in-sample fit = hours-vs-need + consistency + efficiency (MAE 3.0). `Tools/reverse_engineer/sleep_performance_eval.py` now gives a **held-out** (time-split) MAE for the hours-vs-need hypothesis and the 3-term fit on a user-supplied export. No parity is claimed. NOOP v1 deliberately uses hours-vs-need only (NOOP has no WHOOP consistency score or sleep-stress input).
 - **Real-export held-out run (2026-11-13, one person's export, private, not in the repo).** Both CSVs joined per sleep; 641 main sleeps after dropping 103 naps; 634 with a reported performance (7 excluded: no reported performance; 2 more lack consistency/efficiency for H2). Chronological 70/30 split, 443 fit / 191 held out, both hypotheses scored on the same 191 nights:
 
   | Hypothesis | Held-out MAE (points) |

@@ -6,17 +6,19 @@ The app is named **NOOP**. `Strand` remains the internal app target, Xcode schem
 
 ## What is in the app
 
-- **Overview** — daily recovery, sleep, strain, and heart-rate cards with contextual details, connection/download status, and score-processing progress.
-- **Trends** — Scores, Sleep, Vitals, and Activity segments; historical charts, sleep details, and workout sessions. Workout details support activity labels, perceived effort, and strength sets.
-- **Settings** — General for device/profile preferences; Data for WHOOP ZIP/folder import, comparisons with imported scores, and database backup/restore; Advanced for recovery diagnostics, the data explorer, and the live-strap sheet.
+- **Overview** — week strip; recovery, sleep and strain detail; heart-rate day card with activation timeline and coverage; optional morning/evening check-ins; sync and processing status.
+- **Trends** — Scores, Sleep, Vitals, Activity and Highlights (records and streaks), with completed-period comparisons. Workout details support activity labels, perceived effort and strength sets.
+- **Health** — experimental functional age and pace, VO₂max estimate, personal-range health monitor, heart-rate activation timeline (not a stress score).
+- **Alarms** — strap alarms with an optional experimental smart-wake window and per-occurrence history.
+- **Settings** — General (strap, Bluetooth, battery alerts, profile, research capture, check-ins); Data (WHOOP ZIP/folder import, comparison with imported scores, backup/restore); Advanced (recovery diagnostics, data explorer, live strap).
 - **Bluetooth collection** — WHOOP 4.0/5.0 protocol paths, live readings, battery status, and historical downloads. Support varies by hardware, firmware, and verified protocol capability; see the [protocol evidence](docs/reverse-engineering/README.md).
 - **Menu-bar companion** and first-run pairing/onboarding.
 
-Primary navigation uses Overview, Trends, and Settings (⌘1–⌘3). See [features](docs/FEATURES.md) and the [screen map](docs/SCREEN_INVENTORY.md).
+Primary navigation is a floating pill with Overview, Trends, Health, Alarms and Settings (⌘1–⌘5). See [architecture](docs/ARCHITECTURE.md).
 
 For a plain-language overview of completed work, hardware evidence, and open research, see [project progress](docs/PROJECT_PROGRESS.md).
 
-This repository builds a **macOS app only**. Apple Health parsing remains in `StrandImport`, but there is no Apple Health import screen in the current app. Package platform declarations are not shipped mobile apps. Removed stress, coaching, automation, and standalone insights screens are not current features.
+This repository builds a **macOS app only**. There is no Apple Health import, mobile app, cloud service or coaching. Package platform declarations are not shipped mobile apps.
 
 ## Build and run
 
@@ -37,7 +39,7 @@ See [build and test instructions](docs/BUILD.md) for command-line checks and sig
 
 Data is stored in SQLite at `OpenWhoop/whoop.sqlite` beneath the app's Application Support directory (inside its container for sandboxed builds). Settings → Data exports/restores database backups; restoring replaces local database contents and requires relaunch. Preferences stored in UserDefaults are separate from that database.
 
-NOOP estimates and imported WHOOP scores have separate provenance. Imported scores are not validation of NOOP's algorithms. Missing observations must remain distinguishable from zero; sleep stages and derived scores are estimates, not clinical measurements. See [analytics](docs/ANALYTICS.md), [measurement validity](docs/MEASUREMENT_VALIDITY.md), and [privacy](docs/PRIVACY_SECURITY.md).
+NOOP estimates and imported WHOOP scores have separate provenance. Imported scores are not validation of NOOP's algorithms. Missing observations must remain distinguishable from zero; sleep stages and derived scores are estimates, not clinical measurements. See [architecture](docs/ARCHITECTURE.md#analytics-rules), [measurement validity](docs/MEASUREMENT_VALIDITY.md), and [privacy](docs/PRIVACY_SECURITY.md).
 
 ## Repository
 
@@ -47,12 +49,12 @@ NOOP estimates and imported WHOOP scores have separate provenance. Imported scor
 | `Packages/WhoopProtocol/` | Framing, packet decoding, and protocol resources |
 | `Packages/WhoopStore/` | SQLite/GRDB storage, migrations, and caches |
 | `Packages/StrandAnalytics/` | Scoring, sleep/activity analysis, and incremental recomputation |
-| `Packages/StrandImport/` | WHOOP export and retained Apple Health parsers |
+| `Packages/StrandImport/` | WHOOP export parser |
 | `Packages/StrandDesign/` | Shared SwiftUI styling, components, and charts |
 | `StrandTests/` | Hosted macOS app tests |
 | `Tools/` | Protocol probes/decoders, performance probe, and scoring replay/research tools |
 | `project.yml` | XcodeGen project definition; the generated Xcode project is ignored |
-| `docs/` | Current guides, measurement research, and protocol evidence |
+| `docs/` | Current guides, measurement research, protocol evidence; `docs/archive/` holds dated historical reports |
 
 Start with [contributing](docs/CONTRIBUTING.md), [architecture](docs/ARCHITECTURE.md), and the [documentation index](docs/README.md).
 

@@ -20,8 +20,6 @@ struct TodayView: View {
     @State private var selectedDay: String?
     /// Which square is open, or nil for the dashboard.
     @State private var detail: TodayDetail?
-    /// Apple Health steps for the picked day from older imported rows, if any (the strap's own counter is shown in Strain detail).
-    @State private var steps: Int?
     /// The picked day's strap heart-rate samples, summarised once per load.
     @State private var dayStats: DayHRStats?
     @State private var offWrist: [WristWear.OffInterval] = []
@@ -151,7 +149,7 @@ struct TodayView: View {
         }
     }
 
-    /// Strain card: ring out of 21, then what the strap measured that day (active time, energy, steps if imported).
+    /// Strain card: ring out of 21, then what the strap measured that day (active time, energy).
     private func strainWidget(_ d: DailyMetric?) -> some View {
         let v = d?.strain
         let tint = v.map { StrandPalette.strainColor($0) } ?? StrandPalette.scoreMissing
@@ -171,7 +169,6 @@ struct TodayView: View {
                 VStack(spacing: 6) {
                     chip("Active", dayStats.flatMap { $0.isEmpty ? nil : DayMath.hm($0.activeMin) }, StrandPalette.statusPositive)
                     chip("Energy", dayStats?.kcal.map { "\(Int($0.rounded())) kcal" }, StrandPalette.metricAmber)
-                    if let steps { chip("Steps", steps.formatted(), StrandPalette.accent) }
                 }
             }
             .frame(maxWidth: .infinity)
@@ -201,7 +198,7 @@ struct TodayView: View {
 
     // MARK: - Loading
 
-    // Per picked day: the strap's stored heart-rate samples (summarised once) and Apple Health steps from older rows, if any.
+    // Per picked day: the strap's stored heart-rate samples (summarised once).
     private func loadAll() async {
         let key = activeDay
         if let r = DayMath.range(key) {
@@ -213,8 +210,6 @@ struct TodayView: View {
                                                     until: min(r.to, Int(Date().timeIntervalSince1970)))
             night = SleepTimeline.pick(repo.sleeps, range: r, day: byDay[key])
         }
-        let apple = await repo.appleDailyRows().first { $0.day == key }
-        steps = apple?.steps
     }
 
     // MARK: - Derived text

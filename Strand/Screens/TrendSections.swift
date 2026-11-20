@@ -772,20 +772,17 @@ struct VitalsTrendsContent: View {
 
 // MARK: Activity
 
-/// Load and movement over time: day strain, stored workouts, and steps/energy from older Apple Health rows when a
-/// database holds them (NOOP has no Apple Health import; nothing is shown without rows).
+/// Load and movement over time: day strain, zone time and stored workouts.
 struct ActivityTrendsView: View {
     @EnvironmentObject var repo: Repository
     @State private var workouts: [WorkoutRow] = []
-    @State private var apple: [AppleDaily] = []
     @State private var loads: [DayLoadRecord] = []
     @State private var loaded = false
 
     var body: some View {
-        ActivityTrendsContent(days: repo.days, workouts: workouts, apple: apple, loads: loads, loaded: loaded && repo.loaded)
+        ActivityTrendsContent(days: repo.days, workouts: workouts, loads: loads, loaded: loaded && repo.loaded)
             .task(id: repo.dataVersion) {
                 workouts = await repo.workoutRows()
-                apple = await repo.appleDailyRows()
                 loads = await repo.dayLoads(from: "0000-00-00", to: "9999-99-99")
                 loaded = true
             }
@@ -795,33 +792,22 @@ struct ActivityTrendsView: View {
 struct ActivityTrendsContent: View {
     let days: [DailyMetric]
     let workouts: [WorkoutRow]
-    let apple: [AppleDaily]
     var loads: [DayLoadRecord] = []
     let loaded: Bool
     @State private var range: TrendRange
 
-    init(days: [DailyMetric], workouts: [WorkoutRow], apple: [AppleDaily], loads: [DayLoadRecord] = [], loaded: Bool,
+    init(days: [DailyMetric], workouts: [WorkoutRow], loads: [DayLoadRecord] = [], loaded: Bool,
          initialRange: TrendRange = .month) {
-        self.days = days; self.workouts = workouts; self.apple = apple; self.loads = loads; self.loaded = loaded
+        self.days = days; self.workouts = workouts; self.loads = loads; self.loaded = loaded
         _range = State(initialValue: initialRange)
     }
 
     /// The latest day any activity source reaches.
     private var anchor: Date? {
-        let latest = [days.last?.day, apple.map(\.day).max(),
+        let latest = [days.last?.day,
                       workouts.map(\.startTs).max().map(AnalyticsEngine.dayString)].compactMap { $0 }.max()
         return latest.flatMap(TrendWindow.date)
     }
-
-    private func appleSeries(_ value: (AppleDaily) -> Double?, anchor: Date?) -> TrendSeries {
-        let all = apple.compactMap { a -> TrendPoint? in
-            guard let v = value(a), let d = TrendWindow.date(a.day) else { return nil }
-            return TrendPoint(date: d, value: v)
-        }.sorted { $0.date < $1.date }
-        return TrendWindow.resolve(all, range: range, anchor: anchor)
-    }
-
-    private static func thousands(_ v: Double) -> String { Int(v.rounded()).formatted() }
 
     /// Scored days inside the same window the strain chart shows.
     private func zoneWindow(_ r: TrendRange, anchor: Date?) -> [DayLoadRecord] {
@@ -836,25 +822,23 @@ struct ActivityTrendsContent: View {
             let anchor = self.anchor
             let strain = TrendWindow.series(days, { $0.strain }, range: range, anchor: anchor)
             let sessions = WorkoutWindow(workouts: workouts, range: range, anchor: anchor)
-            let steps = appleSeries({ $0.steps.map(Double.init) }, anchor: anchor)
-            let energy = appleSeries({ $0.activeKcal }, anchor: anchor)
 
-            if strain.points.isEmpty && workouts.isEmpty && steps.points.isEmpty && energy.points.isEmpty {
+            if strain.points.isEmpty && workouts.isEmpty {
                 ComingSoon(what: loaded ? "No activity stored yet. Day strain appears as the strap records, and workouts come with a WHOOP export imported in Settings → Data."
                                         : "Loading your activity…")
             } else {
                 TrendRangeBar(range: $range, sparseNote: strain.widened ? strain.caption : nil)
-                summary(strain: strain, sessions: sessions, steps: steps, energy: energy)
+                summary(strain: strain, sessions: sessions)
                 TrendLineCard(title: "Day strain", unit: "", series: strain, gradient: StrandPalette.strainGradient,
                               valueRange: 0...21, format: { String(format: "%.1f", $0) },
                               note: "cardiovascular load, awake time")
                 ZoneTotalsCard(totals: ZoneTotals.sum(zoneWindow(strain.effective, anchor: anchor)), range: strain.effective)
-                charts(sessions: sessions, steps: steps, energy: energy)
+                workoutsCard(sessions)
             }
         }
     }
 
-    private func summary(strain: TrendSeries, sessions: WorkoutWindow, steps: TrendSeries, energy: TrendSeries) -> some View {
+    private func summary(strain: TrendSeries, sessions: WorkoutWindow) -> some View {
         TrendSummaryRow {
             TrendStat(label: "Average strain", value: strain.mean.map { String(format: "%.1f", $0) }, unit: "/ 21",
                       caption: strain.points.isEmpty ? "Not recorded" : "per day",
@@ -865,13 +849,6 @@ struct ActivityTrendsContent: View {
                       symbol: "figure.run", accent: StrandPalette.statusPositive)
             TrendStat(label: "Workout time", value: sessions.rows.isEmpty ? nil : DayMath.hm(sessions.totalMinutes), caption: sessions.topActivity,
                       symbol: "stopwatch.fill", accent: StrandPalette.metricAmber)
-            if !steps.points.isEmpty {
-                TrendStat(label: "Average steps", value: steps.mean.map(Self.thousands), caption: "Apple Health",
-                          symbol: "shoeprints.fill", accent: StrandPalette.accent)
-            } else if !energy.points.isEmpty {
-                TrendStat(label: "Active energy", value: energy.mean.map(Self.thousands), unit: "kcal", caption: "Apple Health",
-                          symbol: "bolt.heart.fill", accent: StrandPalette.metricRose)
-            }
         }
     }
 
@@ -888,25 +865,6 @@ struct ActivityTrendsContent: View {
         } footer: {
             TrendFooter([("Sessions", "\(sessions.rows.count)"), ("Active weeks", "\(sessions.weeks.count)"),
                          ("Longest", sessions.longestMinutes.map(DayMath.hm) ?? "—")], accent: StrandPalette.metricAmber)
-        }
-    }
-
-    @ViewBuilder
-    private func charts(sessions: WorkoutWindow, steps: TrendSeries, energy: TrendSeries) -> some View {
-        if steps.points.isEmpty && energy.points.isEmpty {
-            workoutsCard(sessions)
-        } else {
-            TrendCardGrid {
-                workoutsCard(sessions)
-                if !steps.points.isEmpty {
-                    TrendLineCard(title: "Steps", unit: "", series: steps, gradient: TrendWindow.gradient(StrandPalette.statusPositive),
-                                  valueRange: TrendWindow.valueRange(steps.points, fallback: 0...20_000), format: Self.thousands, note: "Apple Health")
-                }
-                if !energy.points.isEmpty {
-                    TrendLineCard(title: "Active energy", unit: "kcal", series: energy, gradient: TrendWindow.gradient(StrandPalette.metricAmber),
-                                  valueRange: TrendWindow.valueRange(energy.points, fallback: 0...1_000), format: Self.thousands, note: "Apple Health")
-                }
-            }
         }
     }
 }

@@ -262,31 +262,6 @@ public enum SleepStager {
         return max(gaps[gaps.count / 2], 1.0)
     }
 
-    static func windowSize(_ times: [Int]) -> Int {
-        let interval = medianIntervalS(times)
-        return max(minWindowSamples, Int(Double(stillWindowMin * 60) / interval))
-    }
-
-    /// Per-record sleep flags from a rolling fraction of "still" samples.
-    // A sample is 'sleep' when >= 70% of samples in a ~15 min window around it are still.
-    static func classifyStill(_ grav: [GravitySample], _ deltas: [Double]) -> [Bool] {
-        let n = grav.count
-        if n < 2 { return [Bool](repeating: false, count: n) }
-        let half = windowSize(grav.map { $0.ts }) / 2
-        var flags: [Bool] = []
-        flags.reserveCapacity(n)
-        // Prefix count of still samples so each window is O(1) instead of re-scanning ~15 min of samples per record.
-        var stillPrefix = [Int](repeating: 0, count: n + 1)
-        for j in 0..<n { stillPrefix[j + 1] = stillPrefix[j] + (deltas[j] < gravityStillThresholdG ? 1 : 0) }
-        for i in 0..<n {
-            let lo = max(0, i - half)
-            let hi = min(n, i + half + 1)
-            let stillCount = stillPrefix[hi] - stillPrefix[lo]
-            flags.append(Double(stillCount) / Double(hi - lo) >= stillFraction)
-        }
-        return flags
-    }
-
     struct Period { var stage: String; var start: Int; var end: Int }
 
     /// Collapse per-record flags into contiguous runs, breaking on class change
@@ -359,22 +334,6 @@ public enum SleepStager {
 
     static func rowsBetween<T>(_ rows: [T], start: Int, end: Int, ts: (T) -> Int) -> [T] {
         rows.filter { ts($0) >= start && ts($0) <= end }
-    }
-
-    /// Day HR baseline = median bpm over all HR samples; nil if none.
-    static func hrBaseline(_ hr: [HRSample]) -> Double? {
-        let vals = hr.map { Double($0.bpm) }
-        guard !vals.isEmpty else { return nil }
-        return HRVAnalyzer.median(vals)
-    }
-
-    // Gravity says 'still'; HR confirms. Reading in bed while awake has HR well above the day's median.
-    static func confirmSleepWithHR(_ p: Period, hr: [HRSample], baseline: Double?) -> Bool {
-        guard let baseline = baseline else { return true }
-        let seg = rowsBetween(hr, start: p.start, end: p.end) { $0.ts }
-        if seg.count < hrRefineMinSamples { return true }
-        let meanHR = Double(seg.reduce(0) { $0 + $1.bpm }) / Double(seg.count)
-        return meanHR <= baseline * hrSleepBaselineMult
     }
 
     // MARK: - Quiet-minute grid

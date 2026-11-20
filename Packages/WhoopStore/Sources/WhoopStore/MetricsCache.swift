@@ -202,14 +202,6 @@ extension WhoopStore {
 }
 
 extension WhoopStore {
-    /// Delete the sleep sessions stored under `deviceId` that END in [from, to). Used before a re-score so sessions
-    /// found by an older rule (a different start time, a nap since rejected) do not linger next to the new ones.
-    public func deleteSleepSessions(deviceId: String, from: Int, to: Int) async throws {
-        try syncWrite { db in
-            try db.execute(sql: "DELETE FROM sleepSession WHERE deviceId = ? AND endTs >= ? AND endTs < ?",
-                           arguments: [deviceId, from, to])
-        }
-    }
 }
 
 // MARK: - Sleep corrections (user source data)

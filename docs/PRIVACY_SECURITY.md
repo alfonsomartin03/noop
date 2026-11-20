@@ -6,7 +6,7 @@ NOOP processes strap data and imported files locally. The app has no account, cl
 
 - Bluetooth is **bidirectional**: observations arrive from the strap; the app sends connection, stream, clock and history-control commands. Hardware commands can change device state. See the [command registry](reverse-engineering/COMMAND_REGISTRY.md) and [safety matrix](reverse-engineering/SAFETY_MATRIX.md).
 - Settings → Data imports user-selected WHOOP ZIP/folder exports and exports/restores database backups. User-directed exports can leave the app's container; NOOP does not upload them.
-- Apple Health parsers remain in the library, but are not exposed by the current app's import UI.
+- NOOP imports only WHOOP exports; there is no Apple Health import.
 
 ## Local storage
 

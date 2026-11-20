@@ -1,12 +1,12 @@
 # Contributing to NOOP
 
-NOOP is a local macOS SwiftUI app for WHOOP data. Work from the current source and [screen map](SCREEN_INVENTORY.md), not old feature proposals. The product name is NOOP; the target and scheme remain `Strand`.
+NOOP is a local macOS SwiftUI app for WHOOP data. Work from the current source and [architecture](ARCHITECTURE.md), not old feature proposals. The product name is NOOP; the target and scheme remain `Strand`.
 
 ## Before changing code
 
 1. Read [README](../README.md), [architecture](ARCHITECTURE.md), and the relevant package sources/tests.
 2. Check `git status` and preserve unrelated local work. Distinguish committed behavior from in-progress files before documenting a feature as released.
-3. Keep changes focused on the existing app. There is no mobile app target, cloud integration, coaching/automation screen, or Apple Health import UI to maintain.
+3. Keep changes focused on the existing app. There is no mobile app target, cloud integration, coaching/automation screen, or Apple Health import to maintain.
 4. Keep the project and upstream credits in [ATTRIBUTION.md](../ATTRIBUTION.md).
 
 ## Where changes belong

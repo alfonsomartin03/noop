@@ -9,7 +9,7 @@ import Foundation
 // The mapping is applied once, to summed load:
 //   activity index = softCeiling(4.56 · ln(1 + load))
 //   day index      = softCeiling(4.67 · ln(1 + load))
-// Scales and zone weights come from one person's WHOOP export (see docs/WHOOP_REVERSE_ENGINEERING.md; the fit's figures
+// Scales and zone weights come from one person's WHOOP export (see docs/archive/WHOOP_REVERSE_ENGINEERING.md; the fit's figures
 // are repository claims, not independently reproduced). The fit's rest-day constant was removed: it stood in for load
 // that was never measured, whereas day load is now integrated over the whole observed day.
 //

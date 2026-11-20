@@ -51,6 +51,7 @@ final class AppModel: ObservableObject {
         self.heart = LiveHeartRate(following: live)
         self.ble = BLEManager(state: live, deviceId: "my-whoop")
         self.repo = Repository(deviceId: "my-whoop")
+        repo.prewarm()   // open the store and read the dashboard rows while the window is built
         self.intelligence = IntelligenceEngine(repo: repo, profile: profile, deviceId: "my-whoop")
         let repoRef = repo
         self.alarms = AlarmController(history: { await repoRef.storeHandle() })
@@ -177,17 +178,6 @@ final class AppModel: ObservableObject {
         Task { @MainActor in
             guard let store = await repo.storeHandle() else { return }
             do { try await store.saveSleepCorrection(SleepCorrections.row(c)) } catch { return }
-            await intelligence.analyzeRecent()
-            await repo.refresh()
-            repo.dataVersion += 1
-        }
-    }
-
-    /// Remove a correction (back to automatic classification for that span).
-    func undoSleepCorrection(id: String) {
-        Task { @MainActor in
-            guard let store = await repo.storeHandle() else { return }
-            try? await store.deleteSleepCorrection(id: id)
             await intelligence.analyzeRecent()
             await repo.refresh()
             repo.dataVersion += 1

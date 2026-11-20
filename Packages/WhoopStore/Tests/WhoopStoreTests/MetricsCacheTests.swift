@@ -16,7 +16,7 @@ final class MetricsCacheTests: XCTestCase {
     }
 
     func testSchemaVersionBumped() {
-        XCTAssertEqual(WhoopStoreInfo.schemaVersion, 15)
+        XCTAssertEqual(WhoopStoreInfo.schemaVersion, 19)
     }
 
     // MARK: - sleep sessions
@@ -142,23 +142,5 @@ final class MetricsCacheTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(row.respRateBpm), 14.8, accuracy: 0.001)
     }
 
-    // MARK: - read highwater cursor (distinct prefix from upload highwater)
 
-    func testReadHighwaterRoundTripsUnderDistinctPrefix() async throws {
-        let store = try await WhoopStore.inMemory()
-        let before = try await store.readHighwater("hr")
-        XCTAssertNil(before)
-        try await store.setReadHighwater("hr", 1_716_400_000)
-        let after = try await store.readHighwater("hr")
-        XCTAssertEqual(after, 1_716_400_000)
-        // Distinct from the upload highwater for the same stream.
-        try await store.setHighwater("hr", 42)
-        let uploadHW = try await store.highwater("hr")
-        let readHW = try await store.readHighwater("hr")
-        XCTAssertEqual(uploadHW, 42)
-        XCTAssertEqual(readHW, 1_716_400_000)
-        // Raw rows are stored under the distinct prefix.
-        let raw = try await store.cursor("read:hr")
-        XCTAssertEqual(raw, 1_716_400_000)
-    }
 }

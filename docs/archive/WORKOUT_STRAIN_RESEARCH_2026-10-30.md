@@ -1,5 +1,7 @@
 # NOOP: workout detection, training load, and strain
 
+> **Archived** (2026-11-20): historical record, not maintained. Check current source, tests and [ARCHITECTURE](../ARCHITECTURE.md) before relying on it.
+
 Research and repository review: 30 October 2026.
 
 ## Main recommendation

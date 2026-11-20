@@ -1,5 +1,7 @@
 # Unknowns and hypotheses
 
+> **Archived** (2026-11-20): historical record, not maintained. Check current source, tests and [ARCHITECTURE](../ARCHITECTURE.md) before relying on it.
+
 | Topic | Status | How to resolve safely |
 |---|---|---|
 | Does the trim pointer **erase** data, or only mark it read? GET_DATA_RANGE still reports an oldest record from 2026-10-11 after many acks. | UNKNOWN | Passive: compare oldest time across days. Goose's SET_READ_POINTER (33) might re-serve trimmed data; restricted, needs approval. |

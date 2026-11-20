@@ -76,7 +76,7 @@ public enum VO2MaxEstimate {
 ///   performance = 100 × min(1, asleep / need)
 /// Only NOOP's own rows feed it (never imported WHOOP need or performance). It is the "hours vs need" component that
 /// WHOOP describes; WHOOP's score also weighs consistency, efficiency and an unexported sleep-stress term
-/// (docs/WHOOP_REVERSE_ENGINEERING.md), so the two are labelled differently and are not expected to match.
+/// (docs/archive/WHOOP_REVERSE_ENGINEERING.md), so the two are labelled differently and are not expected to match.
 public enum SleepPerformance {
     public static let version = "noop-sleep-perf-v1"
     public static let needNights = 14

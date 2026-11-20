@@ -48,16 +48,16 @@ private func metricAccent(_ m: MetricDescriptor) -> Color {
         return StrandPalette.accent
     case "strain", "hr_zones45_min", "hr_zones_all_min", "strength_min", "hr_zones13_min":
         return StrandPalette.strainColor(14)              // mid-strain hue
-    case "hrv", "vo2max", "lean_mass":
+    case "hrv":
         return StrandPalette.metricPurple
-    case "rhr", "stress", "sleep_debt_min", "body_fat", "max_hr":
+    case "rhr", "stress", "sleep_debt_min", "max_hr":
         return StrandPalette.metricRose
-    case "spo2", "steps":
+    case "spo2":
         return StrandPalette.metricCyan
-    case "energy_kcal", "active_kcal":
+    case "energy_kcal":
         return StrandPalette.metricAmber
     default:
-        return m.source == "apple-health" ? StrandPalette.metricCyan : StrandPalette.textPrimary
+        return StrandPalette.textPrimary
     }
 }
 
@@ -104,8 +104,7 @@ enum ExploreRange: Int, CaseIterable, Identifiable, Hashable {
 // MARK: - Root: categorized list
 
 /// The "Explore" picker — categories as sections, metrics as rows, each pushing a
-/// MetricDetailView. Metrics with no stored series are left out (e.g. Apple Health keys: NOOP has no Apple Health
-/// import), once a quick emptiness probe has run.
+/// MetricDetailView. Metrics with no stored series are left out once a quick emptiness probe has run.
 // Explorer: every catalog metric with data, grouped by category.
 struct MetricExplorerView: View {
     @EnvironmentObject var repo: Repository
@@ -187,7 +186,7 @@ private struct MetricRow: View {
                 Text(metric.title)
                     .font(StrandFont.body)
                     .foregroundStyle(StrandPalette.textPrimary)
-                Text(metric.source == "apple-health" ? "Apple Health" : "WHOOP import")
+                Text("WHOOP import")
                     .font(StrandFont.footnote)
                     .foregroundStyle(StrandPalette.textTertiary)
             }

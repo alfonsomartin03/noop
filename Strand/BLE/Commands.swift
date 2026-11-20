@@ -12,7 +12,7 @@ public enum WhoopCommand: UInt8, CaseIterable {
     case toggleRealtimeHR      = 3
     /// TOGGLE_GENERIC_HR_PROFILE: turn the strap's standard Bluetooth heart-rate broadcast (0x180D)
     /// on/off — the same switch as "HR Broadcast" in the WHOOP app. Payload `[0x01]` on / `[0x00]` off
-    /// (matches a public WHOOP 4.0 write-up; see docs/HR_BROADCAST_RESEARCH.md). The strap confirms with
+    /// (matches a public WHOOP 4.0 write-up; see docs/archive/HR_BROADCAST_RESEARCH.md). The strap confirms with
     /// BLE_HR_PROFILE_ENABLED/DISABLED events, which is how the UI verifies it. Safe/reversible.
     /// Verified live on a WHOOP 5.0 (2026-10-21): same cmd 14 + `[0x01]` gets result=1 and 0x2A37 packets start.
     /// "On" is only ever sent from the user's toggle — the broadcast is for other devices, never auto-enabled.

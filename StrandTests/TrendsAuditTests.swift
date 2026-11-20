@@ -54,10 +54,6 @@ enum TrendsFixture {
                               strain: 8 + Double(i % 9), distanceM: i % 5 == 0 ? 6200 : nil, zonesJSON: nil, notes: nil)
         }
     }
-    static func apple(_ n: Int) -> [AppleDaily] {
-        (0..<n).map { AppleDaily(day: day($0, from: anchor), steps: 6000 + ($0 * 733) % 7000, activeKcal: 380 + Double(($0 * 37) % 300), basalKcal: 1650,
-                                 vo2max: nil, avgHr: 68, maxHr: 150, walkingHr: 95, weightKg: nil) }
-    }
     /// Real `DayLoadRecord`s from the engine over synthetic heart rate (zone seconds for the Activity zone card).
     static func loads(_ n: Int) -> [DayLoadRecord] {
         (0..<n).compactMap { i in
@@ -284,19 +280,19 @@ final class TrendsRenderTests: XCTestCase {
         let full = TrendsFixture.days(420, missing: TrendsFixture.gaps)
         let noop = TrendsFixture.days(60, missing: [5, 6], noop: true)
         let r = try await repo(days: full, imported: full, noop: noop)
-        let workouts = TrendsFixture.workouts(40), apple = TrendsFixture.apple(60), loads = TrendsFixture.loads(10)
+        let workouts = TrendsFixture.workouts(40), loads = TrendsFixture.loads(10)
         for range in TrendRange.allCases {
             let tag = range.label
             try await render("scores-\(tag)", TrendsView(initialRange: range), repo: r, height: 2600)
             try await render("sleep-\(tag)", SleepTrendsContent(days: full, loaded: true, initialRange: range), repo: r)
             try await render("vitals-\(tag)", VitalsTrendsContent(days: full, loaded: true, importedDays: full, noopDays: noop, initialRange: range), repo: r, height: 2600)
-            try await render("activity-\(tag)", ActivityTrendsContent(days: full, workouts: workouts, apple: apple, loads: loads, loaded: true, initialRange: range), repo: r, height: 2600)
+            try await render("activity-\(tag)", ActivityTrendsContent(days: full, workouts: workouts, loads: loads, loaded: true, initialRange: range), repo: r, height: 2600)
         }
         // Narrow + dark on non-default ranges.
         try await render("scores-6M-narrow-dark", TrendsView(initialRange: .half), repo: r, width: 760, height: 3000, dark: true)
         try await render("sleep-W-narrow-dark", SleepTrendsContent(days: full, loaded: true, initialRange: .week), repo: r, width: 760, height: 2600, dark: true)
         try await render("vitals-1Y-narrow-dark", VitalsTrendsContent(days: full, loaded: true, importedDays: full, noopDays: noop, initialRange: .year), repo: r, width: 760, height: 3200, dark: true)
-        try await render("activity-ALL-narrow-dark", ActivityTrendsContent(days: full, workouts: workouts, apple: apple, loads: loads, loaded: true, initialRange: .all), repo: r, width: 760, height: 3200, dark: true)
+        try await render("activity-ALL-narrow-dark", ActivityTrendsContent(days: full, workouts: workouts, loads: loads, loaded: true, initialRange: .all), repo: r, width: 760, height: 3200, dark: true)
     }
 
     /// Nested surfaces the top-of-page renders can't reach (#18 completion guide): Activity ▸ Sessions + a workout detail
@@ -350,12 +346,12 @@ final class TrendsRenderTests: XCTestCase {
         try await render("sparse-scores-M", TrendsView(initialRange: .month), repo: rs)
         try await render("sparse-sleep-W", SleepTrendsContent(days: sparse, loaded: true, initialRange: .week), repo: rs)
         try await render("sparse-vitals-M", VitalsTrendsContent(days: sparse, loaded: true, noopDays: sparse, initialRange: .month), repo: rs)
-        try await render("sparse-activity-M", ActivityTrendsContent(days: sparse, workouts: TrendsFixture.workouts(2), apple: [], loaded: true, initialRange: .month), repo: rs)
+        try await render("sparse-activity-M", ActivityTrendsContent(days: sparse, workouts: TrendsFixture.workouts(2), loaded: true, initialRange: .month), repo: rs)
         let re = try await repo(days: [])
         try await render("empty-scores", TrendsView(), repo: re, height: 700)
         try await render("empty-sleep", SleepTrendsContent(days: [], loaded: true), repo: re, height: 700)
         try await render("empty-vitals", VitalsTrendsContent(days: [], loaded: true), repo: re, height: 700)
-        try await render("empty-activity", ActivityTrendsContent(days: [], workouts: [], apple: [], loaded: true), repo: re, height: 700)
+        try await render("empty-activity", ActivityTrendsContent(days: [], workouts: [], loaded: true), repo: re, height: 700)
         try await render("empty-highlights", HighlightsContent(inputs: [:], range: .constant(.month1), sourceRaw: .constant("")), repo: re, height: 700)
     }
 
