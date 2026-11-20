@@ -10,7 +10,7 @@ import WhoopProtocol
 // HRV-dominant, baseline-normalized proxy.
 //
 // Weighting, refitted to a WHOOP export (628 nights, MAE 4.5 vs WHOOP's score; was 5.8 with the
-// previous 0.60/0.20/0.05/0.15 — see docs/WHOOP_REVERSE_ENGINEERING.md). HRV carries nearly all of it:
+// previous 0.60/0.20/0.05/0.15 — see docs/archive/WHOOP_REVERSE_ENGINEERING.md). HRV carries nearly all of it:
 //   higher HRV vs baseline       → higher recovery  (W_HRV   = 0.86, dominant)
 //   lower resting HR vs baseline → higher recovery  (W_RHR   = 0.04)
 //   lower resp vs baseline       → higher recovery  (W_RESP  = 0.07)

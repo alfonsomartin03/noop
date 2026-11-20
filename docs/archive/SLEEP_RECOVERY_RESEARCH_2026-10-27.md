@@ -1,5 +1,7 @@
 # NOOP sleep and recovery: evidence and engineering direction
 
+> **Archived** (2026-11-20): historical record, not maintained. Check current source, tests and [ARCHITECTURE](../ARCHITECTURE.md) before relying on it.
+
 Research date: October 27, 2026. Prepared for improving NOOP's local calculations.
 
 This is a focused evidence review, not a registered systematic review or an exhaustive search of every publication. It combines peer-reviewed validation experiments, reviews and consensus statements, manufacturer technical material, public datasets, and inspection of the current working tree. Full-text passages were inspected where accessible; some papers were available only through abstracts/indexed excerpts. Those limitations are recorded in the source register. Manufacturer performance is not independent validation. A study of one hardware/software version does not validate another version—or NOOP's use of that hardware.
@@ -32,7 +34,7 @@ These observations describe files inspected on the research date, including exis
 | Apple import has an explicitly named SDNN field, but exports it under generic `hrv` | `AppleHealthAggregator.swift`, around line 410 | Trace consumers; prevent a generic label from allowing SDNN to enter an RMSSD baseline. This is a collision risk, not a confirmed finding that every recovery path mixes them. |
 | New respiratory estimation reconstructs time from interval lengths | `RespiratoryRate.swift`; call from `SleepVitals.swift` passes RR values | Audit packet gaps and time compression. Cumulative interval time is appropriate only when beat continuity is established. |
 
-Code entry points: [analytics package](/Users/alfonsomartin/Desktop/noop/Packages/StrandAnalytics/Sources/StrandAnalytics), [app orchestration](/Users/alfonsomartin/Desktop/noop/Strand/Data/IntelligenceEngine.swift), [existing audit](/Users/alfonsomartin/Desktop/noop/docs/SLEEP_STRAIN_AUDIT.md).
+Code entry points: [analytics package](/Users/alfonsomartin/Desktop/noop/Packages/StrandAnalytics/Sources/StrandAnalytics), [app orchestration](/Users/alfonsomartin/Desktop/noop/Strand/Data/IntelligenceEngine.swift), [existing audit](SLEEP_STRAIN_AUDIT.md).
 
 ## 3. What validation studies actually establish
 

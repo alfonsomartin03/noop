@@ -97,15 +97,6 @@ final class Collector {
         return try? await s.latestHRSampleTs(deviceId: deviceId)
     }
 
-    /// Apply the raw-retention policy. Returns rows pruned (0 if no concrete store).
-    @discardableResult
-    func prune() async -> Int {
-        guard let s = concreteStore else { return 0 }
-        return (try? await s.pruneRaw(now: now(),
-                                keepWindowSeconds: PrunePolicy.keepWindowSeconds,
-                                maxUnsyncedBytes: PrunePolicy.maxUnsyncedBytes)) ?? 0
-    }
-
     /// Buffer one complete frame (synchronous: preserves delegate arrival order).
     /// Auto-flushes via a detached Task when the cadence threshold is hit (flush is async).
     // Frames are kept in arrival order; nothing is decoded until a clock reference exists, because live timestamps need it.

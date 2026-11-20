@@ -580,9 +580,7 @@ struct StrainDetailView: View {
     @State private var cached: DayHRStats?
     @State private var workouts: [WorkoutRow] = []
     @State private var selectedWorkout: WorkoutSelection?
-    @State private var steps: Int?
     @State private var strapSteps: StepCounterSample.Window?
-    @State private var activeKcal: Double?
     @State private var load: DayLoadRecord?
 
     private static let strengthWords = ["strength", "weight", "lift", "functional", "crossfit", "gym", "resistance", "hiit"]
@@ -649,13 +647,6 @@ struct StrainDetailView: View {
                     DetailTile(title: "Steps", value: (s.isComplete ? "" : "≥ ") + s.steps.formatted(),
                                caption: "Recorded strap increases · experimental",
                                tint: StrandPalette.statusPositive, details: Self.stepDetails(s))
-                }
-                if let steps {
-                    DetailTile(title: "Steps (Apple)", value: steps.formatted(), caption: "From Apple Health", tint: StrandPalette.statusPositive)
-                }
-                if let activeKcal {
-                    DetailTile(title: "Active energy (Apple)", value: "\(Int(activeKcal.rounded()))", unit: "kcal",
-                               caption: "From Apple Health", tint: StrandPalette.metricAmber)
                 }
             }
 
@@ -777,9 +768,6 @@ struct StrainDetailView: View {
         load = await repo.dayLoad(dayKey)
         cached = await DayHRStats.build(hr: samples, profile: profile, restingHR: day?.restingHr, maxHR: load?.calibration.hrMax)
         workouts = await repo.workoutRows().filter { $0.startTs >= r.from && $0.startTs < r.to }.sorted { $0.startTs < $1.startTs }
-        let apple = await repo.appleDailyRows().first { $0.day == dayKey }
-        steps = apple?.steps
-        activeKcal = apple?.activeKcal
         strapSteps = await repo.strapSteps(from: r.from, to: r.to)
     }
 }

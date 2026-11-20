@@ -8,7 +8,7 @@ struct MetricDescriptor: Identifiable, Hashable {
     let title: String
     let category: String
     let unit: String
-    let source: String       // "my-whoop" or "apple-health"
+    let source: String       // "my-whoop" (WHOOP import)
     let icon: String
     let decimals: Int
     let higherIsBetter: Bool?
@@ -20,7 +20,7 @@ struct MetricDescriptor: Identifiable, Hashable {
     }
 }
 
-/// Canonical catalog — mirrors the WHOOP "Trend View" plus Apple Health body metrics.
+/// Canonical catalog — mirrors the WHOOP "Trend View".
 /// Keys match exactly what the importers write into metricSeries.
 // Add a metric here and it appears in the Explorer and Compare automatically.
 enum MetricCatalog {
@@ -31,7 +31,6 @@ enum MetricCatalog {
         d("avg_hr", "Average Heart Rate", "Heart", "bpm", "my-whoop", "heart", 0, nil),
         d("max_hr", "Max Heart Rate", "Heart", "bpm", "my-whoop", "bolt.heart", 0, nil),
         d("energy_kcal", "Calories", "Heart", "kcal", "my-whoop", "flame", 0, nil),
-        d("vo2max", "VO₂ Max", "Heart", "", "apple-health", "lungs.fill", 1, true),
 
         // ── Recovery
         d("recovery", "Recovery", "Recovery", "%", "my-whoop", "heart.circle", 0, true),
@@ -58,18 +57,12 @@ enum MetricCatalog {
 
         // ── Strain
         d("strain", "Day Strain", "Strain", "/21", "my-whoop", "flame", 1, nil),
-        d("steps", "Steps", "Strain", "", "apple-health", "figure.walk", 0, true),
         d("hr_zones13_min", "HR Zones 1–3", "Strain", "min", "my-whoop", "heart", 0, nil),
         d("hr_zones45_min", "HR Zones 4–5", "Strain", "min", "my-whoop", "heart.fill", 0, nil),
         d("hr_zones_all_min", "HR Zones (All)", "Strain", "min", "my-whoop", "heart.text.square", 0, nil),
         d("strength_min", "Strength Activity Time", "Strain", "min", "my-whoop", "dumbbell", 0, nil),
-        d("active_kcal", "Active Energy", "Strain", "kcal", "apple-health", "flame.fill", 0, nil),
 
         // ── Health / Body
-        d("weight", "Weight", "Health", "kg", "apple-health", "scalemass", 1, nil),
-        d("body_fat", "Body Fat", "Health", "%", "apple-health", "percent", 1, false),
-        d("lean_mass", "Lean Body Mass", "Health", "kg", "apple-health", "figure.arms.open", 1, true),
-        d("bmi", "BMI", "Health", "", "apple-health", "figure", 1, nil),
         d("stress", "Day Stress", "Health", "/3", "my-whoop", "gauge.with.dots.needle.50percent", 1, false),
     ]
 

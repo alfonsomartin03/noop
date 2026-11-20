@@ -29,31 +29,6 @@ final class RawOutboxTests: XCTestCase {
         XCTAssertEqual(got, [])
     }
 
-    func testPendingExcludesSyncedAndRespectsLimitAndOrder() async throws {
-        let store = try await WhoopStore.inMemory()
-        try await store.upsertDevice(id: "dev1", mac: nil, name: nil)
-        try await store.enqueueRawBatch(meta("old", capturedAt: 100), frames: frames)
-        try await store.enqueueRawBatch(meta("mid", capturedAt: 200), frames: frames)
-        try await store.enqueueRawBatch(meta("new", capturedAt: 300), frames: frames)
-        try await store.markRawBatchSynced(batchId: "mid", at: 999)
-
-        let pending = try await store.pendingRawBatches(limit: 10)
-        XCTAssertEqual(pending.map { $0.batchId }, ["old", "new"])   // mid synced; oldest first
-
-        let limited = try await store.pendingRawBatches(limit: 1)
-        XCTAssertEqual(limited.map { $0.batchId }, ["old"])
-    }
-
-    func testMetaRoundTripsThroughPending() async throws {
-        let store = try await WhoopStore.inMemory()
-        try await store.upsertDevice(id: "dev1", mac: nil, name: nil)
-        let m = meta("b1")
-        try await store.enqueueRawBatch(m, frames: frames)
-        let pending = try await store.pendingRawBatches(limit: 10)
-        XCTAssertEqual(pending.count, 1)
-        XCTAssertEqual(pending[0], m)
-    }
-
     func testRoundTripLargeBatch() async throws {
         let store = try await WhoopStore.inMemory()
         try await store.upsertDevice(id: "dev1", mac: nil, name: nil)

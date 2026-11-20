@@ -451,12 +451,6 @@ public final class BLEManager: NSObject, ObservableObject {
         central?.stopScan()
     }
 
-    /// Apply the raw-outbox retention policy (24h synced window / 50MB unsynced cap).
-    /// Called when the app enters the background; no-op without a concrete store.
-    public func pruneRaw() {
-        Task { @MainActor in await collector?.prune() }
-    }
-
     /// Light storage summary for the UI (decoded rows, raw batches, raw bytes). nil without a store.
     public func storageStats() async -> (decodedRows: Int, rawBatches: Int, rawBytes: Int)? {
         await collector?.storageStats()
@@ -1382,59 +1376,10 @@ public final class BLEManager: NSObject, ObservableObject {
 
     // MARK: Alarm API (M6 — additive; does NOT touch connect/offload/sync flows)
 
-    /// Arm the strap's firmware alarm for `date` (UTC).
-    ///
-    /// Sequence: SET_CLOCK first to ensure the strap RTC is UTC-correct, then SET_ALARM_TIME.
-    /// The strap will buzz at `date` even if the app is backgrounded or force-quit
-    /// (event STRAP_DRIVEN_ALARM_EXECUTED=57). This is the guaranteed fixed-time fallback path —
-    /// the smart-wake layer (`SmartAlarmController`) fires on top of this if conditions are met,
-    /// but this firmware alarm always fires as the safety net.
-    ///
-    /// On-device verification needed: confirm the strap ACKs SET_ALARM_TIME and that the
-    /// alarm persists across BLE disconnect (cannot be verified in the simulator).
-    // Strap alarm: write the wake time to the strap so it buzzes without the phone.
-    func armStrapAlarm(at date: Date) {
-        // Clamp rather than trap: an out-of-range alarm date (pre-1970 / post-2106) must not crash.
-        let epochSec = UInt32(clamping: Int64(date.timeIntervalSince1970))
-        send(.setClock, payload: BLEManager.setClockPayload())
-        send(.setAlarmTime, payload: WhoopCommand.setAlarmPayload(epochSec: epochSec))
-        log("Alarm: armed for \(date) (epoch \(epochSec))")
-    }
-
     // Wake-alarm commands go through `AlarmStrapLink` (below): AlarmController serializes SET / GET / RUN and matches each
     // answer by its sequence number, so nothing here reports an alarm as stored or rung.
     /// Strap seconds now, from the clock estimate.
     func strapNow() -> Int? { state.clock.map { Int($0.deviceTime(fromHost: Date().timeIntervalSince1970).rounded()) } }
-
-    /// Disarm the currently-armed firmware alarm.
-    func disableStrapAlarm() {
-        send(.disableAlarm, payload: [0x01])
-        log("Alarm: disarmed")
-    }
-
-    /// Request the currently-armed alarm time from the strap (response arrives on cmd-notify char).
-    /// Parsing the reply is optional/bonus — the raw bytes will appear in the BLE log.
-    func getStrapAlarm() {
-        send(.getAlarmTime, payload: [0x01])
-        log("Alarm: requested current alarm time")
-    }
-
-    /// Fire an immediate alarm buzz on the strap for testing.
-    ///
-    /// Uses RUN_HAPTICS_PATTERN (cmd 79) with patternId=2, 3 loops — the same pattern the official
-    /// WHOOP app uses for alarms (verified: patternId=2, observed for interoperability), plus RUN_ALARM
-    /// (cmd 68) as a belt-and-suspenders. patternId=2 gives the characteristic graduated alarm buzz.
-    ///
-    /// Alternative waveform form (12-byte):
-    ///   [wfe1=47, wfe2=152, 0,0,0,0,0,0, loop u16=0, overall_loop=7, dur=30]
-    /// — note for future refinement; the preset id=2 form is simpler and confirmed to buzz on-device.
-    ///
-    /// Haptic firing cannot be verified in the simulator (no strap motor). Test on-device only.
-    func testAlarmBuzz() {
-        send(.runHapticsPattern, payload: [2, 3, 0, 0, 0])  // patternId=2, 3 loops
-        send(.runAlarm, payload: [0x01])
-        log("Alarm: test buzz fired (patternId=2, runAlarm)")
-    }
 
     /// Parse a standard BLE Heart Rate Measurement (0x2A37) via the pure StandardHeartRate parser.
     private func parseStandardHR(_ data: [UInt8]) {

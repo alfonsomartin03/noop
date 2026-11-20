@@ -1,5 +1,7 @@
 # Heart-rate broadcast: what is known (researched 2026-10-15)
 
+> **Archived** (2026-11-20): historical record, not maintained. Check current source, tests and [ARCHITECTURE](../ARCHITECTURE.md) before relying on it.
+
 Goal: let NOOP switch the strap's standard Bluetooth heart-rate broadcast (service `0x180D`, char `0x2A37`) on and off, as the WHOOP app's "HR Broadcast" setting does.
 
 ## WHOOP 4.0 — documented, implemented

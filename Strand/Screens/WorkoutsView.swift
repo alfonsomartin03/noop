@@ -330,10 +330,7 @@ struct WorkoutsView: View {
         if s == "noop" {
             return SourceBadge("NOOP", tint: StrandPalette.metricRose).accessibilityLabel("Source NOOP auto-detected")
         }
-        let isWhoop = s.contains("whoop")
-        return SourceBadge(isWhoop ? "Whoop" : "Apple",
-                           tint: isWhoop ? StrandPalette.accent : StrandPalette.metricCyan)
-            .accessibilityLabel(isWhoop ? "Source Whoop" : "Source Apple Health")
+        return SourceBadge("Whoop", tint: StrandPalette.accent).accessibilityLabel("Source WHOOP import")
     }
 
     // MARK: - Grid columns
@@ -538,11 +535,11 @@ private func previewWorkoutRows() -> [WorkoutRow] {
                    avgHr: 118, maxHr: 156, strain: 9.4, distanceM: nil,
                    zonesJSON: nil, notes: nil),
         WorkoutRow(startTs: now - day * 2 - 1800, endTs: now - day * 2,
-                   sport: "Cycling", source: "apple_health", durationS: 1800, energyKcal: 240,
+                   sport: "Cycling", source: "whoop", durationS: 1800, energyKcal: 240,
                    avgHr: nil, maxHr: nil, strain: nil, distanceM: 12_800,
                    zonesJSON: nil, notes: nil),
         WorkoutRow(startTs: now - day * 3 - 1500, endTs: now - day * 3,
-                   sport: "Running", source: "apple_health", durationS: 1500, energyKcal: 310,
+                   sport: "Running", source: "whoop", durationS: 1500, energyKcal: 310,
                    avgHr: nil, maxHr: nil, strain: nil, distanceM: 5_100,
                    zonesJSON: nil, notes: nil),
         WorkoutRow(startTs: now - day * 4 - 3300, endTs: now - day * 4,

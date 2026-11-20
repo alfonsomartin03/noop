@@ -7,7 +7,7 @@ import WhoopStore
 // Separate things stay separate: this file measures cardiovascular load from heart rate. That is not muscular strain,
 // calories, tissue damage or recovery time, and a low value during lifting does not mean an easy session. Detecting an
 // episode (WorkoutDetector), logging effort or strength work (TrainingLog) and predicting recovery are different tasks
-// with their own evidence (see docs/WORKOUT_STRAIN_RESEARCH_2026-10-30.md).
+// with their own evidence (see docs/archive/WORKOUT_STRAIN_RESEARCH_2026-10-30.md).
 //
 // Daily load means accumulated AWAKE-TIME load: it is integrated over the day's unique supported seconds outside
 // confidently identified sleep (naps included) and only then attributed to sessions, so splitting or merging episodes
@@ -34,7 +34,7 @@ public enum LoadMethod: String, CaseIterable, Codable, Sendable {
         switch self {
         case .fittedZoneLoad:
             return Descriptor(name: "Fitted zone load", unit: "AU", additive: true, missingInput: nil,
-                              reference: "Weights fitted to one person's WHOOP export (docs/WHOOP_REVERSE_ENGINEERING.md); compatibility fit, not validation")
+                              reference: "Weights fitted to one person's WHOOP export (docs/archive/WHOOP_REVERSE_ENGINEERING.md); compatibility fit, not validation")
         case .edwards:
             return Descriptor(name: "Edwards zone load (%HRmax)", unit: "AU", additive: true, missingInput: nil,
                               reference: "https://pmc.ncbi.nlm.nih.gov/articles/PMC7240108/")

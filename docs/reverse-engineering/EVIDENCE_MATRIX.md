@@ -1,4 +1,4 @@
-# Evidence matrix and next steps (issue #25, 2026-11-17)
+# Evidence matrix, next steps and closure (issue #25, 2026-11-17 → closed 2026-11-20)
 
 Scope: WHOOP 5.0, fw `50.43.1.0`, hw `WG50_r52` (one unit). **No strap commands, writes or hardware contact were made for
 this document.** Inputs, all copies: a SQLite backup of NOOP's database (data to 2026-11-17 16:15 local), the app's
@@ -37,9 +37,10 @@ named) · **I** semantic interpretation · **P** product-ready · **U** unknown.
 5. **Charging fields are coherent but single-session-type.** 117/110/109/3/7/8/21/22 agree with each other across four
    stored sessions. C02b/C06b (2026-11-20) added one session with wearer-timed attach/removal: 151 `[01]` presence
    followed the pack (on while charging and full, zeros after removal), 117 = 4 came with CHARGING_OFF at 100 %.
-6. **Firmware: we hold no image and know nothing first-hand about boot security.** The MCU family (Ambiq, per a paid
-   teardown summary) ships secure boot by default on Apollo4 parts; if WHOOP uses it with its own keys, custom firmware
-   is closed regardless of whether an image is ever obtained. This is the dominant prior, not a measurement.
+6. **Firmware: no image held, no first-hand boot-security evidence.** The 2026-11-20 desk review (§5)
+   corrects the Apollo4 default assumption: secure capability is not proof of WHOOP provisioning it.
+   Custom installation remains unproven; artifact acquisition and spare-unit debug research are possible leads,
+   not demonstrated workarounds.
 
 ## 2 · Evidence matrix
 
@@ -106,39 +107,97 @@ client unless stated; no probe runs.
 | G01 | Event 14 specificity | wearer | Note Mac times. 5 min no touching (control) → 10 deliberate double taps, 30 s apart → 5 min control → 10 single taps → 10 wrist flicks → 10 knocks on a table near the strap. No alarm active. | Count 14 per block (events pull with history). Deliberate taps ≈ 10 and controls 0 supports "double tap"; flicks/knocks firing shows a broader detector. |
 | K01 | Strap clock | owner decision | Option A (no strap write): NOOP stores `receivedAt − deviceTs` offsets and maps stored 5.0 timestamps to Mac time (code change + rescoring). Option B: allow SET_CLOCK on 5.0 (8 bytes `[unix u32][subsec u32]`; persistent write, WHOOP's app sends it). **Decided 2026-11-18: B.** One-shot test passed (−40.47 s → −0.07 s; history still served); NOOP re-syncs at most daily after a completed pull (`ClockResyncPolicy`, key `noop.clock.autoResync`). Option A (re-mapping timestamps stored before the fix) not done. | A is reversible and offline-testable; B fixes drift at the source. |
 
-## 5 · Firmware feasibility ladder
+## 5 · Firmware feasibility and workarounds — desk review 2026-11-20
 
-| Stage | Established | Unknown / blocker | Strongest next evidence (legitimate) | Closes the path if |
-|---|---|---|---|---|
-| A · Update architecture | Updates are app-initiated over BLE ([WHOOP community](https://community.whoop.com/t/how-do-i-update-the-firmware-on-my-whoop-strap/244)); fw `50.43.1.0` read by DIS. MCU: Ambiq Cortex-M4 per [TechInsights summary](https://www.techinsights.com/ko/node/60374) (part not seen). Prohibited DFU commands (142–144, 153/154) exist in the registry. WHOOP 4.0 used Nordic DFU + Maxim parts (ryanbr) — **does not transfer to 5.0**. | 5.0 transport framing, package format, whether the charging pack has its own firmware/update path | Owner-provided WHOOP app package (installed iOS/Android app) inspected offline for update manifests/strings; no install, no traffic interception | the app bundle holds no update logic or only an opaque server fetch |
-| B · Artifacts | **None held.** No public 5.0 package or manifest found (2026-11-16, re-searched 2026-11-17). | Whether packages are cached on the phone after an update; whether they are per-device encrypted | Owner's phone app cache from an update that already happened (backup/export they control) | caches are absent or per-device encrypted |
-| C · Offline analysis | ryanbr documents a 4.0-era container (512-byte header, CRC32s, type 5 = gzip) | 5.0 container, encryption vs compression vs signature, delta vs full | Header/entropy analysis of an artifact from B; preserve source, SHA-256, version, target | the payload is encrypted with a device/vendor key (high entropy, no plaintext structure after decompression) |
-| D · Readout | No read/dump command known; 40/42/44 UNSUPPORTED; fd4b0007 = debug log channel, not memory | SWD exposure, readout protection | **Spare unit only** and separate approval: board photos/test-pad survey (non-destructive). Never trigger protection changes (some MCUs mass-erase) | readout protection enabled with no vendor recovery |
-| E · Custom firmware | Apollo4-family parts support secure boot by default with key revocation and flash protection ([Ambiq SecureSPOT](https://ambiq.com/cn/technology/securespot/), [Apollo4 datasheet](https://contentportal.ambiq.com/documents/20123/388400/Apollo4-SoC-Datasheet.pdf)); 155–159 carry certificate/authorisation labels (labels only) | Whether WHOOP provisioned secure boot/OTA signing; rollback counters; calibration storage; recovery path | Only after C: signature block presence/format in a real image; a documented vendor unlock (none known) | images are signed and the boot ROM verifies them with keys we cannot hold — then custom firmware is **not feasible**, even with an image |
+**Result: no demonstrated custom-firmware installation or reliable downgrade was found. Hardware impossibility
+has not been established.** The owner requested a fresh online investigation after the #47 no-go decision of
+2026-11-19. That historical decision remains the implementation boundary; this review recommends bounded
+artifact/security research, not flashing. No GitHub issue was reopened by this review.
 
-Transport ≠ install ≠ boot ≠ recover: even a captured image proves only the first. Nothing in this ladder involves
-triggering an update, probing private endpoints, interception, signature bypass, unlock or flashing.
+Scope: repository evidence and command implementation, public reverse-engineering projects, firmware archive
+references, FCC filings, Ambiq security documentation and advisories. No binary or owner app package was acquired
+or analysed; no strap commands, debug attachment, update, private-service request or hardware experiment occurred.
+The locally observed target remains WHOOP 5.0 `WG50_r52`, firmware `50.43.1.0`.
 
-**Decision (#47, 2026-11-19, owner): NO-GO for firmware work, for now.**
-- **Acquisition:** no artifact. No public 5.0 package. The `tanarchytan/whoop-firmware` lead returned 404 on every
-  route (repository, contents, README, releases); its status is unknown. WHOOP's release notes list 50.43.2.0 but
-  ship no binary. The tested strap reports 50.43.1.0 (DIS), so that is the locally observed version, not
-  necessarily the latest. No owner app package was inspected (stage A not run).
-- **Readout:** no read path is known (no dump command; 143 exists only inside an update load; 40/42/44 are
-  UNSUPPORTED).
-- **Kept distinct:**
-  - image integrity (container CRCs);
-  - image acceptance, signature verification and rollback at boot;
-  - certificate/session authorisation (155–159, labels only).
+### Security assumptions corrected
 
-  None of these is observed for 5.0.
-- **Unknown:** the exact MCU part and flash map; whether WHOOP provisioned secure boot; debug-port exposure and
-  readout protection; recovery after a failed update; whether the charging pack has its own firmware.
-- **Spare-device prerequisites** (only for any future scope): a dedicated spare strap, a separately reviewed and
-  approved scope, and a known recovery path. None of them exist.
-- **Reopen when:** a provenance-backed artifact or the owner's app package is available, or more is known about the
-  strap's functions. Companion-side decoding continues independently. No update was triggered, no protected service
-  was queried and no debug port was attached.
+Ambiq confirms WHOOP uses Apollo processors [1], but the exact part on this unit remains unknown. The earlier
+statement that Apollo4 ships with customer secure boot enabled was too strong: Ambiq's security guide says
+“An unprogrammed chip defaults to Non-secure mode.” Secure SKU, customer boot policy and lifecycle state are
+separate concepts. Apollo3 also has configurable boot/debug policy [2,3]. These are chip capabilities, not
+measurements of WHOOP's production provisioning. Signed membership certificates (155–159) likewise do not prove
+image signing or boot authentication.
+
+Keep four boundaries distinct: transfer/integrity, installation, authenticated boot, and recovery. Acquiring an
+image or recalculating CRCs does not establish the latter three. Conversely, compression/high entropy alone does
+not establish encryption. A server fetch or empty phone cache closes that acquisition lead, not all acquisition.
+
+### Feasibility ladder
+
+| Route | Evidence and limits | Next evidence / stopping condition |
+|---|---|---|
+| Original image, offline | **None held.** Search-indexed `tanarchytan/whoop-firmware` README describes 4.0, 5.0/MG and pack manifests, hashes and release binaries; direct repository, releases, README and 5.0 manifest requests returned 404 [4]. A former archive lead, not an available download. | Obtain a provenance-backed original/cached artifact; record source, SHA-256, version and target. No recovered binary means no offline firmware conclusions. |
+| App/update architecture | No owner app package inspected. Upstream describes image comparisons and 50.42.1.0 transfer/container contracts, including compressed and decompressed forms [5]. This revises the earlier suggestion that only a 4.0 container was described. | Inspect an owner-controlled app/cache or surviving research artifact. Determine full vs delta, chip-specific code, authentication, boot handoff and recovery. Do not infer successful installation from upstream documentation. |
+| Debug or wired boot | Exact MCU, SWD exposure, protection state and boot policy **UNKNOWN**. Public WG50 FCC internal photographs exist [6]; they establish neither debug pinout nor unlocked access. No read/dump command is known; 143 readback checks a just-written update chunk, not installed firmware. | Spare-unit board/part survey and evidence of actual protection configuration; separately scoped hardware work. No protection changes or erase-to-unlock attempts. |
+| Older signed WHOOP image | Could preserve old behavior without replacing the OS, **if** compatible images and rollback policy permit it. No reliable public downgrade found [5,7]. WHOOP 4.0's Maxim/Nordic architecture does not transfer to 5.0. | Authentic compatible image, rollback/boot-policy evidence and recovery route; stop short of installation without these. |
+| Modified/custom image | Application CRC checks are documented externally; signature, boot acceptance and rollback remain unresolved for our unit [5]. | If WHOOP-enforced authentication requires unavailable keys, ordinary flashing is blocked. An open debug path or permissive boot policy could change feasibility; neither is demonstrated. |
+| Runtime/bootloader flaw | Possible in principle; no WHOOP custom-code or persistent-install demonstration found. See advisories below. | First establish affected implementation, patch state and reachability. Runtime execution would not by itself establish persistence through authenticated boot. |
+| External flash read/replacement | Engineering hypothesis: may recover stored artifacts; contents and boot role unknown. Does not inherently defeat MCU authentication. | Establish memory map and storage role before treating it as an image or boot route. |
+| MCU/board replacement | Engineering alternative, not an unlock: effectively a new wearable using some existing components. | Requires board mapping, drivers, calibration, charging and power management. No implementation proposed. |
+
+### Published vulnerabilities: relevant leads, not a WHOOP exploit
+
+Ambiq's January 21, 2026 advisory covers Cordio host-stack CVE-2024-48981 through CVE-2024-48986 across
+Apollo3/4/5 variants, with fixes available [8]. Our console naming is consistent with Cordio, but this does not
+establish affected code or patch status. The original maintainer disclosure concerns HCI parsing, the
+controller-to-host interface [9]; arbitrary malformed HCI input is not equivalent to an ordinary remote BLE
+command. Memory corruption could be relevant, but reachability, usable code execution and persistence are all
+unproven here. No ready-made WHOOP workaround was found.
+
+The other reviewed Ambiq advisory (PSNGA02EN v1.1, July 27, 2026) concerns Cortex-M55 security extensions and
+toolchains [10], not evidence of a vulnerability on the reported Cortex-M4 WHOOP platform. No demonstrated
+WHOOP fault-injection or boot-security bypass was found in the searches; absence of a result is not proof of
+absence.
+
+### Practical fallback: standard Bluetooth HR and R–R
+
+OpenStrap reports describe proprietary data withholding on some 50.43.x straps and restoration after an official
+signed, device-bound membership token. A November 19 comment reports HR/R–R still flowing on standard
+`0x180D`/`0x2A37` from a reportedly locked 50.43.2.0 strap [11]. This is **external, unverified evidence**; cold-start
+enablement, token state and indefinite operation are not established. Firmware version alone does not diagnose a
+lock, and our working 50.43.1.0 unit has not been shown to be affected.
+
+Locally, `Strand/BLE/Commands.swift` already implements command 14 for standard HR broadcast, with a recorded
+2026-10-21 hardware check; listening is opt-in (`listenToHRBroadcast`). A continuous nearby collector is a
+potential fallback for live HR/R–R, **not implemented or tested here as a locked-device fallback**. It cannot
+recover disconnected history or substitute for temperature, motion and other proprietary records. Existing
+stock-firmware decoding/configuration research remains the practical path for NOOP features.
+
+### Recommendation and boundaries
+
+1. Prioritize a provenance-backed image or owner-controlled app/cache for offline analysis; the former archive
+   and upstream artifact authors are leads. Nobody was contacted in this task.
+2. If hardware research is pursued, identify the MCU and actual debug/boot protection on a dedicated spare.
+   Survey scope needs separate review; flashing still requires a known recovery route. No spare or recovery
+   route was established in this task.
+3. Validate standard HR/R–R as a fallback separately if data access becomes a concern. Do not assume that a
+   membership gate and secure boot are the same mechanism.
+4. Keep custom firmware outside the implementation plan until code loading, boot acceptance and recovery are
+   demonstrated. This desk review changes evidence quality, not the app's command allowlists or safety rules.
+
+### Sources checked 2026-11-20
+
+1. [Ambiq Q2 2025 customer disclosure](https://s206.q4cdn.com/849744944/files/doc_financials/2025/q2/Ambiq-Reports-Second-Quarter-2025-Finanicial-Results-Transcript.pdf).
+2. [Apollo4 Security User's Guide, §5](https://contentportal.ambiq.com/documents/20123/387822/Apollo4-SoC-Security-Users-Guide.pdf): configurable customer security; unprogrammed non-secure default. The indexed tokenized PDF was readable; the bare link was intermittently unavailable.
+3. [Apollo3 Blue security guidelines](https://contentportal.ambiq.com/documents/20123/387797/Apollo3-Blue-Family-Typical-Security-Guidelines-App-Note.pdf).
+4. [Former firmware archive](https://github.com/tanarchytan/whoop-firmware): search-indexed README only; direct routes returned 404. Its binary provenance/hash claims were not independently verified.
+5. [Upstream NOOP update research](https://github.com/ryanbr/noop/blob/main/docs/PROTOCOL_UPDATES.md), baseline 50.42.1.0: community protocol contracts, expressly not a validated installation procedure.
+6. [WHOOP WG50 FCC internal photographs](https://fccid.io/m/f48b526dd1f29ba13dbbcfd43fc7264bcf9d6c15736ba56c5c86f1b9ba925e97.pdf), public filing mirror.
+7. [OpenStrap compatibility assessment](https://github.com/OpenStrap/edge): no reliable downgrade established.
+8. [Ambiq Cordio advisory PSNGA01EN](https://contentportal.ambiq.com/documents/20123/5519281/Ambiq-Security-Advisory-A-SOCAPG-PSNGA01EN-3B-3BP-330BP-330MP-4B-4BL-4BP-510B-510BL.pdf).
+9. [Mbed maintainer disclosure](https://forums.mbed.com/t/mbed-os-ble-security-vulnerabilities/24482): indexed text readable; direct opening redirected to ArmMbed GitHub during this review.
+10. [Ambiq Cortex-M55 advisory PSNGA02EN](https://contentportal.ambiq.com/documents/20123/5519281/Ambiq-Security-Advisory-A-SOCAPG-PSNGA02EN-330BP-330MP-510-510L-510B-510BL-510DL.pdf).
+11. [OpenStrap issue #673](https://github.com/OpenStrap/edge/issues/673): first-hand community reports, including November 19 standard HR/R–R observation; not local acceptance tests.
 
 ## 6 · Ranked next steps
 
@@ -151,7 +210,7 @@ triggering an update, probing private endpoints, interception, signature bypass,
 | 5 | T01 | wear detector behaviour; temperature lag | wearer, charger | 1 h | none | latencies and lag measured once each, repeat if surprising |
 | 6 | G01 | event 14 specificity | wearer | 30 min | none | controls 0 and taps ≥ 8/10, or a clear counterexample |
 | 7 | R26 / event 120 reruns | whether weak relations hold with more days | time | minutes each | none | relation passes the stratified / split-half controls, or is dropped |
-| 8 | Firmware stage A/B (app package, owner's own) | whether any artifact path exists | owner provides package | hours | none (offline) | §5 "closes the path" column |
+| 8 | Firmware stage A/B (app package, owner's own) | whether any artifact path exists | owner provides package | hours | none (offline) | §5 next-evidence / stopping conditions |
 
 Defined for steps before Trends (do not add Trends until #1 and #3 pass): a **daily total** is defined only when the
 reset boundary is known and the day has a reference row before its first step; reset-crossing increments count the
@@ -167,7 +226,7 @@ when the window's first second synced, activity only over synced seconds, "≥ N
   when a pack is at hand. These convert the step counter and charging fields from "supported" to defensible product
   features, and fix a systematic ~40-s timestamp error in all 5.0 data.
 - **Defer:** any R26 feature (no benefit shown over existing HR), event 120 semantics (insufficient data), Trends steps
-  (blocked on S01/W04), and every firmware step beyond reading an owner-provided app package offline.
+  (blocked on S01/W04), and firmware installation; §5 recommends artifact acquisition and offline analysis first.
 - **Would change this:** a public or owner-cached 5.0 image without per-device encryption (re-opens stage C); evidence
   that secure boot is not provisioned (re-opens E, still spare-unit only); a reliable count showing > 5 % step error
   (drop the step feature); a stratified-control-beating R26 HR match on high-HR bursts (re-open R26 as an independent
@@ -175,3 +234,35 @@ when the window's first second synced, activity only over synced seconds, "≥ N
 
 Tools added for this pass (stdlib, read-only on copies, synthetic tests in `Tools/whoop_re/test_offline_checks.py`):
 `strap_clock_offset.py`, `step_reset_scan.py`, `ppg_burst_check.py`, `event120_check.py`.
+
+## 8 · Program closure (2026-11-20)
+
+Issue #25 closes with every original question answered, ruled out, or deferred to the backlog below with its evidence
+and stopping rule. Outcomes, one row per follow-up issue:
+
+| Issue | Outcome | Status at closure |
+|---|---|---|
+| #38 research capture + backup | Full-frame capture, ack gate, backup/restore/replay procedure; live acceptance A01 passed | Closed (done) |
+| #39 live packet 40 | Bounds fix; live R–R unit = ms **CONFIRMED** (L01) | Closed (done) |
+| #40 config reads 121/128 | C08: 4/4 named reads, layout **CONFIRMED**; NOOP never sends them | Closed (done) |
+| #41 charging / pack info | 151 `[01]` layout **CONFIRMED**, 117 = 4 = full, 109 = pack report; app decodes presence and "Fully charged" | Done; interrupted-charge and reconnect-with-pack checks → backlog |
+| #42 steps | Counter tracks walking/running (W01–W03); reset follows alarm rings (S01, 2 mornings) and one removal; no midnight reset; experimental tile with completeness rules | Done at experimental scope; accuracy figure (W04) and deadline-ring reset → backlog |
+| #43 wear + skin temperature | Events 10/9 = off/on **CONFIRMED** (C02a, T03); nightly temperature stored from 11-17, change appears after 5 nights | Done; first change value (~11-22) and an in-night removal → backlog |
+| #44 R18 fields | float@33 = dynamic acceleration **SUPPORTED**, quaternion rejected; u8@29, f32@105 unresolved | Done offline; frozen hold-out (`--since 2026-11-20`, after 11-25) → backlog |
+| #45 R26 / event 120 | R26: **no product use** (weak burst-specific pulse, one channel, no SpO₂); event 120 candidates frozen | Decided; hold-out (~11-27, ≥ 80 reports) → backlog |
+| #46 ordinary-use outcomes | Alarm writes 49 → 2/day **CONFIRMED**; redundant battery reads skipped; daily clock re-sync observed; in-app counters running | Done; multi-day counter rates and controlled drain → backlog |
+| #47 firmware | **No-go** (no image, no read path, auth commands, unknown boot/recovery); desk review 2026-11-20 in §5 | Closed (no-go) |
+| #48 deterministic trend tests | Fixed-date anchor + DST/UTC tests | Closed (done) |
+
+**Backlog after #25** (no strap writes; each runs on copies or passively, rules frozen above):
+
+1. Event-120 hold-out — `event120_check.py --holdout` once ≥ 80 reports exist (~2026-11-27); no verdict below that.
+2. R18 hold-out — `r18_field_inventory.py --since 2026-11-20` after the capture ends (2026-11-25).
+3. W04 counted walk (tally counter, ≥ 1,000 steps, still edges) → step error bound; > 5 % error drops the feature.
+4. Step reset on a deadline (non-early) ring; a tap-free removal.
+5. First nightly skin-temperature change (~2026-11-22) and one off-wrist interval inside a night.
+6. Charging: interrupted charge (~60 %), reconnect with the pack on, 151 latency after a transition.
+7. #46 counters over several days; a controlled discharge window.
+
+Never in scope without a new owner decision: firmware writes or extraction, key sweeps, SET twins (39/41/43),
+121/128 writes.

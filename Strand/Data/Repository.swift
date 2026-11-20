@@ -45,14 +45,69 @@ final class Repository: ObservableObject {
     /// The trailing 7 days (for the week strip), oldest→newest.
     var week: [DailyMetric] { Array(days.suffix(7)) }
 
+    /// The one in-flight open, shared by every caller. Screens and the launch refresh all ask for the store at once;
+    /// without this each opened its own handle and re-ran the migrator (four opens per launch, measured).
+    private var opening: Task<WhoopStore?, Never>?
+    /// Rows for the first refresh, read while the window is still being built (`prewarm`). Consumed once.
+    private var prefetched: Task<Rows?, Never>?
+
+    /// The rows a refresh merges. Read on the store's actor, never on the main actor.
+    private struct Rows: Sendable {
+        let imported: [DailyMetric], computed: [DailyMetric]
+        let impSleep: [CachedSleepSession], compSleep: [CachedSleepSession]
+        let readAt: Date
+    }
+
+    /// Launch: open the store and read the first refresh's rows off the main actor right away. Building the first window
+    /// holds the main actor for ~250 ms (measured on a release build); before this the open and the queries waited for it.
+    func prewarm() {
+        guard store == nil, opening == nil else { return }
+        let task = Self.openTask(deviceId: deviceId)
+        opening = task
+        let ids = (deviceId, computedDeviceId)
+        prefetched = Task.detached(priority: .userInitiated) {
+            guard let s = await task.value else { return nil }
+            return await Self.readRows(store: s, deviceId: ids.0, computedDeviceId: ids.1, nDays: 4000, now: Date())
+        }
+    }
+
+    nonisolated private static func openTask(deviceId: String) -> Task<WhoopStore?, Never> {
+        Task.detached(priority: .userInitiated) {
+            guard let path = try? StorePaths.defaultDatabasePath() else { return nil }
+            let opened = Date()
+            let s = try? await WhoopStore(path: path)
+            if let s { try? await s.upsertDevice(id: deviceId, mac: nil, name: "WHOOP") }
+            if LaunchMode.fixtureStore != nil {
+                let ms = Int((Date().timeIntervalSince(opened) * 1000).rounded())
+                let since = Int((opened.timeIntervalSince(LaunchMode.started) * 1000).rounded())
+                FileHandle.standardError.write(Data("[perf] store open \(ms) ms (began \(since) ms after launch)\n".utf8))
+            }
+            return s
+        }
+    }
+
     // Lazy open: the database is created on first use.
     private func ensureStore() async -> WhoopStore? {
         if let store { return store }
-        guard let path = try? StorePaths.defaultDatabasePath() else { return nil }
-        let s = try? await WhoopStore(path: path)
-        if let s { try? await s.upsertDevice(id: deviceId, mac: nil, name: "WHOOP") }
-        store = s
-        return s
+        let task = opening ?? Self.openTask(deviceId: deviceId)
+        opening = task
+        let s = await task.value
+        if store == nil { store = s }
+        opening = nil
+        return store
+    }
+
+    nonisolated private static func readRows(store: WhoopStore, deviceId: String, computedDeviceId: String, nDays: Int, now: Date) async -> Rows {
+        let fromDay = dayString(now.addingTimeInterval(-Double(nDays) * 86_400))
+        let toDay = dayString(now.addingTimeInterval(86_400))
+        let nowTs = Int(now.timeIntervalSince1970)
+        let lo = nowTs - nDays * 86_400, hi = nowTs + 86_400
+        return Rows(
+            imported: (try? await store.dailyMetrics(deviceId: deviceId, from: fromDay, to: toDay)) ?? [],
+            computed: (try? await store.dailyMetrics(deviceId: computedDeviceId, from: fromDay, to: toDay)) ?? [],
+            impSleep: (try? await store.sleepSessions(deviceId: deviceId, from: lo, to: hi, limit: 4000)) ?? [],
+            compSleep: (try? await store.sleepSessions(deviceId: computedDeviceId, from: lo, to: hi, limit: 4000)) ?? [],
+            readAt: now)
     }
 
     /// Expose the shared store handle (used by the importer to persist mapped rows).
@@ -70,24 +125,26 @@ final class Repository: ObservableObject {
     /// on-device computed scores so a strap-only user still gets a populated dashboard.
     // Loads imported + computed rows, merges them, and records which days are 'official' (imported) vs NOOP estimates.
     func refresh(days nDays: Int = 4000) async {
-        guard let store = await ensureStore() else { return }
-        let now = Date()
+        let started = Date()
         let wasLoaded = loaded
-        defer { Self.reportFixtureTiming(refreshStarted: now, firstLoad: !wasLoaded) }
-        let fromDay = Self.dayString(now.addingTimeInterval(-Double(nDays) * 86_400))
-        let toDay = Self.dayString(now.addingTimeInterval(86_400))
+        defer { Self.reportFixtureTiming(refreshStarted: started, firstLoad: !wasLoaded) }
+        let rows: Rows
+        if nDays == 4000, let pre = prefetched, let r = await pre.value {
+            prefetched = nil
+            rows = r
+            if store == nil { _ = await ensureStore() }
+        } else {
+            prefetched = nil
+            guard let store = await ensureStore() else { return }
+            rows = await Self.readRows(store: store, deviceId: deviceId, computedDeviceId: computedDeviceId, nDays: nDays, now: Date())
+        }
+        let now = rows.readAt
         let nowTs = Int(now.timeIntervalSince1970)
-        let lo = nowTs - nDays * 86_400, hi = nowTs + 86_400
-
-        let imported = (try? await store.dailyMetrics(deviceId: deviceId, from: fromDay, to: toDay)) ?? []
-        // Drop computed rows dated after local today: older builds keyed days in UTC, so after ~8 pm a
-        // near-empty "tomorrow" row existed and shadowed the real today in `today = days.last`.
+        let imported = rows.imported, impSleep = rows.impSleep, compSleep = rows.compSleep
+        // Rows dated after local today are dropped (older builds keyed days in UTC and created a bogus 'tomorrow' that
+        // shadowed the real today in `today = days.last`).
         let todayKey = Self.dayString(now)
-        // Rows dated after local today are dropped (older builds keyed days in UTC and created a bogus 'tomorrow').
-        let computed = ((try? await store.dailyMetrics(deviceId: computedDeviceId, from: fromDay, to: toDay)) ?? [])
-            .filter { $0.day <= todayKey }
-        let impSleep = (try? await store.sleepSessions(deviceId: deviceId, from: lo, to: hi, limit: 4000)) ?? []
-        let compSleep = (try? await store.sleepSessions(deviceId: computedDeviceId, from: lo, to: hi, limit: 4000)) ?? []
+        let computed = rows.computed.filter { $0.day <= todayKey }
 
         // Assign only what changed: every assignment invalidates every view observing the repository, and most
         // refreshes (periodic scoring, post-sync) find the same rows.
@@ -114,12 +171,6 @@ final class Repository: ObservableObject {
         var line = "[perf] repository refresh \(ms(refreshStarted)) ms\n"
         if firstLoad { line = "[perf] launch-to-content \(ms(LaunchMode.started)) ms\n" + line }
         FileHandle.standardError.write(Data(line.utf8))   // unbuffered, so a killed process keeps its lines
-    }
-
-    /// Today's stored heart-rate samples (local midnight → now), oldest→newest.
-    func todayHeartRate() async -> [HRSample] {
-        let start = Int(Calendar.current.startOfDay(for: Date()).timeIntervalSince1970)
-        return await hrSamples(from: start, to: Int(Date().timeIntervalSince1970) + 60, limit: 200_000)
     }
 
     /// True when `day`'s shown scores come from a WHOOP import rather than a NOOP estimate.
@@ -374,7 +425,7 @@ final class Repository: ObservableObject {
 
     // MARK: - Metric explorer reads (generic substrate)
 
-    /// Daily series for any metric key from a given source ("my-whoop" / "apple-health").
+    /// Daily series for any metric key from a given source.
     func series(key: String, source: String, days: Int = 4000) async -> [(day: String, value: Double)] {
         guard let store = await ensureStore() else { return [] }
         let now = Date()
@@ -469,31 +520,14 @@ final class Repository: ObservableObject {
         return out
     }
 
-    func availableKeys(source: String) async -> [String] {
-        guard let store = await ensureStore() else { return [] }
-        return (try? await store.metricKeys(deviceId: source)) ?? []
-    }
-
-    /// Logged behaviours (Whoop journal) for correlation insights.
-    func journalEntries(days: Int = 4000) async -> [JournalEntry] {
-        guard let store = await ensureStore() else { return [] }
-        let now = Date()
-        return (try? await store.journalEntries(
-            deviceId: deviceId,
-            from: Self.dayString(now.addingTimeInterval(-Double(days) * 86_400)),
-            to: Self.dayString(now.addingTimeInterval(86_400)))) ?? []
-    }
-
-    /// All workouts (Whoop + Apple Health), newest first.
-    // Combines WHOOP + Apple workouts with NOOP-detected ones, hiding detections that overlap a real workout.
+    /// All workouts (WHOOP import + NOOP-detected), newest first; detections that overlap an imported workout are hidden.
     func workoutRows(days: Int = 4000) async -> [WorkoutRow] {
         guard let store = await ensureStore() else { return [] }
         let now = Int(Date().timeIntervalSince1970)
         let lo = now - days * 86_400, hi = now + 86_400
         var rows = (try? await store.workouts(deviceId: deviceId, from: lo, to: hi, limit: 5000)) ?? []
-        rows += (try? await store.workouts(deviceId: "apple-health", from: lo, to: hi, limit: 5000)) ?? []
         // NOOP auto-detected workouts fill in what no import covers: hide any that overlap a real
-        // WHOOP/Apple workout, and show one row per event (see WorkoutReconciliation).
+        // WHOOP workout, and show one row per event (see WorkoutReconciliation).
         let detected = ((try? await store.workouts(deviceId: deviceId + "-noop", from: lo, to: hi, limit: 5000)) ?? [])
         rows += WorkoutReconciliation.reconcile(detected.filter { w in
             !rows.contains(where: { w.startTs < $0.endTs && $0.startTs < w.endTs })
@@ -508,10 +542,8 @@ final class Repository: ObservableObject {
         // `w` as screens hold it already carries a resolved name, so resolve from the stored row.
         var stored = w
         if w.source != "noop" {
-            for id in [deviceId, "apple-health"] {
-                let rows = (try? await store.workouts(deviceId: id, from: w.startTs, to: w.startTs, limit: 5)) ?? []
-                if let raw = rows.first { stored = raw; break }
-            }
+            let rows = (try? await store.workouts(deviceId: deviceId, from: w.startTs, to: w.startTs, limit: 5)) ?? []
+            if let raw = rows.first { stored = raw }
         }
         return WorkoutLabels.resolve(stored, labels: (try? await store.workoutLabels()) ?? [])
     }
@@ -584,16 +616,6 @@ final class Repository: ObservableObject {
         do { try await write(store); return true } catch { return false }
     }
 
-    /// Apple Health daily aggregates (steps/energy/vo2/hr).
-    func appleDailyRows(days: Int = 4000) async -> [AppleDaily] {
-        guard let store = await ensureStore() else { return [] }
-        let now = Date()
-        return (try? await store.appleDaily(
-            deviceId: "apple-health",
-            from: Self.dayString(now.addingTimeInterval(-Double(days) * 86_400)),
-            to: Self.dayString(now.addingTimeInterval(86_400)))) ?? []
-    }
-
     /// Day key on the wearer's clock, in the zone in force at that instant (`ZoneTimeline`).
-    static func dayString(_ d: Date) -> String { ZoneTimeline.shared.dayString(Int(d.timeIntervalSince1970)) }
+    nonisolated static func dayString(_ d: Date) -> String { ZoneTimeline.shared.dayString(Int(d.timeIntervalSince1970)) }
 }

@@ -1,6 +1,6 @@
 # Measurement validity: specification and change report (October 2026)
 
-Implements the first phases of [`SLEEP_RECOVERY_RESEARCH_2026-10-27.md`](SLEEP_RECOVERY_RESEARCH_2026-10-27.md). Scope: make NOOP's numbers **traceable, causal, honest about missing data, and separately interpretable**. Nothing here makes any estimate more accurate against a reference. No reference data (PSG, ECG, respiratory belt, outcome measures) was used, so the right summary is **"implemented and tested," not "validated."**
+Implements the first phases of [`SLEEP_RECOVERY_RESEARCH_2026-10-27.md`](archive/SLEEP_RECOVERY_RESEARCH_2026-10-27.md). Scope: make NOOP's numbers **traceable, causal, honest about missing data, and separately interpretable**. Nothing here makes any estimate more accurate against a reference. No reference data (PSG, ECG, respiratory belt, outcome measures) was used, so the right summary is **"implemented and tested," not "validated."**
 
 Evidence labels used below:
 - **Definition**: an established mathematical or measurement definition.
@@ -10,7 +10,7 @@ Evidence labels used below:
 
 ---
 
-Workout detection and strain are covered separately in [WORKOUT_STRAIN_REPORT.md](WORKOUT_STRAIN_REPORT.md).
+Workout detection and strain are covered separately in [WORKOUT_STRAIN_REPORT.md](archive/WORKOUT_STRAIN_REPORT.md).
 
 ## 1. Defects found and fixed
 

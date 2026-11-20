@@ -129,15 +129,15 @@ Finding 1 describes the pre-fix behavior: PR #29 now verifies the stored slot be
 | 11 | ~~R-R unit may be 1/1024 s~~ | R18 table | **Closed 2026-11-17: ms** on stored history (audit above); no decoder change | Live packet 40: **ms**, confirmed 2026-11-18 (L01, paired with history; live words are a sparse subset of beats) |
 | 8 | Steps and activity are in every v0x12 record | §4 | NOOP decoder (R18 @49 step counter, @55 activity code) | W01–W03 done. S01: no reset at midnight; one reset at waking (08:15, with an alarm dismissal). Still needed: a no-alarm morning to tell wake from alarm; an accuracy figure needs a reliable count (e.g. a phone pedometer or tally counter) |
 
-## 6 · Firmware acquisition (status after desk research, 2026-11-16)
+## 6 · Firmware acquisition (desk review updated 2026-11-20)
 
 | Question | Status |
 |---|---|
 | Readback/dump command in any reviewed source | **None found** (registry, Goose table + Swift client, Asherlc, ryanbr, probe, app). ryanbr documents 143 chunk read-back only inside an update load, which is prohibited and is not a dump of the installed image. |
-| Official update artifact | **No public source found.** WHOOP updates are pushed through its app (community guide). ryanbr documents an image container (512-byte header with CRC32s, type 5 = gzip payload) and a WHOOP 4 outer package (Maxim ZBIN + Nordic DFU zip); the 5.0/MG package, download source and signing are undocumented. Do not trigger an update to obtain one. |
+| Official update artifact | **None held.** Former public archive appears in search-indexed text but direct routes return 404. Upstream describes 50.42.1.0 compressed/decompressed artifacts and transfer contracts; no validated install path. See [EVIDENCE_MATRIX.md §5](EVIDENCE_MATRIX.md#5--firmware-feasibility-and-workarounds--desk-review-2026-11-20) for sources and acquisition leads. |
 | Hardware readout | MCU: **Ambiq Cortex-M4 with BLE** per the TechInsights WG50 teardown summary (paywalled full report; part number not seen). Consistent with the firmware console's `DM_PHY_UPDATE_IND` line (ARM Cordio BLE host naming, which Ambiq's SDK ships) — supporting, not proof. Other parts per ryanbr: MAX86176 optical AFE, ICM-45686 IMU, DRV2625 haptics, LC709205F fuel gauge, AS6221 skin temperature. Debug-port exposure, readout protection and secure boot: **unknown**. Any attempt is spare-unit-only and out of this issue's scope. |
-| Custom firmware | **No-go for now.** ryanbr lists certificate/authorisation commands 155–159 and "no validated or authorized flashing path"; signing, boot verification, rollback and recovery are unknown; no recovery route exists even on a spare. Revisit only with a spare unit and evidence on boot security. |
-| Decision | **Firmware acquisition: no legitimate path found yet** (no read path, no public package) — not proof that none exists; the staged ladder with closing conditions is in [EVIDENCE_MATRIX.md](EVIDENCE_MATRIX.md) §5. **Improvements belong in NOOP** (decoding, fewer writes/polls), not firmware. |
+| Custom firmware | **No demonstrated route.** Exact MCU and WHOOP boot/debug provisioning remain unknown. Apollo secure capability does not imply enabled customer secure boot. Certificate commands 155–159 concern authorization, not proof of firmware signing. |
+| Decision | Keep installation out of the implementation plan; prioritize authentic artifacts/offline analysis. Spare-unit debug research is a conditional lead. Cordio advisories and standard HR/R–R fallback reports are assessed, not locally validated, in [EVIDENCE_MATRIX.md §5](EVIDENCE_MATRIX.md#5--firmware-feasibility-and-workarounds--desk-review-2026-11-20). No strap contact or image acquired. |
 
 ## 7 · Experiments (completed evidence and remaining approval-gated work)
 

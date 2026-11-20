@@ -1,5 +1,7 @@
 # Audit of NOOP's existing BLE integration (2026-11-02)
 
+> **Archived** (2026-11-20): historical record, not maintained. Check current source, tests and [ARCHITECTURE](../ARCHITECTURE.md) before relying on it.
+
 ## Architecture map
 
 | Concern | Where | Notes |

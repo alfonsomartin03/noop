@@ -1,6 +1,8 @@
 # Workout detection and strain: change report (October 2026)
 
-Implements the first two delivery stages of [the research review](WORKOUT_STRAIN_RESEARCH_2026-10-30.md): deterministic accounting, then conservative detection. The method specification is in [ANALYTICS.md](ANALYTICS.md). Unit tests check bookkeeping against hand-worked values. They do not show that any number reflects true physiological strain.
+> **Archived** (2026-11-20): historical record, not maintained. Check current source, tests and [ARCHITECTURE](../ARCHITECTURE.md) before relying on it.
+
+Implements the first two delivery stages of [the research review](WORKOUT_STRAIN_RESEARCH_2026-10-30.md): deterministic accounting, then conservative detection. The method specification is in [ANALYTICS.md](../ARCHITECTURE.md). Unit tests check bookkeeping against hand-worked values. They do not show that any number reflects true physiological strain.
 
 > **Update, scoring v5:** strain now covers awake time only. See section 10. Figures in sections 3–7 describe v4.
 

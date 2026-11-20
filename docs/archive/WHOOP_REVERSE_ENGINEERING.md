@@ -1,5 +1,7 @@
 # What a WHOOP export reveals about its scoring
 
+> **Archived** (2026-11-20): historical record, not maintained. Check current source, tests and [ARCHITECTURE](../ARCHITECTURE.md) before relying on it.
+
 Fitted from one user's export (628 days, Jan 2025 → Oct 2026: `physiological_cycles.csv`, `sleeps.csv`,
 `workouts.csv`). Reproduce with `python Tools/reverse_engineer/analyze_export.py <export_dir>`.
 

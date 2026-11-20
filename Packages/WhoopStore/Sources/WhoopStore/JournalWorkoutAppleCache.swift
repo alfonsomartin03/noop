@@ -46,26 +46,6 @@ public struct WorkoutRow: Equatable, Codable, Sendable {
     }
 }
 
-/// One Apple-Health daily-aggregate row. Natural key (deviceId, day). All metric columns nullable.
-// Daily totals imported from Apple Health.
-public struct AppleDaily: Equatable, Codable {
-    public let day: String           // YYYY-MM-DD
-    public let steps: Int?
-    public let activeKcal: Double?
-    public let basalKcal: Double?
-    public let vo2max: Double?
-    public let avgHr: Int?
-    public let maxHr: Int?
-    public let walkingHr: Int?
-    public let weightKg: Double?
-    public init(day: String, steps: Int?, activeKcal: Double?, basalKcal: Double?, vo2max: Double?,
-                avgHr: Int?, maxHr: Int?, walkingHr: Int?, weightKg: Double?) {
-        self.day = day; self.steps = steps; self.activeKcal = activeKcal; self.basalKcal = basalKcal
-        self.vo2max = vo2max; self.avgHr = avgHr; self.maxHr = maxHr
-        self.walkingHr = walkingHr; self.weightKg = weightKg
-    }
-}
-
 extension WhoopStore {
 
     // MARK: - Upserts (idempotent by natural key; latest value wins on conflict)
@@ -125,34 +105,6 @@ extension WhoopStore {
         return n
     }
 
-    /// Upsert Apple-Health daily aggregates. Natural key (deviceId, day). Returns rows changed.
-    @discardableResult
-    public func upsertAppleDaily(_ rows: [AppleDaily], deviceId: String) async throws -> Int {
-        try syncWrite { db in
-            var n = 0
-            for r in rows {
-                try db.execute(sql: """
-                    INSERT INTO appleDaily
-                        (deviceId, day, steps, activeKcal, basalKcal, vo2max,
-                         avgHr, maxHr, walkingHr, weightKg)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(deviceId, day) DO UPDATE SET
-                        steps = excluded.steps,
-                        activeKcal = excluded.activeKcal,
-                        basalKcal = excluded.basalKcal,
-                        vo2max = excluded.vo2max,
-                        avgHr = excluded.avgHr,
-                        maxHr = excluded.maxHr,
-                        walkingHr = excluded.walkingHr,
-                        weightKg = excluded.weightKg
-                    """, arguments: [deviceId, r.day, r.steps, r.activeKcal, r.basalKcal, r.vo2max,
-                                     r.avgHr, r.maxHr, r.walkingHr, r.weightKg])
-                n += db.changesCount
-            }
-            return n
-        }
-    }
-
     // MARK: - Reads
 
     /// Journal entries for days in [from, to] (lexicographic YYYY-MM-DD compare),
@@ -191,20 +143,4 @@ extension WhoopStore {
         }
     }
 
-    /// Apple-Health daily aggregates for days in [from, to] (lexicographic compare), oldest first.
-    public func appleDaily(deviceId: String, from: String, to: String) async throws -> [AppleDaily] {
-        try syncRead { db in
-            try Row.fetchAll(db, sql: """
-                SELECT day, steps, activeKcal, basalKcal, vo2max, avgHr, maxHr, walkingHr, weightKg
-                FROM appleDaily
-                WHERE deviceId = ? AND day >= ? AND day <= ?
-                ORDER BY day ASC
-                """, arguments: [deviceId, from, to])
-                .map {
-                    AppleDaily(day: $0["day"], steps: $0["steps"], activeKcal: $0["activeKcal"],
-                               basalKcal: $0["basalKcal"], vo2max: $0["vo2max"], avgHr: $0["avgHr"],
-                               maxHr: $0["maxHr"], walkingHr: $0["walkingHr"], weightKg: $0["weightKg"])
-                }
-        }
-    }
 }

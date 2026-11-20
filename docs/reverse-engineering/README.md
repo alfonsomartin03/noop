@@ -11,7 +11,8 @@ passive captures. Every claim carries one of these labels:
 | **UNKNOWN** | Not established. |
 | **UNSAFE** | Excluded from testing because of possible side effects. |
 
-Device under test: model `5.0`, firmware `50.43.1.0`, hardware `WG50_r52` (Device Information, E01, 2026-11-02; not re-read since).
+Device under test: model `5.0`, firmware `50.43.1.0`, hardware `WG50_r52` (Device Information; last re-read by NOOP 2026-11-20).
+Open questions live in [EVIDENCE_MATRIX.md](EVIDENCE_MATRIX.md); the older open-questions list, test-results table and phase-1 BLE audit are in [../archive/](../archive/).
 Where older prose disagrees with current code or [CAPABILITY_MATRIX.md](CAPABILITY_MATRIX.md), the matrix and code win.
 
 | File | Contents |
@@ -23,11 +24,8 @@ Where older prose disagrees with current code or [CAPABILITY_MATRIX.md](CAPABILI
 | [STATE_MACHINE.md](STATE_MACHINE.md) | Connection and history-sync sequence |
 | [SENSOR_STREAMS.md](SENSOR_STREAMS.md) | Which sensor data is reachable and how |
 | [EXPERIMENT_LOG.md](EXPERIMENT_LOG.md) | Chronological evidence |
-| [EVIDENCE_MATRIX.md](EVIDENCE_MATRIX.md) | Evidence levels, competing explanations, proposed (unrun) experiments, firmware feasibility ladder |
-| [UNKNOWN_CAPABILITIES.md](UNKNOWN_CAPABILITIES.md) | Open questions |
+| [EVIDENCE_MATRIX.md](EVIDENCE_MATRIX.md) | Evidence levels, competing explanations, proposed (unrun) experiments, firmware feasibility/workaround review (2026-11-20), sources and limits |
 | [SAFETY_MATRIX.md](SAFETY_MATRIX.md) | Allowed, restricted, prohibited operations |
-| [TEST_RESULTS.md](TEST_RESULTS.md) | Repeatable tests and outcomes |
-| [AUDIT.md](AUDIT.md) | Phase 1 audit of the app's BLE code |
 | [CAPABILITY_MATRIX.md](CAPABILITY_MATRIX.md) | Reconciled capability matrix, event/history inventory, ranked improvements, firmware status (issue #25) |
 | [ALARM_CAPABILITIES.md](ALARM_CAPABILITIES.md) | Haptics/alarm investigation, capability matrix, proposed experiments |
 | [whoop5_commands.json](whoop5_commands.json) | Machine-readable command registry |

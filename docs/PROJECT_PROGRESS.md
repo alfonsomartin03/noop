@@ -44,11 +44,11 @@ These changes have automated test coverage, including synthetic packet and missi
 
 ## What remains
 
-The strap-research program is tracked under [issue #25](https://github.com/alfonsomartin03/noop/issues/25), with work grouped by milestone:
+The strap-research program ([issue #25](https://github.com/alfonsomartin03/noop/issues/25)) closed on November 20, 2026. Every question it raised was answered, ruled out, or moved to a short passive backlog; the per-issue outcomes and that backlog are in [the evidence matrix closure](reverse-engineering/EVIDENCE_MATRIX.md#8--program-closure-2026-11-20).
 
-- **Evidence and decoder foundations:** complete — live research capture ([#38](https://github.com/alfonsomartin03/noop/issues/38)), live beat-interval units ([#39](https://github.com/alfonsomartin03/noop/issues/39)), read-only configuration checks ([#40](https://github.com/alfonsomartin03/noop/issues/40)) and date-independent trend tests ([#48](https://github.com/alfonsomartin03/noop/issues/48)).
-- **Hardware validation and useful data:** check charger behavior ([#41](https://github.com/alfonsomartin03/noop/issues/41)), step sources and accuracy ([#42](https://github.com/alfonsomartin03/noop/issues/42)), wrist-wear and temperature behavior ([#43](https://github.com/alfonsomartin03/noop/issues/43)), motion and signal-quality candidates ([#44](https://github.com/alfonsomartin03/noop/issues/44)), optical and event data ([#45](https://github.com/alfonsomartin03/noop/issues/45)), and real-world sync, clock, retention, alarm, and battery outcomes ([#46](https://github.com/alfonsomartin03/noop/issues/46)).
-- **Firmware feasibility:** finish a desk-research decision about available firmware artifacts, security, and recovery requirements ([#47](https://github.com/alfonsomartin03/noop/issues/47)).
+- **Done:** research capture, live beat-interval units, configuration reads, deterministic trend tests, battery-pack decoding with a "fully charged" signal, the experimental step tile, wrist on/off events, nightly skin temperature, alarm-write and battery-read reductions, daily strap-clock correction, and in-app usage counters.
+- **Decided against:** custom or extracted firmware (no-go), and product use of the optical bursts (no benefit over existing heart rate, no blood-oxygen path).
+- **Still waiting on time or the wearer (no strap writes):** two frozen hold-out checks (around November 25–27), a counted walk for a step-accuracy figure, the first nightly temperature-change value (around November 22), and a few charging and removal edge cases.
 - **Healthspan:** the functional-age model and Health section are implemented ([#49](https://github.com/alfonsomartin03/noop/issues/49)); an in-app check with real inputs, accessibility review, evaluation and steps as an input (after #42) remain. It is separate from clinical biological age.
 
 ## How to read project claims

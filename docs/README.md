@@ -1,32 +1,23 @@
 # NOOP documentation
 
-Current guides describe the macOS app and its retained packages. Research and experiment reports record evidence at a point in time; they are not feature promises.
+Current guides describe the macOS app as it is in `main`. Source and tests win over any document. Research reports are dated evidence; archived files are history only.
 
 ## Current guides
 
-- [Project progress](PROJECT_PROGRESS.md) — plain-language summary of completed work, evidence limits, and open research
-- [Project overview](../README.md)
-- [Contributing](CONTRIBUTING.md) and [build/test](BUILD.md)
-- [Features](FEATURES.md) and [screen map](SCREEN_INVENTORY.md)
-- [Architecture](ARCHITECTURE.md), [packages](LIBRARY.md), and [data model](DATA_MODEL.md)
-- [Analytics](ANALYTICS.md) and [privacy/data handling](PRIVACY_SECURITY.md)
+- [Project overview](../README.md) and [project progress](PROJECT_PROGRESS.md) (plain-language status)
+- [Architecture](ARCHITECTURE.md) — data flow, packages, screens, storage, analytics rules
+- [Build and test](BUILD.md), [contributing](CONTRIBUTING.md), [privacy and data handling](PRIVACY_SECURITY.md)
 
-## Measurement and implementation evidence
+## Measurement methods and evidence
 
-- [Measurement validity specification/report](MEASUREMENT_VALIDITY.md)
-- [Workout/strain implementation report](WORKOUT_STRAIN_REPORT.md)
-- [Sleep sessions and corrections](SLEEP_SESSIONS.md) — local work in progress at this refresh
-- [Sleep/recovery research, October 27](SLEEP_RECOVERY_RESEARCH_2026-10-27.md)
-- [Workout/strain research, October 30](WORKOUT_STRAIN_RESEARCH_2026-10-30.md)
-- [Historical sleep/strain audit](SLEEP_STRAIN_AUDIT.md)
-- [WHOOP export scoring analysis](WHOOP_REVERSE_ENGINEERING.md)
+- [Measurement validity](MEASUREMENT_VALIDITY.md) — metric identity, causal baselines, quality gates
+- [Sleep sessions and corrections](SLEEP_SESSIONS.md) and [nap detection](NAP_DETECTION.md)
+- [Health models](HEALTH_MODELS.md) — functional age, VO₂max, health monitor, activation timeline
 
-## Bluetooth evidence
+## Bluetooth protocol
 
-Start with the [reverse-engineering index](reverse-engineering/README.md), [command registry](reverse-engineering/COMMAND_REGISTRY.md), and [safety matrix](reverse-engineering/SAFETY_MATRIX.md). Captures, fixtures, unknown capabilities and experiment logs are retained because they support protocol decisions.
+Start with the [reverse-engineering index](reverse-engineering/README.md), then the [evidence matrix](reverse-engineering/EVIDENCE_MATRIX.md), [command registry](reverse-engineering/COMMAND_REGISTRY.md) and [safety matrix](reverse-engineering/SAFETY_MATRIX.md). [PROTOCOL.md](PROTOCOL.md) is the wire-format reference for 4.0 and 5.0.
 
-Additional background: [protocol](PROTOCOL.md), [BLE reverse engineering](BLE_REVERSE_ENGINEERING.md), and [HR broadcast research](HR_BROADCAST_RESEARCH.md). Check newer capture evidence against older descriptions before changing a command. [Alarm capabilities](reverse-engineering/ALARM_CAPABILITIES.md) accompanies the current local alarm work.
+## Archive
 
-## Scope of this refresh
-
-Updated November 18, 2026. The current `main` branch includes the merged sleep, alarm, storage, and strap-research work described in the guides. For a plain-language summary of completed work and remaining validation, see [project progress](PROJECT_PROGRESS.md). Research documents are dated evidence snapshots; check their scope and status before treating a finding as general hardware support.
+[archive/](archive/) keeps superseded reports (earlier sleep/strain audits and research, the WHOOP export scoring analysis, HR-broadcast research, the BLE narrative, the phase-1 BLE audit). They are not maintained; several describe behavior that has since changed.

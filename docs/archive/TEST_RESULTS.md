@@ -1,5 +1,7 @@
 # Test results
 
+> **Archived** (2026-11-20): historical record, not maintained. Check current source, tests and [ARCHITECTURE](../ARCHITECTURE.md) before relying on it.
+
 ## Offline (no device)
 
 | Suite | Command | Result (2026-11-02) |

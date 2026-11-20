@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Fit relationships between the metrics in a WHOOP data export (physiological_cycles.csv,
 sleeps.csv, workouts.csv). Usage:  python analyze_export.py <export_dir>
-Needs: pandas numpy scipy scikit-learn. Results are summarised in docs/WHOOP_REVERSE_ENGINEERING.md."""
+Needs: pandas numpy scipy scikit-learn. Results are summarised in docs/archive/WHOOP_REVERSE_ENGINEERING.md."""
 import sys, warnings, numpy as np, pandas as pd
 from scipy.optimize import least_squares
 from sklearn.linear_model import HuberRegressor
