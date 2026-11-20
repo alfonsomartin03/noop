@@ -82,7 +82,8 @@ Packages (all Swift tools 5.9, platforms macOS 13 / iOS 16; **only a macOS app t
 - `LiveHeartRate`: median over ~10 s (≤40 readings), plausible 30–220 bpm, reported HR preferred, RR fallback, shared `HRZones`; publishes only changed values.
 - Battery surfaces show three separate facts (`BatteryPresentation.facts`: Strap battery / Charging pack / Charging), each known vs unknown with its source; Settings + live sheet list them, onboarding uses the shared status words.
 - `BatteryPresentation`: low <20% (from `BatteryAlertPolicy.lowPercent`), medium <35%; percentage stale when disconnected or >20 min old (`BatteryAlertPolicy.staleAfter`). Charge (`charging`/`likely`/`notCharging`/`unknown`) and attachment come from `LiveState.charging` (`ChargingModel`) with their own freshness; disconnected → unknown. `illustration` maps to detached/attached/charging/full/unknown. All surfaces (badge, menu bar, Settings, live sheet, onboarding) use it; `needsCharge` (fresh low reading, connected, not charging/likely, pack not attached) adds a small "Charge" capsule beside the top-right badge; `BatteryMonitor` alerts see only the confirmed flag stamped on readings.
-- `ChargingIllustration` phases: `idle` (detached, pack beside), `attached` (seated, unlit), `charging` (flow), `full`, `unknown` (faint pack). Spring dock + ring on detached→charging, 5 flow cycles, reminder every 30 s and on hover; none under Reduce Motion, inactive app or dimmed.
+- `ChargingIllustration` phases: `idle` (detached, pack beside), `attached` (seated, unlit), `charging` (flow), `full`, `unknown` (faint pack). Spring dock + brief 2-cycle flow on confirmed charging; then still, with hover replay. No flow under Reduce Motion, inactive app or dimmed.
+- Settings General (`SettingsView`): strap status and controls lead, followed by Profile; keep-data, research capture, check-ins and About use an adaptive two-column card grid (single column when narrow). Section headers pair a compact icon badge with title and description. No new settings keys.
 - Not present: Apple Health import UI, mobile app, cloud/account service, coaching, numerical stress or biological-age estimates (biological age re-reviewed in #16: still unavailable), standalone compare screens. Library code (e.g. Apple Health parsing, `ComparisonEngine`, `BehaviorInsights`) is not proof of exposed UI.
 
 ### BLE, charging and collection
@@ -154,6 +155,7 @@ Packages (all Swift tools 5.9, platforms macOS 13 / iOS 16; **only a macOS app t
 
 ## 5 · Build, configuration, runtime switches
 
+- Settings layout and charging animation updates add no preference keys; charging motion follows system Reduce Motion and settles to a still state after its short cue.
 - #25 integrations add no user settings. `ble_probe --passive` refuses command options and guards writes; 5.0 steps have an experimental Strain detail tile; no scoring use.
 
 - GitHub `main` protection (applied and read back 2026-11-13): PR required; resolved conversations; linear history; admins included; force-push and deletion blocked. Independent approvals optional (0 required; single collaborator). No required status checks because no CI workflow exists; local test evidence remains recorded in PRs/§8.
@@ -249,7 +251,7 @@ Format: `file` — purpose. Tests list `Suite(methods)`. Fixtures/resources are 
 - `CheckInViews.swift` — `CheckInCard` (Overview), `CheckInForm`, `CheckInSheet` (entries, insights, settings), `CheckInSettingsForm`. `ScreenScaffold.swift` — page scaffold + `ComingSoon` empty state.
 - `SleepView.swift` — sleep detail tiles/hypnogram. `SleepSessionsCard.swift` — sessions + `AdjustSleepSheet` corrections. `SleepNeedCard.swift` — sleep need.
 - `HealthView.swift` — HR and vitals detail. `WorkoutsView.swift` — workout list/summary. `WorkoutDetailView.swift` — workout detail, labels, effort, sets (activity title wraps/truncates to the sheet width; full name in tooltip + VoiceOver value).
-- `SettingsView.swift` — General settings (strap, Bluetooth toggle, `ProfileCard`, battery, keep-data, research capture). `AlarmsView.swift` — Alarms tab, `AlarmEditor`, `NextAlarmLink`. `AlarmHistoryView.swift` — History section, occurrence detail (stage timeline, trail, notes). `DataSourcesView.swift` — imports, comparison, backups.
+- `SettingsView.swift` — General settings (strap-first layout, Profile, responsive supporting-card grid, battery, keep-data, research capture). `AlarmsView.swift` — Alarms tab, `AlarmEditor`, `NextAlarmLink`. `AlarmHistoryView.swift` — History section, occurrence detail (stage timeline, trail, notes). `DataSourcesView.swift` — imports, comparison, backups.
 - `LiveView.swift` — live strap sheet. `LiveStatusView.swift` — connection steps, strap history card. `PairingResetNotice.swift` — stale-pairing instructions.
 - `MetricExplorerView.swift` — metric browser + correlations. `RecoveryDiagnosticsView.swift` — recovery inputs report. `RecentCyclesCard.swift` — recent cycles list.
 
@@ -290,7 +292,7 @@ Format: `file` — purpose. Tests list `Suite(methods)`. Fixtures/resources are 
 - Tests: AppleHealthAggregatorTests(28), AppleHealthImporterTests(12), ImportCoordinatorTests(8), WhoopExportImporterTests(12), PlaceholderTests(1), `Helpers.swift`; `Resources/` synthetic `export.xml`, `journal_entries.csv`, `physiological_cycles.csv`, `sleeps.csv`, `workouts.csv`. `Package.swift`, `Package.resolved`.
 
 ### `Packages/StrandDesign`
-- Sources: `Palette` (tokens, score/zone/stage colors, `ink`/`scoreInk`), `Typography` (`StrandFont`), `Motion` (`StrandMotion`, Reduce Motion), `Components` (`NoopMetrics`, `NoopCard`/`strandSurface`, `StatTile`, `ChartCard`, `ChartFooter`, `SegmentedPillControl`, buttons), `StrandCard`, `StatePill`, `Widgets` (widget grid, progress ring, stage bar), `TrendChart` (`.standard`/`.soft`, optional `maxGap` line breaks), `ChartHover` (tooltip/crosshair), `Sparkline`, `Hypnogram`, `RecoveryRing`, `YearHeatStrip`, `ChargingIllustration`, `ZoneSpectrum` (zone ribbon + `ZoneSpectrumLayout`), `StrandDesign` (module info). `Components` also holds `SectionTabBar` and `strandFocusRing`.
+- Sources: `Palette` (tokens, score/zone/stage colors, `ink`/`scoreInk`), `Typography` (`StrandFont`), `Motion` (`StrandMotion`, Reduce Motion), `Components` (`NoopMetrics`, `NoopCard`/`strandSurface`, `StatTile`, `ChartCard`, `ChartFooter`, `SegmentedPillControl`, buttons), `StrandCard`, `StatePill`, `Widgets` (widget grid, progress ring, stage bar), `TrendChart` (`.standard`/`.soft`, optional `maxGap` line breaks), `ChartHover` (tooltip/crosshair), `Sparkline`, `Hypnogram`, `RecoveryRing`, `YearHeatStrip`, `ChargingIllustration` (brief confirmed-charge cue, then still; hover replay), `ZoneSpectrum` (zone ribbon + `ZoneSpectrumLayout`), `StrandDesign` (module info). `Components` also holds `SectionTabBar` and `strandFocusRing`.
 - Tests: `PlaceholderTests` = StrandDesignTests(25), `ZoneSpectrumTests`(5), `TrendChartGapTests`(7), `WidgetSnapshotTests`(2, need `STRAND_SNAPSHOT_DIR`). `Package.swift`.
 
 ### `Tools`
@@ -301,6 +303,7 @@ Format: `file` — purpose. Tests list `Suite(methods)`. Fixtures/resources are 
 
 ### `docs`
 - Guides: `README.md` (index), `PROJECT_PROGRESS.md` (plain-language project status), `ARCHITECTURE.md`, `BUILD.md`, `CONTRIBUTING.md`, `DATA_MODEL.md`, `FEATURES.md`, `LIBRARY.md`, `PRIVACY_SECURITY.md`, `SCREEN_INVENTORY.md`, `ANALYTICS.md`.
+- `issues/SETTINGS_CHARGING_REDESIGN.md` — design rationale, implemented changes, and visual/accessibility/hardware follow-up steps.
 - Protocol: `PROTOCOL.md`, `BLE_REVERSE_ENGINEERING.md`, `HR_BROADCAST_RESEARCH.md`, `WHOOP_REVERSE_ENGINEERING.md` (export scoring analysis).
 - `HEALTH_MODELS.md` — Health page inputs, biological-age/stress model review, personal-range and activation methods.
 - Measurement reports: `MEASUREMENT_VALIDITY.md`, `NAP_DETECTION.md` (versioned nap evidence, private label schema, evaluation limits), `SLEEP_SESSIONS.md`, `SLEEP_STRAIN_AUDIT.md`, `SLEEP_RECOVERY_RESEARCH_2026-10-27.md`, `WORKOUT_STRAIN_REPORT.md`, `WORKOUT_STRAIN_RESEARCH_2026-10-30.md`.
@@ -309,6 +312,8 @@ Format: `file` — purpose. Tests list `Suite(methods)`. Fixtures/resources are 
 - `reverse-engineering/captures/` — redacted JSONL evidence: `E01-passive-gatt`, `E02-readonly-matrix`, `E04-realtime-hr`, `H01-get-alarm`, `H02-H03-H06-slot0`, `H02b`, `H05-disable`, `H07`, `C02a-wear-off-on` (passive wrist off/on, redacted), `C06a-C07-afe-pack-reads` (151 `[01]`, 40/42/44; redacted), `C06b-pack-reads` (151 `[01]` charging/full/removed; pack id + serial → `rr`), `C08-config-reads` (121/128 named reads; redacted), `K01-set-clock` (one-shot SET_CLOCK with read-back; redacted).
 
 ## 8 · Verification record
+
+- 2026-11-20 Settings/charging redesign: source changes and local issue brief added. `git diff --check` and index check pass; no tests/build, visual review, or hardware confirmation run.
 
 - 2026-11-20 #41 C02b/C06b + pack-info decoding: owner-approved session (attach 10:01, full 10:45, removal 11:08; three 151 `[01]` reads, one attempt each; EXPERIMENT_LOG). PASS WhoopProtocol 193 (11 new), app build + hosted 115 (7 env skips, 0 failures; new `testChargerFullAndPackInfoDriveTheDisplay`). NOT done: the new `[01]` poll and the display seen in the running app (needs a rebuild), interrupted charge, reconnect with the pack on, pack-charge reference.
 
@@ -524,6 +529,7 @@ git ls-files --cached --others --exclude-standard | grep -v -e '^AGENTS.md$' -e 
 
 | Date | Change | Checks / remaining |
 | --- | --- | --- |
+| 2026-11-20 | Settings redesign: strap-first responsive cards + compact section headers; charging animation now settles after a brief cue. Issue brief in `docs/issues/SETTINGS_CHARGING_REDESIGN.md`. | No tests/build or visual/hardware checks; issue follow-up records needed review. |
 | 2026-11-20 | #41 charging session: 151 `[01]` layout confirmed (presence on/off, pack id + serial, raw charge), 117 = 4 = full, 109 = pack self-report. App now sends `[01]`, decodes presence and shows "Fully charged" from 117 = 4. | Protocol 193 + hosted 115 pass; not yet seen in the running app. |
 | 2026-11-20 | Overview live-HR sheet: clicking anywhere in the main window outside it closes it. | Hosted 114 pass (real-sheet event tests); not yet clicked by hand in the running app. |
 | 2026-11-20 | S01 night 3: step counter reset 1 s after this morning's early smart-wake ring (prediction met); a second reset during yesterday's T03 removal → alarm is not the only trigger. | Docs only; deadline ring and a tap-free removal remain. |
