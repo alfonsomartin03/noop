@@ -29,14 +29,6 @@ public final class BLEManager: NSObject, ObservableObject {
     static let whoop5Service = CBUUID(string: DeviceFamily.whoop5.serviceUUIDString)
     static let whoop5CmdWriteChar = CBUUID(string: DeviceFamily.whoop5.commandCharacteristicUUIDString)
 
-    /// UserDefaults key: when true NOOP stores strap history but never acknowledges it, so the strap
-    /// does not delete anything — but it also stops after the first chunk (~50 records), because the
-    /// strap only sends the next chunk once the previous one is acked. Default false: ack after save.
-    static let keepDataOnStrapKey = "noop.keepDataOnStrap"
-    static var keepDataOnStrap: Bool {
-        UserDefaults.standard.object(forKey: keepDataOnStrapKey) as? Bool ?? false
-    }
-
     static let restoreID = "com.openwhoop.ble.central"
 
     private static let osLog = Logger(subsystem: "com.noopapp.noop", category: "ble")
@@ -288,7 +280,6 @@ public final class BLEManager: NSObject, ObservableObject {
                                     self?.ackHistoricalChunk(trim: trim, endData: endData)
                                 },
                                 enableRawCapture: enableRawCapture)
-        backfiller?.acknowledgesChunks = { !BLEManager.keepDataOnStrap }
         syncedThrough = try? await store.cursor(BLEManager.syncedThroughCursor)
         // Strand: no server uploader/sync — all data stays on-device.
     }
@@ -620,7 +611,7 @@ public final class BLEManager: NSObject, ObservableObject {
     }
 
     /// Pull whatever the strap has stored as soon as the 5.0 link is up, so the user never has to
-    /// tap "Pull stored data". Acks follow `keepDataOnStrap`, like a manual pull, and it is rate-limited
+    /// tap "Pull stored data". Acks work like a manual pull, and it is rate-limited
     /// with the same floor as the 4.0 connect sync.
     private func autoPullWhoop5History() {
         guard !whoop5AutoPullDone else { return }
@@ -650,7 +641,6 @@ public final class BLEManager: NSObject, ObservableObject {
     /// The `trim` argument (= end_data first u32) is already persisted as the strap_trim cursor by
     /// the Backfiller; it is passed here only for logging.
     func ackHistoricalChunk(trim: UInt32, endData: [UInt8]) {
-        guard !BLEManager.keepDataOnStrap else { return }
         send(.historicalDataResult, payload: [0x01] + endData, writeType: .withResponse)
     }
 
@@ -1006,8 +996,9 @@ public final class BLEManager: NSObject, ObservableObject {
     // MARK: WHOOP 5.0 stored data (history)
     //
     // Pulls the strap's stored records and saves them to the database chunk by chunk. Each saved chunk is acked
-    // (HISTORICAL_DATA_RESULT) unless `keepDataOnStrap` is on. The ack is the step after which a strap discards a
-    // chunk, and the strap only sends the next chunk once the previous one is acked.
+    // (HISTORICAL_DATA_RESULT). The ack is the step after which a strap discards a chunk, and the strap only sends the
+    // next chunk once the previous one is acked, so a pull cannot proceed without it (the former "keep data on strap"
+    // option, which never acked, was removed 2026-11-20 for that reason).
     // ASSUMPTION: the 5.0 trims only on ack, as documented for the 4.0 in this repo.
 
     /// Ask the strap what time span it holds (read-only).
@@ -1018,7 +1009,7 @@ public final class BLEManager: NSObject, ObservableObject {
     }
 
     /// Start a pull. Order: GET_CLOCK + GET_DATA_RANGE → the range fixes this session's target → SEND_HISTORICAL_DATA.
-    /// Chunks are saved, then acknowledged (unless `keepDataOnStrap`); see `commitWhoop5HistoryChunk` for the rules.
+    /// Chunks are saved, then acknowledged; see `commitWhoop5HistoryChunk` for the rules.
     /// `automatic` pulls skip the raw-frame research file.
     public func pullWhoop5History(automatic: Bool = false) {
         guard family == .whoop5, didBond, !whoop5HistoryActive, !whoop5AwaitingRange else {
@@ -1083,9 +1074,7 @@ public final class BLEManager: NSObject, ObservableObject {
             }
         }
         state.historyStatus = "Downloading…"
-        log(BLEManager.keepDataOnStrap
-            ? "History: pull started (keep-on-strap is on: no acknowledgements; the strap keeps its data)"
-            : "History: pull started (each chunk is acknowledged only after it is saved; the strap then moves its trim pointer)")
+        log("History: pull started (each chunk is acknowledged only after it is saved; the strap then moves its trim pointer)")
         ops { $0.count(.pullStarted, at: $1) }
         sendWhoop5(.sendHistoricalData, payload: [], peripheral: p, characteristic: ch, writeType: .withResponse)
         armHistoryIdle()
@@ -1127,8 +1116,7 @@ public final class BLEManager: NSObject, ObservableObject {
         try? historyCapture?.close(); historyCapture = nil
         state.historyBusy = false
         state.historyStatus = "Captured \(state.historyFrames) frames (\(reason)). "
-            + (BLEManager.keepDataOnStrap ? "Nothing was acknowledged, so the strap kept everything."
-                                          : "Saved chunks were acknowledged, which moves the strap's trim pointer.")
+            + "Saved chunks were acknowledged, which moves the strap's trim pointer."
         let leftover = historyDecoded
         historyDecoded = []
         let events = whoop5ChunkEvents
@@ -1199,8 +1187,7 @@ public final class BLEManager: NSObject, ObservableObject {
     ///    the strap keeps the chunk.
     /// 2. Save first: records + events in one SQLite transaction; ack only once that commit returned.
     /// 3. Ack only for the pull that received the END (session id), with end_data from this CRC-checked END frame.
-    /// 4. Never ack when "keep data on strap" is on (the strap then stops after one chunk — the cost of keeping it).
-    /// 5. `HistoryAckGate`: an END arriving while an earlier END of this pull is still being saved is a repeat (same
+    /// 4. `HistoryAckGate`: an END arriving while an earlier END of this pull is still being saved is a repeat (same
     ///    end_data) and is never acked; after a refused chunk nothing in the pull is acked (#38).
     /// The ack is what lets the strap send the next chunk; it also moves the strap's trim pointer (firmware log),
     /// and whether trimmed records stay readable is UNKNOWN — so a local save is NOT a guarantee the strap keeps a copy.
@@ -1269,7 +1256,6 @@ public final class BLEManager: NSObject, ObservableObject {
                 await self.collector?.setCursor(BLEManager.syncedThroughCursor, self.syncedThrough ?? frontier)
             }
             self.onStoredDataChanged?()
-            guard !BLEManager.keepDataOnStrap else { return }
             guard self.ackGate.mayAck(session: session) else {
                 self.log("History: a chunk of this pull was refused — not acknowledging")
                 return

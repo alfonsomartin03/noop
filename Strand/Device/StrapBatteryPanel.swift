@@ -1,9 +1,9 @@
 import SwiftUI
 import StrandDesign
 
-/// Strap battery detail: the charging illustration plus the percentage and one status line, from the shared
-/// `BatteryPresentation`. The illustration moves only on a verified, fresh charging reading; every other state is
-/// drawn still, so a telemetry update never replays the entrance (the pack docks only when the phase changes).
+/// Strap battery detail: the charging illustration, the percentage and one status line, then (full size) the pack and
+/// charging facts, all from the shared `BatteryPresentation`. The pack is drawn only while charging or full; the
+/// illustration moves only on a verified, fresh charging reading, once per phase change.
 struct StrapBatteryPanel: View {
     @EnvironmentObject var live: LiveState
     var compact = false
@@ -41,32 +41,46 @@ struct StrapBatteryContent: View {
         }
     }
 
-    /// Strap battery, charging pack and charging as three labelled rows, so the pack is never read as the strap.
-    private var factList: some View {
-        Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 3) {
-            ForEach(battery.facts) { f in
-                GridRow {
-                    Text(f.label).font(StrandFont.footnote).foregroundStyle(StrandPalette.textTertiary)
-                    VStack(alignment: .leading, spacing: 0) {
-                        Text(f.value).font(StrandFont.footnote.weight(.semibold))
-                            .foregroundStyle(f.known ? StrandPalette.textPrimary : StrandPalette.textSecondary)
-                        if let d = f.detail {
-                            Text(d).font(.system(size: 10)).foregroundStyle(StrandPalette.textTertiary)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
+    /// Charging pack and charging as two labelled columns under the percentage (which is the strap battery), so the
+    /// pack is never read as the strap.
+    private var factStrip: some View {
+        HStack(alignment: .top, spacing: 0) {
+            ForEach(Array(battery.facts.dropFirst().enumerated()), id: \.element.id) { i, f in
+                if i > 0 {
+                    Rectangle().fill(StrandPalette.hairline).frame(width: 1).padding(.vertical, 2)
+                }
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(f.label.uppercased())
+                        .font(.system(size: 10, weight: .semibold)).tracking(StrandFont.overlineTracking)
+                        .foregroundStyle(StrandPalette.textTertiary)
+                    Text(f.value)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(f.known ? StrandPalette.textPrimary : StrandPalette.textSecondary)
+                    if let d = f.detail {
+                        Text(d).font(StrandFont.footnote).foregroundStyle(StrandPalette.textTertiary)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 14)
             }
         }
+        .padding(.vertical, 12)
+        .background(StrandPalette.surfaceInset.opacity(0.7), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
-    var body: some View {
-        HStack(alignment: .center, spacing: NoopMetrics.gap) {
+    private var headline: some View {
+        HStack(alignment: .center, spacing: compact ? NoopMetrics.gap : 28) {
             ChargingIllustration(phase: phase, percent: battery.percent, dimmed: battery.stale || battery.percent == nil,
-                                 height: compact ? 72 : 96)
+                                 height: compact ? 72 : 100)
             VStack(alignment: .leading, spacing: 4) {
+                if !compact {
+                    Text("STRAP BATTERY")
+                        .font(.system(size: 10, weight: .semibold)).tracking(StrandFont.overlineTracking)
+                        .foregroundStyle(StrandPalette.textTertiary)
+                }
                 Text(battery.valueText)
-                    .font(StrandFont.number(compact ? 28 : 34, weight: .bold))
+                    .font(StrandFont.number(compact ? 28 : 44, weight: .bold))
                     .foregroundStyle(battery.percent == nil ? StrandPalette.textTertiary : battery.ink)
                     .contentTransition(.numericText())
                 Label {
@@ -76,12 +90,20 @@ struct StrapBatteryContent: View {
                 }
                 .font(StrandFont.subhead)
                 .foregroundStyle(StrandPalette.textSecondary)
+                // Full size, the fact strip below carries the source; compact (live sheet) has no strip.
                 if compact, let note = sourceNote {
                     Text(note).font(StrandFont.footnote).foregroundStyle(StrandPalette.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                if !compact { factList.padding(.top, 4) }
             }
             Spacer(minLength: 0)
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            headline
+            if !compact { factStrip }
         }
         .animation(StrandMotion.respecting(StrandMotion.gentle), value: battery.charge)
         .animation(StrandMotion.respecting(StrandMotion.gentle), value: battery.attachment)

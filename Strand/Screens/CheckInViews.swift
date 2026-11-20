@@ -392,15 +392,24 @@ struct CheckInSettingsForm: View {
     @EnvironmentObject var settings: CheckInSettings
     @EnvironmentObject var repo: Repository
     @State private var notificationsDenied = false
+    /// Settings ▸ General hosts the form inside its own card: flat rows split by hairlines, no nested cards, and the
+    /// intro moves to the section's footer.
+    var grouped = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            Text("Check-ins are optional and stay on this Mac. Turning one off or removing a prompt keeps every past answer.")
-                .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
-            ForEach(CheckInSession.allCases, id: \.self) { s in section(s) }
+        VStack(alignment: .leading, spacing: grouped ? 0 : 18) {
+            if !grouped {
+                Text(Self.intro).font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+            }
+            ForEach(Array(CheckInSession.allCases.enumerated()), id: \.element) { i, s in
+                if grouped && i > 0 { Rectangle().fill(StrandPalette.hairline).frame(height: 1) }
+                section(s)
+            }
             if notificationsDenied {
+                if grouped { Rectangle().fill(StrandPalette.hairline).frame(height: 1) }
                 Label("Notifications are off for NOOP in System Settings, so reminders can't appear. The Overview card still shows what's left today.",
                       systemImage: "bell.slash").font(StrandFont.caption).foregroundStyle(StrandPalette.statusWarningInk)
+                    .padding(.vertical, grouped ? 13 : 0)
             }
         }
         .task { notificationsDenied = await CheckInReminders.authorizationStatus() == .denied }
@@ -409,6 +418,8 @@ struct CheckInSettingsForm: View {
         .onChange(of: settings.morningEnabled) { _ in Task { await reschedule() } }
         .onChange(of: settings.eveningEnabled) { _ in Task { await reschedule() } }
     }
+
+    static let intro = "Check-ins are optional and stay on this Mac. Turning one off or removing a prompt keeps every past answer."
 
     private func reschedule() async {
         let done = Set(await repo.checkIns(from: Repository.dayString(Date()), to: "9999-12-31").map { "\($0.localDate)|\($0.session)" })
@@ -420,13 +431,16 @@ struct CheckInSettingsForm: View {
         let ids = settings.promptIds(s)
         let available = CheckInLibrary.prompts(for: s).filter { !ids.contains($0.id) }
         return VStack(alignment: .leading, spacing: 10) {
-            Toggle(isOn: Binding(get: { settings.enabled(s) }, set: { settings.setEnabled(s, $0) })) {
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(s.title).font(.system(size: 14, weight: .semibold)).foregroundStyle(StrandPalette.textPrimary)
-                    Text(s.about).font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
+            HStack(spacing: 16) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(s.title).font(.system(size: 14, weight: grouped ? .medium : .semibold)).foregroundStyle(StrandPalette.textPrimary)
+                    Text(s.about).font(StrandFont.caption).foregroundStyle(grouped ? StrandPalette.textSecondary : StrandPalette.textTertiary)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                Toggle(s.title, isOn: Binding(get: { settings.enabled(s) }, set: { settings.setEnabled(s, $0) }))
+                    .labelsHidden()
+                    .toggleStyle(.switch)
             }
-            .toggleStyle(.switch)
             if settings.enabled(s) {
                 ForEach(Array(ids.enumerated()), id: \.element) { i, id in
                     HStack(spacing: 8) {
@@ -450,8 +464,15 @@ struct CheckInSettingsForm: View {
                 reminderRow(s)
             }
         }
-        .padding(16)
-        .strandSurface(cornerRadius: 16)
+        .modifier(SessionChrome(grouped: grouped))
+    }
+
+    /// Standalone (check-in sheet): each session is its own small card. Grouped: a plain row.
+    private struct SessionChrome: ViewModifier {
+        let grouped: Bool
+        func body(content: Content) -> some View {
+            if grouped { content.padding(.vertical, 13) } else { content.padding(16).strandSurface(cornerRadius: 16) }
+        }
     }
 
     private func move(_ s: CheckInSession, _ i: Int, _ step: Int) {

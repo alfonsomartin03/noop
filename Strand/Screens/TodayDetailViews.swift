@@ -685,7 +685,7 @@ struct StrainDetailView: View {
         if s.unknownSeconds >= 60 {
             out.append("No synced data for \(DayMath.hm(Double(s.unknownSeconds) / 60)); walking and running time there is not counted.")
         }
-        out.append("Reset timing and accuracy are unverified; this may be an incomplete daily count.")
+        out.append("The strap resets this counter on its own (seen right after alarm wake-ups and once after it was taken off) and its accuracy is unverified, so this may be an incomplete daily count.")
         return out
     }
 

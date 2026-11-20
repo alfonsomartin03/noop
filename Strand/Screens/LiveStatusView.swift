@@ -116,7 +116,7 @@ struct LiveStatusCard: View {
         }
     }
 
-    // WHOOP 5.0 needs different guidance: it only bonds in pairing mode and its sensor data isn't fully decoded.
+    // WHOOP 5.0 needs different guidance: it only bonds in pairing mode.
     private func explanation(_ phase: LivePhase) -> String? {
         let is5 = live.family == "whoop5"
         switch phase {
@@ -129,7 +129,7 @@ struct LiveStatusCard: View {
             return is5 ? "Your WHOOP 5.0 is connected. Waiting for heart-rate readings — the strap only reports them while it's snug against your skin, so make sure you're wearing it."
                        : "Waiting for the strap to start sending data."
         case .strapDataNoHR:
-            return is5 ? "The strap is talking to the app, but WHOOP 5.0 sensor data can't be decoded yet, so heart rate only appears if the strap shares it through the standard heart-rate service. It hasn't so far. Heart rate only streams while the strap is worn."
+            return is5 ? "The strap is sending data but no heart rate yet. It reports heart rate only while it's worn snug against your skin; it should appear within a few seconds of wearing it."
                        : "Strap data is arriving. Heart rate should appear shortly."
         case .stalled:
             return "Nothing received for a few seconds. The app will reconnect automatically."
@@ -139,12 +139,11 @@ struct LiveStatusCard: View {
     }
 }
 
-/// WHOOP 5.0 stored-data pull. Saves what the strap holds and confirms each batch unless "keep data on strap" is on.
+/// WHOOP 5.0 stored-data pull. Saves what the strap holds and confirms each batch once it is saved.
 // WHOOP 5.0 only. A confirmed batch is one the strap is allowed to delete.
 struct StrapHistoryCard: View {
     @EnvironmentObject var live: LiveState
     @EnvironmentObject var model: AppModel
-    @AppStorage(BLEManager.keepDataOnStrapKey) private var keepDataOnStrap = false
 
     var body: some View {
         if live.family == "whoop5" {
@@ -190,9 +189,7 @@ struct StrapHistoryCard: View {
                 }
                 .controlSize(.regular)
 
-                Text(keepDataOnStrap
-                     ? "\"Never delete data from the strap\" is on, so NOOP never confirms a batch and the strap keeps its copy, but each pull may stop after the first batch. Raw frames are saved on this Mac so the 5.0 record format can be decoded."
-                     : "NOOP confirms each batch only after it is saved on this Mac; confirming moves the strap's trim pointer past it, and whether another app can still read that batch is not known. A batch NOOP cannot decode is never confirmed. To stop confirming, turn on \"Never delete data from the strap\" in Settings.")
+                Text("NOOP confirms each batch only after it is saved on this Mac; the strap needs that confirmation to send the next batch, and it moves the strap's trim pointer past it. A batch NOOP cannot decode is never confirmed.")
                     .font(.system(size: 11)).foregroundStyle(StrandPalette.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
             }
