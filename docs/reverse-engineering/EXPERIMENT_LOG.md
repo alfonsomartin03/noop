@@ -418,3 +418,23 @@ accepted every command. Details: ALARM_CAPABILITIES.md. **Wearer confirmed feeli
   Overview HR card should say "Strap reported off the wrist for 23 min" for today. **Not seen in the app** (wearer
   to check); the caption logic itself is unit-tested and the render was checked in T02.
 - Still open: a removal inside a night (off-wrist exclusion in the nightly skin value), VoiceOver.
+
+## S01 night 3 — alarm morning + an off-wrist reset (2026-11-19/20, passive, no strap commands)
+
+- **Source:** SQLite-backup copy at 2026-11-20 08:48 EST (21,764 step change points, 11-17 14:07 → 11-20 08:41 strap
+  time; strap clock ≈ Mac after the K01 re-sync). `step_reset_scan.py` now finds three decreases. Aggregates only.
+- **Alarm morning (frozen prediction met):** smart wake fired early at 07:47:40 (`smart-wake-v2-hr`, HR run 60 s;
+  deadline 08:30): events 58 + 60 at 07:47:40, counter **1,898 → 0 at 07:47:41** (bounded to 1 s), double-tap
+  dismissal (14 + 100 reason 2) at 07:47:48 — after the reset, as on 11-18. No drop at midnight or at the deadline
+  (08:30 did not ring: the strap dismissal completed the occurrence). The wearer reports falling asleep again for
+  ~15 min: the counter took 9 steps at 07:48:11–16, then stayed flat 07:48:19 → 08:03:23, and counting resumed with
+  walking from 08:08.
+- **Second trigger (not predicted):** the counter also reset during the T03 removal on 11-19, **21,257 → 0** in
+  (18:29:02, 18:52:37] — the last record before WRIST_OFF (18:29:03) and the first after WRIST_ON (18:52:37). The
+  strap stores no records off the wrist, so the reset time inside those 23.6 min is unknown. Also inside the window: a
+  BLE reconnect at 18:38:14 and ~85 double-tap events 18:38–18:40 while the strap was handled off the wrist. No alarm.
+- **Reading:** the alarm trigger is **SUPPORTED** by two alarm mornings (both early smart wakes, reset 1 s after the
+  ring and before the dismissal tap) plus one no-alarm control morning. It is **not the only trigger**: something during
+  the removal (wrist off/on, the handling double taps, or the reconnect) also reset it. A ring at the deadline (not
+  early) is still untested. NOOP's Steps tile is unaffected (it never subtracts a drop and counts the post-reset value).
+- **Next:** a short timed removal with no taps and no reconnect, to see whether wrist off/on alone resets the counter.
