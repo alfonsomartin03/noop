@@ -142,6 +142,33 @@ final class BatteryPresentationTests: XCTestCase {
         XCTAssertEqual(BatteryPresentation(live: live(100, charging: true), now: now).statusText, "Fully charged")
     }
 
+    /// #41 C02b: at full the strap sends CHARGING_OFF with event 117 stage 4. With the pack still on that reads as
+    /// full, not "attached · not charging"; a pack-info reply decides attachment; removal ends it.
+    func testChargerFullAndPackInfoDriveTheDisplay() {
+        let l = live(100, charging: nil)
+        l.applyPackInfo(.present(rawCharge: 418), requestedAt: now, connection: l.connectionId, receivedAt: now)
+        var b = BatteryPresentation(live: l, now: now)
+        XCTAssertEqual(b.attachment, .attached)
+        XCTAssertEqual(b.statusText, "Charger attached")
+        l.applyChargingEvent(.chargingOff, eventAt: now.addingTimeInterval(1), receivedAt: now.addingTimeInterval(1))
+        b = BatteryPresentation(live: l, now: now.addingTimeInterval(2))
+        XCTAssertEqual(b.statusText, "Charger attached · not charging")
+        l.applyChargerStage(4, eventAt: now.addingTimeInterval(1), receivedAt: now.addingTimeInterval(1))
+        b = BatteryPresentation(live: l, now: now.addingTimeInterval(2))
+        XCTAssertTrue(b.isFull)
+        XCTAssertEqual(b.statusText, "Fully charged")
+        XCTAssertEqual(b.illustration, .full)
+        XCTAssertEqual(b.facts.first { $0.id == "charging" }?.value, "Full")
+        XCTAssertEqual(l.battery?.charging, false, "alerts still see the strap's own charging flag")
+        // Removed: no longer full; an absent reply says the same after a reconnect-free poll.
+        l.applyChargingEvent(.batteryPackRemoved, eventAt: now.addingTimeInterval(100), receivedAt: now.addingTimeInterval(100))
+        b = BatteryPresentation(live: l, now: now.addingTimeInterval(101))
+        XCTAssertFalse(b.isFull)
+        XCTAssertEqual(b.illustration, .detached)
+        l.applyPackInfo(.absent, requestedAt: now.addingTimeInterval(400), connection: l.connectionId, receivedAt: now.addingTimeInterval(401))
+        XCTAssertEqual(BatteryPresentation(live: l, now: now.addingTimeInterval(402)).statusText, "On battery")
+    }
+
     /// Attachment and charging are separate; a fresh percentage stamps the CONFIRMED fact only; disconnect forgets both.
     func testChargingModelDrivesEverySurface() {
         let l = live(48, charging: nil)

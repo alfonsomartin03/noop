@@ -1,0 +1,174 @@
+{"exp": "C06b-charging", "kind": "note", "t": 1795186925.027842, "text": "central state=5 auth=3"}
+{"exp": "C06b-charging", "kind": "note", "t": 1795186925.040279, "text": "strap already connected to this Mac (shared link) \u2014 attaching"}
+{"exp": "C06b-charging", "kind": "note", "t": 1795186925.041404, "text": "connected; discovering all services"}
+{"exp": "C06b-charging", "kind": "service", "primary": true, "t": 1795186925.042385, "uuid": "180D"}
+{"exp": "C06b-charging", "kind": "service", "primary": true, "t": 1795186925.042582, "uuid": "180A"}
+{"exp": "C06b-charging", "kind": "service", "primary": true, "t": 1795186925.042686, "uuid": "180F"}
+{"exp": "C06b-charging", "kind": "service", "primary": true, "t": 1795186925.042793, "uuid": "FD4B0001-CCE1-4033-93CE-002D5875F58A"}
+{"exp": "C06b-charging", "kind": "characteristic", "notifying": false, "props": ["notify"], "service": "180D", "t": 1795186925.04324, "uuid": "2A37"}
+{"exp": "C06b-charging", "kind": "characteristic", "notifying": false, "props": ["read"], "service": "180A", "t": 1795186925.043587, "uuid": "2A29"}
+{"exp": "C06b-charging", "kind": "characteristic", "notifying": false, "props": ["read"], "service": "180A", "t": 1795186925.043756, "uuid": "2A24"}
+{"exp": "C06b-charging", "kind": "characteristic", "notifying": false, "props": ["read"], "service": "180A", "t": 1795186925.043922, "uuid": "2A25"}
+{"exp": "C06b-charging", "kind": "characteristic", "notifying": false, "props": ["read"], "service": "180A", "t": 1795186925.044059, "uuid": "2A26"}
+{"exp": "C06b-charging", "kind": "characteristic", "notifying": false, "props": ["read"], "service": "180A", "t": 1795186925.0441918, "uuid": "2A27"}
+{"exp": "C06b-charging", "kind": "characteristic", "notifying": false, "props": ["read", "notify"], "service": "180F", "t": 1795186925.044452, "uuid": "2A19"}
+{"exp": "C06b-charging", "kind": "characteristic", "notifying": false, "props": ["writeNoResp", "write"], "service": "FD4B0001-CCE1-4033-93CE-002D5875F58A", "t": 1795186925.044688, "uuid": "FD4B0002-CCE1-4033-93CE-002D5875F58A"}
+{"exp": "C06b-charging", "kind": "characteristic", "notifying": false, "props": ["notify"], "service": "FD4B0001-CCE1-4033-93CE-002D5875F58A", "t": 1795186925.044843, "uuid": "FD4B0003-CCE1-4033-93CE-002D5875F58A"}
+{"exp": "C06b-charging", "kind": "characteristic", "notifying": false, "props": ["notify"], "service": "FD4B0001-CCE1-4033-93CE-002D5875F58A", "t": 1795186925.045003, "uuid": "FD4B0004-CCE1-4033-93CE-002D5875F58A"}
+{"exp": "C06b-charging", "kind": "characteristic", "notifying": false, "props": ["notify"], "service": "FD4B0001-CCE1-4033-93CE-002D5875F58A", "t": 1795186925.0451632, "uuid": "FD4B0005-CCE1-4033-93CE-002D5875F58A"}
+{"exp": "C06b-charging", "kind": "characteristic", "notifying": false, "props": ["notify"], "service": "FD4B0001-CCE1-4033-93CE-002D5875F58A", "t": 1795186925.045325, "uuid": "FD4B0007-CCE1-4033-93CE-002D5875F58A"}
+{"characteristic": "2A37", "exp": "C06b-charging", "kind": "descriptor", "t": 1795186925.502836, "uuid": "2902"}
+{"exp": "C06b-charging", "hex": "57484f4f5020496e632e", "kind": "read", "len": 10, "service": "180A", "t": 1795186926.013053, "uuid": "2A29", "value": "WHOOP Inc."}
+{"exp": "C06b-charging", "kind": "note", "t": 1795186926.013527, "text": "READ 2A29 = WHOOP Inc."}
+{"exp": "C06b-charging", "hex": "352e3000", "kind": "read", "len": 4, "service": "180A", "t": 1795186926.5225291, "uuid": "2A24", "value": "5.0\u0000"}
+{"exp": "C06b-charging", "kind": "note", "t": 1795186926.52286, "text": "READ 2A24 = 5.0\u0000"}
+{"ch": "FD4B0002-CCE1-4033-93CE-002D5875F58A", "cmd": 151, "dir": "tx", "exp": "C06b-charging", "hex": "aa0108000001e67123c99701485eba44", "kind": "frame", "len": 16, "name": "GET_BATTERY_PACK_INFO", "seq": 201, "t": 1795186926.619461}
+{"exp": "C06b-charging", "kind": "note", "t": 1795186926.6201649, "text": "TX cmd=151 GET_BATTERY_PACK_INFO seq=201 aa0108000001e67123c99701485eba44"}
+{"exp": "C06b-charging", "kind": "read", "len": 11, "service": "180A", "t": 1795186927.033337, "uuid": "2A25", "value": "<redacted>"}
+{"exp": "C06b-charging", "kind": "note", "t": 1795186927.033722, "text": "READ 2A25 = <redacted>"}
+{"ch": "FD4B0004-CCE1-4033-93CE-002D5875F58A", "exp": "C06b-charging", "kind": "fragment", "len": 44, "t": 1795186927.287568}
+{"ch": "FD4B0004-CCE1-4033-93CE-002D5875F58A", "crc32": true, "dir": "rx", "exp": "C06b-charging", "hdr_crc": true, "hex": "aa01240001002eb130350300ee60006b3373140002c2020000711000000100340708002700000000ff2b3f32", "kind": "frame", "len": 44, "t": 1795186927.288553, "type": 48}
+{"exp": "C06b-charging", "kind": "note", "t": 1795186927.2889318, "text": "EVENT 3 strap_t=1795186926 body=02c2020000711000000100340708002700000000 on FD4B0004"}
+{"exp": "C06b-charging", "hex": "35302e34332e312e30", "kind": "read", "len": 9, "service": "180A", "t": 1795186927.2893329, "uuid": "2A26", "value": "50.43.1.0"}
+{"exp": "C06b-charging", "kind": "note", "t": 1795186927.289472, "text": "READ 2A26 = 50.43.1.0"}
+{"exp": "C06b-charging", "hex": "574735305f723532", "kind": "read", "len": 8, "service": "180A", "t": 1795186927.797505, "uuid": "2A27", "value": "WG50_r52"}
+{"exp": "C06b-charging", "kind": "note", "t": 1795186927.79782, "text": "READ 2A27 = WG50_r52"}
+{"characteristic": "2A19", "exp": "C06b-charging", "kind": "descriptor", "t": 1795186927.797966, "uuid": "2902"}
+{"exp": "C06b-charging", "kind": "read", "len": 1, "service": "180F", "t": 1795186928.3073158, "uuid": "2A19", "value": 70}
+{"exp": "C06b-charging", "kind": "note", "t": 1795186928.307856, "text": "READ 2A19 = 70"}
+{"characteristic": "FD4B0003-CCE1-4033-93CE-002D5875F58A", "exp": "C06b-charging", "kind": "descriptor", "t": 1795186928.308055, "uuid": "2902"}
+{"error": "", "exp": "C06b-charging", "kind": "subscribe", "notifying": true, "t": 1795186928.817097, "uuid": "FD4B0003-CCE1-4033-93CE-002D5875F58A"}
+{"characteristic": "FD4B0004-CCE1-4033-93CE-002D5875F58A", "exp": "C06b-charging", "kind": "descriptor", "t": 1795186928.817651, "uuid": "2902"}
+{"error": "", "exp": "C06b-charging", "kind": "subscribe", "notifying": true, "t": 1795186929.327859, "uuid": "FD4B0004-CCE1-4033-93CE-002D5875F58A"}
+{"characteristic": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "exp": "C06b-charging", "kind": "descriptor", "t": 1795186929.328222, "uuid": "2902"}
+{"error": "", "exp": "C06b-charging", "kind": "subscribe", "notifying": true, "t": 1795186929.837085, "uuid": "FD4B0005-CCE1-4033-93CE-002D5875F58A"}
+{"characteristic": "FD4B0007-CCE1-4033-93CE-002D5875F58A", "exp": "C06b-charging", "kind": "descriptor", "t": 1795186929.837713, "uuid": "2902"}
+{"ch": "FD4B0004-CCE1-4033-93CE-002D5875F58A", "exp": "C06b-charging", "kind": "fragment", "len": 28, "t": 1795186930.092246}
+{"ch": "FD4B0004-CCE1-4033-93CE-002D5875F58A", "crc32": true, "dir": "rx", "exp": "C06b-charging", "hdr_crc": true, "hex": "aa0114000102a07036370200f160006b3d6a040001f802009016f232", "kind": "frame", "len": 28, "t": 1795186930.093092, "type": 54}
+{"exp": "C06b-charging", "kind": "note", "t": 1795186930.093364, "text": "RX FD4B0004 type=54 len=28 crc=true"}
+{"error": "", "exp": "C06b-charging", "kind": "subscribe", "notifying": true, "t": 1795186930.093779, "uuid": "FD4B0007-CCE1-4033-93CE-002D5875F58A"}
+{"characteristic": "2A37", "exp": "C06b-charging", "kind": "descriptor_value", "t": 1795186930.603481, "uuid": "2902", "value": "1"}
+{"error": "", "exp": "C06b-charging", "kind": "write_ack", "t": 1795186931.111784, "uuid": "FD4B0002-CCE1-4033-93CE-002D5875F58A"}
+{"ch": "FD4B0003-CCE1-4033-93CE-002D5875F58A", "exp": "C06b-charging", "kind": "fragment", "len": 48, "t": 1795186931.113961}
+{"exp": "C06b-charging", "kind": "note", "t": 1795186931.114388, "text": "RX response cmd=151 seq=201 result=1 len=48 latency=4495ms"}
+{"cmd": 151, "exp": "C06b-charging", "kind": "result", "latency_ms": 4495, "outcome": "result 1", "seq": 201, "t": 1795186931.114485}
+{"ch": "FD4B0003-CCE1-4033-93CE-002D5875F58A", "cmd": 151, "crc32": true, "dir": "rx", "exp": "C06b-charging", "hdr_crc": true, "hex": "aa01280001002de1249f97c9010101rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr000000f8020c010000005b518312", "kind": "frame", "latency_ms": 4495, "len": 48, "redacted": "pack id (6 B) and serial (13 B) replaced by rr; CRCs no longer verify", "result": 1, "seq": 201, "t": 1795186931.1149979, "type": 36}
+{"characteristic": "2A19", "exp": "C06b-charging", "kind": "descriptor_value", "t": 1795186931.6232638, "uuid": "2902", "value": "1"}
+{"characteristic": "FD4B0003-CCE1-4033-93CE-002D5875F58A", "exp": "C06b-charging", "kind": "descriptor_value", "t": 1795186932.1319041, "uuid": "2902", "value": "1"}
+{"characteristic": "FD4B0004-CCE1-4033-93CE-002D5875F58A", "exp": "C06b-charging", "kind": "descriptor_value", "t": 1795186932.6425261, "uuid": "2902", "value": "1"}
+{"characteristic": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "exp": "C06b-charging", "kind": "descriptor_value", "t": 1795186933.1518822, "uuid": "2902", "value": "1"}
+{"characteristic": "FD4B0007-CCE1-4033-93CE-002D5875F58A", "exp": "C06b-charging", "kind": "descriptor_value", "t": 1795186933.6636071, "uuid": "2902", "value": "1"}
+{"ch": "FD4B0004-CCE1-4033-93CE-002D5875F58A", "exp": "C06b-charging", "kind": "fragment", "len": 28, "t": 1795186942.587284}
+{"ch": "FD4B0004-CCE1-4033-93CE-002D5875F58A", "crc32": true, "dir": "rx", "exp": "C06b-charging", "hdr_crc": true, "hex": "aa0114000102a070363a0200fe60006b1e25040001f60200c2b64c73", "kind": "frame", "len": 28, "t": 1795186942.588066, "type": 54}
+{"exp": "C06b-charging", "kind": "note", "t": 1795186942.588206, "text": "RX FD4B0004 type=54 len=28 crc=true"}
+{"exp": "C06b-charging", "kind": "note", "t": 1795186946.039705, "text": "finished: capture window 20 s elapsed"}
+{"exp": "C06b-full", "kind": "note", "t": 1795190849.466738, "text": "central state=5 auth=3"}
+{"exp": "C06b-full", "kind": "note", "t": 1795190849.473545, "text": "strap already connected to this Mac (shared link) \u2014 attaching"}
+{"exp": "C06b-full", "kind": "note", "t": 1795190849.474236, "text": "connected; discovering all services"}
+{"exp": "C06b-full", "kind": "service", "primary": true, "t": 1795190849.475079, "uuid": "180D"}
+{"exp": "C06b-full", "kind": "service", "primary": true, "t": 1795190849.475212, "uuid": "180A"}
+{"exp": "C06b-full", "kind": "service", "primary": true, "t": 1795190849.475298, "uuid": "180F"}
+{"exp": "C06b-full", "kind": "service", "primary": true, "t": 1795190849.475379, "uuid": "FD4B0001-CCE1-4033-93CE-002D5875F58A"}
+{"exp": "C06b-full", "kind": "characteristic", "notifying": false, "props": ["notify"], "service": "180D", "t": 1795190849.475665, "uuid": "2A37"}
+{"exp": "C06b-full", "kind": "characteristic", "notifying": false, "props": ["read"], "service": "180A", "t": 1795190849.475878, "uuid": "2A29"}
+{"exp": "C06b-full", "kind": "characteristic", "notifying": false, "props": ["read"], "service": "180A", "t": 1795190849.476007, "uuid": "2A24"}
+{"exp": "C06b-full", "kind": "characteristic", "notifying": false, "props": ["read"], "service": "180A", "t": 1795190849.476139, "uuid": "2A25"}
+{"exp": "C06b-full", "kind": "characteristic", "notifying": false, "props": ["read"], "service": "180A", "t": 1795190849.476248, "uuid": "2A26"}
+{"exp": "C06b-full", "kind": "characteristic", "notifying": false, "props": ["read"], "service": "180A", "t": 1795190849.476367, "uuid": "2A27"}
+{"exp": "C06b-full", "kind": "characteristic", "notifying": false, "props": ["read", "notify"], "service": "180F", "t": 1795190849.476531, "uuid": "2A19"}
+{"exp": "C06b-full", "kind": "characteristic", "notifying": false, "props": ["writeNoResp", "write"], "service": "FD4B0001-CCE1-4033-93CE-002D5875F58A", "t": 1795190849.4766788, "uuid": "FD4B0002-CCE1-4033-93CE-002D5875F58A"}
+{"exp": "C06b-full", "kind": "characteristic", "notifying": false, "props": ["notify"], "service": "FD4B0001-CCE1-4033-93CE-002D5875F58A", "t": 1795190849.47678, "uuid": "FD4B0003-CCE1-4033-93CE-002D5875F58A"}
+{"exp": "C06b-full", "kind": "characteristic", "notifying": false, "props": ["notify"], "service": "FD4B0001-CCE1-4033-93CE-002D5875F58A", "t": 1795190849.476893, "uuid": "FD4B0004-CCE1-4033-93CE-002D5875F58A"}
+{"exp": "C06b-full", "kind": "characteristic", "notifying": false, "props": ["notify"], "service": "FD4B0001-CCE1-4033-93CE-002D5875F58A", "t": 1795190849.4770122, "uuid": "FD4B0005-CCE1-4033-93CE-002D5875F58A"}
+{"exp": "C06b-full", "kind": "characteristic", "notifying": false, "props": ["notify"], "service": "FD4B0001-CCE1-4033-93CE-002D5875F58A", "t": 1795190849.4771261, "uuid": "FD4B0007-CCE1-4033-93CE-002D5875F58A"}
+{"characteristic": "2A37", "exp": "C06b-full", "kind": "descriptor", "t": 1795190849.4773412, "uuid": "2902"}
+{"exp": "C06b-full", "hex": "57484f4f5020496e632e", "kind": "read", "len": 10, "service": "180A", "t": 1795190849.5060139, "uuid": "2A29", "value": "WHOOP Inc."}
+{"exp": "C06b-full", "kind": "note", "t": 1795190849.5062099, "text": "READ 2A29 = WHOOP Inc."}
+{"exp": "C06b-full", "hex": "352e3000", "kind": "read", "len": 4, "service": "180A", "t": 1795190849.5360398, "uuid": "2A24", "value": "5.0\u0000"}
+{"exp": "C06b-full", "kind": "note", "t": 1795190849.53633, "text": "READ 2A24 = 5.0\u0000"}
+{"exp": "C06b-full", "kind": "read", "len": 11, "service": "180A", "t": 1795190849.565819, "uuid": "2A25", "value": "<redacted>"}
+{"exp": "C06b-full", "kind": "note", "t": 1795190849.566059, "text": "READ 2A25 = <redacted>"}
+{"exp": "C06b-full", "hex": "35302e34332e312e30", "kind": "read", "len": 9, "service": "180A", "t": 1795190849.625924, "uuid": "2A26", "value": "50.43.1.0"}
+{"exp": "C06b-full", "kind": "note", "t": 1795190849.626194, "text": "READ 2A26 = 50.43.1.0"}
+{"exp": "C06b-full", "hex": "574735305f723532", "kind": "read", "len": 8, "service": "180A", "t": 1795190849.654776, "uuid": "2A27", "value": "WG50_r52"}
+{"exp": "C06b-full", "kind": "note", "t": 1795190849.654984, "text": "READ 2A27 = WG50_r52"}
+{"characteristic": "2A19", "exp": "C06b-full", "kind": "descriptor", "t": 1795190849.655083, "uuid": "2902"}
+{"exp": "C06b-full", "kind": "read", "len": 1, "service": "180F", "t": 1795190849.686235, "uuid": "2A19", "value": 100}
+{"exp": "C06b-full", "kind": "note", "t": 1795190849.68722, "text": "READ 2A19 = 100"}
+{"characteristic": "FD4B0003-CCE1-4033-93CE-002D5875F58A", "exp": "C06b-full", "kind": "descriptor", "t": 1795190849.687434, "uuid": "2902"}
+{"error": "", "exp": "C06b-full", "kind": "subscribe", "notifying": true, "t": 1795190849.715537, "uuid": "FD4B0003-CCE1-4033-93CE-002D5875F58A"}
+{"characteristic": "FD4B0004-CCE1-4033-93CE-002D5875F58A", "exp": "C06b-full", "kind": "descriptor", "t": 1795190849.715917, "uuid": "2902"}
+{"error": "", "exp": "C06b-full", "kind": "subscribe", "notifying": true, "t": 1795190849.745597, "uuid": "FD4B0004-CCE1-4033-93CE-002D5875F58A"}
+{"characteristic": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "exp": "C06b-full", "kind": "descriptor", "t": 1795190849.745939, "uuid": "2902"}
+{"error": "", "exp": "C06b-full", "kind": "subscribe", "notifying": true, "t": 1795190849.775813, "uuid": "FD4B0005-CCE1-4033-93CE-002D5875F58A"}
+{"characteristic": "FD4B0007-CCE1-4033-93CE-002D5875F58A", "exp": "C06b-full", "kind": "descriptor", "t": 1795190849.776125, "uuid": "2902"}
+{"error": "", "exp": "C06b-full", "kind": "subscribe", "notifying": true, "t": 1795190849.8053179, "uuid": "FD4B0007-CCE1-4033-93CE-002D5875F58A"}
+{"characteristic": "2A37", "exp": "C06b-full", "kind": "descriptor_value", "t": 1795190849.8360329, "uuid": "2902", "value": "1"}
+{"characteristic": "2A19", "exp": "C06b-full", "kind": "descriptor_value", "t": 1795190849.86594, "uuid": "2902", "value": "1"}
+{"characteristic": "FD4B0003-CCE1-4033-93CE-002D5875F58A", "exp": "C06b-full", "kind": "descriptor_value", "t": 1795190849.925044, "uuid": "2902", "value": "1"}
+{"characteristic": "FD4B0004-CCE1-4033-93CE-002D5875F58A", "exp": "C06b-full", "kind": "descriptor_value", "t": 1795190849.955822, "uuid": "2902", "value": "1"}
+{"characteristic": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "exp": "C06b-full", "kind": "descriptor_value", "t": 1795190849.985939, "uuid": "2902", "value": "1"}
+{"characteristic": "FD4B0007-CCE1-4033-93CE-002D5875F58A", "exp": "C06b-full", "kind": "descriptor_value", "t": 1795190850.0159569, "uuid": "2902", "value": "1"}
+{"ch": "FD4B0002-CCE1-4033-93CE-002D5875F58A", "cmd": 151, "dir": "tx", "exp": "C06b-full", "hex": "aa0108000001e67123c99701485eba44", "kind": "frame", "len": 16, "name": "GET_BATTERY_PACK_INFO", "seq": 201, "t": 1795190851.0514898}
+{"exp": "C06b-full", "kind": "note", "t": 1795190851.052161, "text": "TX cmd=151 GET_BATTERY_PACK_INFO seq=201 aa0108000001e67123c99701485eba44"}
+{"error": "", "exp": "C06b-full", "kind": "write_ack", "t": 1795190851.096949, "uuid": "FD4B0002-CCE1-4033-93CE-002D5875F58A"}
+{"ch": "FD4B0003-CCE1-4033-93CE-002D5875F58A", "exp": "C06b-full", "kind": "fragment", "len": 48, "t": 1795190851.097516}
+{"exp": "C06b-full", "kind": "note", "t": 1795190851.097976, "text": "RX response cmd=151 seq=201 result=1 len=48 latency=46ms"}
+{"cmd": 151, "exp": "C06b-full", "kind": "result", "latency_ms": 46, "outcome": "result 1", "seq": 201, "t": 1795190851.098065}
+{"ch": "FD4B0003-CCE1-4033-93CE-002D5875F58A", "cmd": 151, "crc32": true, "dir": "rx", "exp": "C06b-full", "hdr_crc": true, "hex": "aa01280001002de1243a97c9010101rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr000000a2010c010000006b7103d9", "kind": "frame", "latency_ms": 46, "len": 48, "redacted": "pack id (6 B) and serial (13 B) replaced by rr; CRCs no longer verify", "result": 1, "seq": 201, "t": 1795190851.0985641, "type": 36}
+{"exp": "C06b-full", "kind": "note", "t": 1795190870.473071, "text": "finished: capture window 20 s elapsed"}
+{"exp": "C06b-removed", "kind": "note", "t": 1795191123.6330109, "text": "central state=5 auth=3"}
+{"exp": "C06b-removed", "kind": "note", "t": 1795191123.636342, "text": "strap already connected to this Mac (shared link) \u2014 attaching"}
+{"exp": "C06b-removed", "kind": "note", "t": 1795191123.6366491, "text": "connected; discovering all services"}
+{"exp": "C06b-removed", "kind": "service", "primary": true, "t": 1795191123.6370912, "uuid": "180D"}
+{"exp": "C06b-removed", "kind": "service", "primary": true, "t": 1795191123.637136, "uuid": "180A"}
+{"exp": "C06b-removed", "kind": "service", "primary": true, "t": 1795191123.637167, "uuid": "180F"}
+{"exp": "C06b-removed", "kind": "service", "primary": true, "t": 1795191123.6371942, "uuid": "FD4B0001-CCE1-4033-93CE-002D5875F58A"}
+{"exp": "C06b-removed", "kind": "characteristic", "notifying": false, "props": ["notify"], "service": "180D", "t": 1795191123.637432, "uuid": "2A37"}
+{"exp": "C06b-removed", "kind": "characteristic", "notifying": false, "props": ["read"], "service": "180A", "t": 1795191123.63764, "uuid": "2A29"}
+{"exp": "C06b-removed", "kind": "characteristic", "notifying": false, "props": ["read"], "service": "180A", "t": 1795191123.637682, "uuid": "2A24"}
+{"exp": "C06b-removed", "kind": "characteristic", "notifying": false, "props": ["read"], "service": "180A", "t": 1795191123.637721, "uuid": "2A25"}
+{"exp": "C06b-removed", "kind": "characteristic", "notifying": false, "props": ["read"], "service": "180A", "t": 1795191123.6377568, "uuid": "2A26"}
+{"exp": "C06b-removed", "kind": "characteristic", "notifying": false, "props": ["read"], "service": "180A", "t": 1795191123.637785, "uuid": "2A27"}
+{"exp": "C06b-removed", "kind": "characteristic", "notifying": false, "props": ["read", "notify"], "service": "180F", "t": 1795191123.6378288, "uuid": "2A19"}
+{"exp": "C06b-removed", "kind": "characteristic", "notifying": false, "props": ["writeNoResp", "write"], "service": "FD4B0001-CCE1-4033-93CE-002D5875F58A", "t": 1795191123.638072, "uuid": "FD4B0002-CCE1-4033-93CE-002D5875F58A"}
+{"exp": "C06b-removed", "kind": "characteristic", "notifying": false, "props": ["notify"], "service": "FD4B0001-CCE1-4033-93CE-002D5875F58A", "t": 1795191123.6381202, "uuid": "FD4B0003-CCE1-4033-93CE-002D5875F58A"}
+{"exp": "C06b-removed", "kind": "characteristic", "notifying": false, "props": ["notify"], "service": "FD4B0001-CCE1-4033-93CE-002D5875F58A", "t": 1795191123.638156, "uuid": "FD4B0004-CCE1-4033-93CE-002D5875F58A"}
+{"exp": "C06b-removed", "kind": "characteristic", "notifying": false, "props": ["notify"], "service": "FD4B0001-CCE1-4033-93CE-002D5875F58A", "t": 1795191123.6381888, "uuid": "FD4B0005-CCE1-4033-93CE-002D5875F58A"}
+{"exp": "C06b-removed", "kind": "characteristic", "notifying": false, "props": ["notify"], "service": "FD4B0001-CCE1-4033-93CE-002D5875F58A", "t": 1795191123.638221, "uuid": "FD4B0007-CCE1-4033-93CE-002D5875F58A"}
+{"characteristic": "2A37", "exp": "C06b-removed", "kind": "descriptor", "t": 1795191123.6382952, "uuid": "2902"}
+{"exp": "C06b-removed", "hex": "57484f4f5020496e632e", "kind": "read", "len": 10, "service": "180A", "t": 1795191123.6721349, "uuid": "2A29", "value": "WHOOP Inc."}
+{"exp": "C06b-removed", "kind": "note", "t": 1795191123.67232, "text": "READ 2A29 = WHOOP Inc."}
+{"exp": "C06b-removed", "hex": "352e3000", "kind": "read", "len": 4, "service": "180A", "t": 1795191123.717183, "uuid": "2A24", "value": "5.0\u0000"}
+{"exp": "C06b-removed", "kind": "note", "t": 1795191123.717524, "text": "READ 2A24 = 5.0\u0000"}
+{"exp": "C06b-removed", "kind": "read", "len": 11, "service": "180A", "t": 1795191123.747308, "uuid": "2A25", "value": "<redacted>"}
+{"exp": "C06b-removed", "kind": "note", "t": 1795191123.747596, "text": "READ 2A25 = <redacted>"}
+{"exp": "C06b-removed", "hex": "35302e34332e312e30", "kind": "read", "len": 9, "service": "180A", "t": 1795191123.792501, "uuid": "2A26", "value": "50.43.1.0"}
+{"exp": "C06b-removed", "kind": "note", "t": 1795191123.792825, "text": "READ 2A26 = 50.43.1.0"}
+{"exp": "C06b-removed", "hex": "574735305f723532", "kind": "read", "len": 8, "service": "180A", "t": 1795191123.8377619, "uuid": "2A27", "value": "WG50_r52"}
+{"exp": "C06b-removed", "kind": "note", "t": 1795191123.8380961, "text": "READ 2A27 = WG50_r52"}
+{"characteristic": "2A19", "exp": "C06b-removed", "kind": "descriptor", "t": 1795191123.838294, "uuid": "2902"}
+{"exp": "C06b-removed", "kind": "read", "len": 1, "service": "180F", "t": 1795191123.868604, "uuid": "2A19", "value": 100}
+{"exp": "C06b-removed", "kind": "note", "t": 1795191123.8692122, "text": "READ 2A19 = 100"}
+{"characteristic": "FD4B0003-CCE1-4033-93CE-002D5875F58A", "exp": "C06b-removed", "kind": "descriptor", "t": 1795191123.8693938, "uuid": "2902"}
+{"error": "", "exp": "C06b-removed", "kind": "subscribe", "notifying": true, "t": 1795191123.898958, "uuid": "FD4B0003-CCE1-4033-93CE-002D5875F58A"}
+{"characteristic": "FD4B0004-CCE1-4033-93CE-002D5875F58A", "exp": "C06b-removed", "kind": "descriptor", "t": 1795191123.899342, "uuid": "2902"}
+{"error": "", "exp": "C06b-removed", "kind": "subscribe", "notifying": true, "t": 1795191123.929802, "uuid": "FD4B0004-CCE1-4033-93CE-002D5875F58A"}
+{"characteristic": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "exp": "C06b-removed", "kind": "descriptor", "t": 1795191123.930241, "uuid": "2902"}
+{"error": "", "exp": "C06b-removed", "kind": "subscribe", "notifying": true, "t": 1795191123.958136, "uuid": "FD4B0005-CCE1-4033-93CE-002D5875F58A"}
+{"characteristic": "FD4B0007-CCE1-4033-93CE-002D5875F58A", "exp": "C06b-removed", "kind": "descriptor", "t": 1795191123.958504, "uuid": "2902"}
+{"error": "", "exp": "C06b-removed", "kind": "subscribe", "notifying": true, "t": 1795191123.988878, "uuid": "FD4B0007-CCE1-4033-93CE-002D5875F58A"}
+{"characteristic": "2A37", "exp": "C06b-removed", "kind": "descriptor_value", "t": 1795191124.0194259, "uuid": "2902", "value": "1"}
+{"characteristic": "2A19", "exp": "C06b-removed", "kind": "descriptor_value", "t": 1795191124.0492, "uuid": "2902", "value": "1"}
+{"characteristic": "FD4B0003-CCE1-4033-93CE-002D5875F58A", "exp": "C06b-removed", "kind": "descriptor_value", "t": 1795191124.0944772, "uuid": "2902", "value": "1"}
+{"characteristic": "FD4B0004-CCE1-4033-93CE-002D5875F58A", "exp": "C06b-removed", "kind": "descriptor_value", "t": 1795191124.1227589, "uuid": "2902", "value": "1"}
+{"characteristic": "FD4B0005-CCE1-4033-93CE-002D5875F58A", "exp": "C06b-removed", "kind": "descriptor_value", "t": 1795191124.1532478, "uuid": "2902", "value": "1"}
+{"characteristic": "FD4B0007-CCE1-4033-93CE-002D5875F58A", "exp": "C06b-removed", "kind": "descriptor_value", "t": 1795191124.211812, "uuid": "2902", "value": "1"}
+{"ch": "FD4B0002-CCE1-4033-93CE-002D5875F58A", "cmd": 151, "dir": "tx", "exp": "C06b-removed", "hex": "aa0108000001e67123c99701485eba44", "kind": "frame", "len": 16, "name": "GET_BATTERY_PACK_INFO", "seq": 201, "t": 1795191125.2138128}
+{"exp": "C06b-removed", "kind": "note", "t": 1795191125.214452, "text": "TX cmd=151 GET_BATTERY_PACK_INFO seq=201 aa0108000001e67123c99701485eba44"}
+{"error": "", "exp": "C06b-removed", "kind": "write_ack", "t": 1795191125.2493072, "uuid": "FD4B0002-CCE1-4033-93CE-002D5875F58A"}
+{"ch": "FD4B0003-CCE1-4033-93CE-002D5875F58A", "exp": "C06b-removed", "kind": "fragment", "len": 48, "t": 1795191125.249607}
+{"exp": "C06b-removed", "kind": "note", "t": 1795191125.249836, "text": "RX response cmd=151 seq=201 result=1 len=48 latency=36ms"}
+{"cmd": 151, "exp": "C06b-removed", "kind": "result", "latency_ms": 36, "outcome": "result 1", "seq": 201, "t": 1795191125.249878}
+{"ch": "FD4B0003-CCE1-4033-93CE-002D5875F58A", "cmd": 151, "crc32": true, "dir": "rx", "exp": "C06b-removed", "hdr_crc": true, "hex": "aa01280001002de1243b97c90101000000000000000000000000000000000000000000000000000000000000cce27cfa", "kind": "frame", "latency_ms": 36, "len": 48, "result": 1, "seq": 201, "t": 1795191125.2501168, "type": 36}
+{"exp": "C06b-removed", "kind": "note", "t": 1795191144.609736, "text": "finished: capture window 20 s elapsed"}

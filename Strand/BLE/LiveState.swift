@@ -131,6 +131,10 @@ public final class LiveState: ObservableObject {
         charging.applyPackInfo(r, requestedAt: requestedAt, receivedAt: receivedAt, connection: connection)
         restampBattery(now: receivedAt)
     }
+    /// WHOOP 5.0 event 117 charger stage, at the event's own time (4 = full).
+    public func applyChargerStage(_ stage: UInt8, eventAt: Date, receivedAt: Date = Date()) {
+        charging.applyChargerStage(stage, eventAt: eventAt, receivedAt: receivedAt, connection: charging.connection)
+    }
     /// A new connection: the last known charging/attachment facts are held until the strap reports again
     /// (`ChargingModel.Hold.untilNextReport`).
     public func beginConnection(now: Date = Date()) {
