@@ -13,10 +13,9 @@ import AppKit
 //   charging – pack seated on the pod with a lit bolt, a blue→green current at the seam, the pod outlined and its
 //              level bar filled in the charging gradient.
 //   full     – the same seated pack, all green, bolt replaced by a check.
-// Motion: when charging starts the pack drops onto the pod and a connect ring flashes from the seam; then current
-// flows from the pack into the level bar (particles, a shimmer along the fill, a pulsing outline) for a few cycles.
-// After that a single reminder cycle plays every `reminderInterval`, and hovering replays it. Only the small flow layer
-// redraws, and only on screen, with the app active and Reduce Motion off.
+// Motion: when charging starts the pack docks and a short current flow shows the connection. The illustration then
+// holds still; hovering replays the flow on demand. Only the small flow layer redraws, and only on screen, with the
+// app active and Reduce Motion off.
 // It is an illustration: callers decide the phase from verified device state, and the pack drawn here is not a claim
 // that a pack is attached beyond what the caller's model says.
 
@@ -49,17 +48,14 @@ public struct ChargingIllustration: View {
         self.phase = phase; self.percent = percent; self.dimmed = dimmed; self.height = height
     }
 
-    /// True while a flow burst plays. Each animated frame costs a window update (measured at roughly 15–20 % of a
-    /// core while running), so the flow plays a few cycles when charging starts or the view appears, then rests as a
-    /// still, fully coloured state with one short reminder cycle every `reminderInterval` (~5 % duty).
+    /// True only while a brief flow cue plays. The confirmed charging state remains clear in the still illustration.
     @State private var bursting = false
     @State private var burstID = 0
     /// When the current burst began, and whether it opens with the connect ring (only when the pack just docked).
     @State private var burstStart = Date.distantPast
     @State private var connectFlash = false
     static let flowPeriod = 1.4
-    static let burstCycles = 5.0
-    static let reminderInterval = 30.0
+    static let burstCycles = 2.0
     static let connectDuration = 0.8
 
     private var flowing: Bool { bursting && phase == .charging && !reduceMotion && appActive && !dimmed }
@@ -121,18 +117,12 @@ public struct ChargingIllustration: View {
 
     // MARK: Motion scheduling
 
-    /// Play the opening burst, then one reminder cycle every `reminderInterval` until the phase changes or the view
-    /// goes away. A newer call supersedes an older loop.
+    /// Play one short opening cue. A newer call supersedes the current animation task.
     private func startFlow(connect: Bool) {
         burstID += 1
         let id = burstID
         Task { @MainActor in
             await play(cycles: Self.burstCycles, connect: connect, id: id)
-            while id == burstID {
-                try? await Task.sleep(nanoseconds: UInt64(Self.reminderInterval * 1_000_000_000))
-                guard id == burstID else { return }
-                if !bursting { await play(cycles: 1, connect: false, id: id) }
-            }
         }
     }
 

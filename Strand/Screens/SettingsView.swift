@@ -12,14 +12,17 @@ struct SettingsView: View {
 
     var body: some View {
         ScreenScaffold(title: "Settings",
-                       subtitle: "Your numbers, your strap, and how NOOP works. All on this Mac.") {
+                       subtitle: "Your strap, profile, and data — stored on this Mac.") {
             PairingResetNotice()
-            ProfileCard(profile: profile)
             strapCard
-            keepDataCard
-            ResearchCaptureCard()
-            checkInCard
-            aboutCard
+            ProfileCard(profile: profile)
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 360), spacing: NoopMetrics.gap, alignment: .top)],
+                      alignment: .leading, spacing: NoopMetrics.gap) {
+                keepDataCard
+                ResearchCaptureCard()
+                checkInCard
+                aboutCard
+            }
         }
     }
 
@@ -262,7 +265,7 @@ struct SettingsView: View {
 
 // MARK: - Section card
 
-/// A grouped settings card: icon + title header, an explanatory blurb, then content.
+/// A grouped settings card with a compact title-and-description header.
 private struct SettingsSection<Content: View>: View {
     let icon: String
     let title: String
@@ -272,18 +275,23 @@ private struct SettingsSection<Content: View>: View {
     var body: some View {
         StrandCard(padding: 20) {
             VStack(alignment: .leading, spacing: 16) {
-                HStack(spacing: 10) {
+                HStack(alignment: .top, spacing: 12) {
                     Image(systemName: icon)
                         .foregroundStyle(StrandPalette.accentInk)
                         .accessibilityHidden(true)
-                    Text(title)
-                        .font(StrandFont.headline)
-                        .foregroundStyle(StrandPalette.textPrimary)
+                        .frame(width: 32, height: 32)
+                        .background(StrandPalette.accent.opacity(0.10),
+                                    in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(title)
+                            .font(StrandFont.headline)
+                            .foregroundStyle(StrandPalette.textPrimary)
+                        Text(blurb)
+                            .font(StrandFont.subhead)
+                            .foregroundStyle(StrandPalette.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
-                Text(blurb)
-                    .font(StrandFont.subhead)
-                    .foregroundStyle(StrandPalette.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
                 content()
             }
         }
