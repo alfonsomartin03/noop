@@ -92,6 +92,46 @@ private struct LiveSheet: View {
             .overlay(alignment: .topTrailing) {
                 Button("Done", action: close).buttonStyle(.strandSecondary).keyboardShortcut(.cancelAction).padding(16)
             }
+            .background(DismissOnOutsideClick(action: close))
+    }
+}
+
+/// Closes a sheet when the user clicks its parent window (anywhere outside the sheet). The click is consumed, so it
+/// never also lands on whatever is behind. Clicks in other windows and apps are left alone.
+struct DismissOnOutsideClick: NSViewRepresentable {
+    let action: () -> Void
+
+    func makeNSView(context: Context) -> Tracker { Tracker(action: action) }
+    func updateNSView(_ view: Tracker, context: Context) { view.action = action }
+
+    final class Tracker: NSView {
+        var action: () -> Void
+        private var monitor: Any?
+
+        init(action: @escaping () -> Void) {
+            self.action = action
+            super.init(frame: .zero)
+        }
+
+        required init?(coder: NSCoder) { nil }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            removeMonitor()
+            guard window != nil else { return }
+            monitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]) { [weak self] event in
+                guard let self, let parent = self.window?.sheetParent, event.window === parent else { return event }
+                self.action()
+                return nil
+            }
+        }
+
+        private func removeMonitor() {
+            if let monitor { NSEvent.removeMonitor(monitor) }
+            monitor = nil
+        }
+
+        deinit { removeMonitor() }
     }
 }
 
