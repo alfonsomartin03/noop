@@ -141,8 +141,23 @@ struct DetailTile: View {
     var spark: [Double]? = nil
     /// Context lines under the caption that must stay readable in full (never truncated; they wrap).
     var details: [String] = []
+    /// What VoiceOver reads instead of the visible text, when that text uses symbols or abbreviations ("≥ 20m" would be
+    /// read as "greater than or equal to 20 meters"). Title first, then these lines; nil = the visible text, combined.
+    var spoken: [String]? = nil
+
+    /// The single VoiceOver label of a tile with `spoken` text.
+    var spokenLabel: String? { spoken.map { ([title] + $0).joined(separator: ", ") } }
 
     var body: some View {
+        if let spokenLabel {
+            content.accessibilityElement(children: .ignore).accessibilityLabel(spokenLabel)
+        } else {
+            // One VoiceOver element per tile, read in visual order: title, value + unit, caption, every detail line.
+            content.accessibilityElement(children: .combine)
+        }
+    }
+
+    private var content: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title).font(.system(size: 12, weight: .semibold)).foregroundStyle(StrandPalette.textSecondary)
             WidgetValue(value, unit: unit, size: 28)
@@ -169,9 +184,7 @@ struct DetailTile: View {
             Circle().fill(tint).frame(width: 8, height: 8).shadow(color: tint.opacity(0.8), radius: 4).padding(14)
                 .accessibilityHidden(true)
         }
-        // One VoiceOver element per tile, read in visual order: title, value + unit, caption, every detail line.
         // The sparkline is decorative here (its values are the tile's history, already summarised by the caption).
-        .accessibilityElement(children: .combine)
     }
 }
 
@@ -644,16 +657,8 @@ struct StrainDetailView: View {
                     DetailTile(title: "Strength time", value: DayMath.hm(strengthSeconds / 60),
                                caption: "Weights, gym and functional sessions", tint: StrandPalette.metricRose)
                 }
-                if let a = activity {
-                    DetailTile(title: "Walking & running", value: a.value(duration: Self.duration),
-                               caption: a.caption(duration: Self.duration) + " · experimental",
-                               tint: StrandPalette.statusPositive, details: a.details(duration: Self.duration))
-                }
-                if let s = strapSteps {
-                    DetailTile(title: "Steps", value: (s.isComplete ? "" : "≥ ") + s.steps.formatted(),
-                               caption: "Recorded strap increases · experimental",
-                               tint: StrandPalette.statusPositive, details: Self.stepDetails(s))
-                }
+                if let a = activity { Self.activityTile(a) }
+                if let s = strapSteps { Self.stepsTile(s) }
             }
 
             if !workouts.isEmpty {
@@ -672,18 +677,46 @@ struct StrainDetailView: View {
 
     static func duration(_ seconds: Int) -> String { DayMath.hm(Double(seconds) / 60) }
 
+    /// Durations as VoiceOver should say them: "11 hours, 50 minutes", never "11h 50m" (read as meters).
+    static func spokenDuration(_ seconds: Int) -> String {
+        let f = DateComponentsFormatter()
+        f.unitsStyle = .full
+        f.allowedUnits = [.hour, .minute]
+        return f.string(from: TimeInterval((seconds + 30) / 60 * 60)) ?? ""
+    }
+
+    /// #83 Walking & running tile; experimental, partial totals shown as "≥" and spoken as "at least".
+    static func activityTile(_ a: ActivityCoverage) -> DetailTile {
+        let caption = a.caption(duration: duration) + " · experimental"
+        return DetailTile(title: "Walking & running", value: a.value(duration: duration), caption: caption,
+                          tint: StrandPalette.statusPositive, details: a.details(duration: duration),
+                          spoken: [(a.isLowerBound ? "at least " : "") + spokenDuration(a.activeSeconds),
+                                   a.caption(duration: spokenDuration) + ", experimental"]
+                            + a.details(duration: spokenDuration).map { $0.replacingOccurrences(of: " · ", with: ", ") })
+    }
+
+    /// Strap step-counter tile (experimental); an incomplete count is "≥" and spoken as "at least".
+    static func stepsTile(_ s: StepCounterSample.Window) -> DetailTile {
+        let n = s.steps.formatted()
+        return DetailTile(title: "Steps", value: (s.isComplete ? "" : "≥ ") + n,
+                          caption: "Recorded strap increases · experimental",
+                          tint: StrandPalette.statusPositive, details: stepDetails(s),
+                          spoken: [(s.isComplete ? "" : "at least ") + n + " steps", "Recorded strap increases, experimental"]
+                            + stepDetails(s, duration: spokenDuration))
+    }
+
     /// Walking/running time over the day's synced seconds (#83), from the same window as the steps tile.
     static func activity(_ w: StepCounterSample.Window?, day: (from: Int, to: Int), now: Date = Date()) -> ActivityCoverage? {
         w.map { ActivityCoverage.compute(window: $0, dayStart: day.from, dayEnd: day.to, now: Int(now.timeIntervalSince1970)) }
     }
 
     /// What the step count leaves out (walking/running time is its own tile).
-    static func stepDetails(_ s: StepCounterSample.Window) -> [String] {
+    static func stepDetails(_ s: StepCounterSample.Window, duration: (Int) -> String = duration) -> [String] {
         var out: [String] = []
         if !s.hasStartReference { out.append("Counted from the first synced step of the day.") }
         if s.resets > 0 { out.append("Counter reset detected; steps after it are counted from the strap's new count.") }
         if s.unknownSeconds >= 60 {
-            out.append("No synced data for \(DayMath.hm(Double(s.unknownSeconds) / 60)); walking and running time there is not counted.")
+            out.append("No synced data for \(duration(s.unknownSeconds)); walking and running time there is not counted.")
         }
         out.append("The strap resets this counter on its own (seen right after alarm wake-ups and once after it was taken off) and its accuracy is unverified, so this may be an incomplete daily count.")
         return out

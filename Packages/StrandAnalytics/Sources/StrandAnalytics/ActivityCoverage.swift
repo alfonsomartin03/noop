@@ -6,7 +6,7 @@ import WhoopProtocol
 // synced seconds (`StepCounterSample.window` with `known`), so time with no synced record is unknown, not still. The day
 // is its real length (23/25 h on DST days) clipped to now, like `DayCoverage`: future time is never missing. Missing
 // elapsed time splits into gaps inside synced data and the stretch after the newest synced second awaiting a sync.
-// Any missing elapsed time makes the walking/running totals lower bounds.
+// Any gap, or a sync delay past the normal one, makes the walking/running totals lower bounds.
 
 public struct ActivityCoverage: Equatable, Sendable {
     public let daySeconds: Int
@@ -27,8 +27,10 @@ public struct ActivityCoverage: Equatable, Sendable {
     /// Synced seconds with any other code (0 = still is only SUPPORTED, so not called "still").
     public var otherSeconds: Int { max(0, syncedSeconds - activeSeconds) }
     public var isToday: Bool { elapsedSeconds < daySeconds }
-    /// True when some elapsed time has no synced record: walking/running totals are then "at least".
-    public var isLowerBound: Bool { gapSeconds + awaitingSyncSeconds > 0 }
+    /// True when elapsed time has no synced record beyond the normal sync delay (`DayCoverage.syncGraceSeconds`, the
+    /// same rule as the Overview caption): walking/running totals are then "at least". Within the delay the caption's
+    /// "so far" already says the day is synced up to now, and a "≥" on every fresh reading would only be noise.
+    public var isLowerBound: Bool { gapSeconds > 0 || awaitingSyncSeconds > DayCoverage.syncGraceSeconds }
 
     /// - Parameters:
     ///   - window: `StepCounterSample.window` over [dayStart, dayEnd) with `until` and `known` given.
@@ -69,7 +71,7 @@ public struct ActivityCoverage: Equatable, Sendable {
         out.append(motion.isEmpty ? "No walking or running recorded." : motion.joined(separator: " · "))
         if otherSeconds >= 60 { out.append("Not walking or running: \(duration(otherSeconds)).") }
         if gapSeconds >= 60 { out.append("No synced data for \(duration(gapSeconds)); activity there is unknown.") }
-        if awaitingSyncSeconds >= 60 { out.append("\(duration(awaitingSyncSeconds)) not synced yet.") }
+        if awaitingSyncSeconds > DayCoverage.syncGraceSeconds { out.append("\(duration(awaitingSyncSeconds)) not synced yet.") }
         if isLowerBound { out.append("Totals are at least these: unsynced time is not counted.") }
         return out
     }

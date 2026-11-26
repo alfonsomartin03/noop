@@ -98,6 +98,13 @@ final class ActivityCoverageTests: XCTestCase {
         XCTAssertEqual(c.walkingSeconds, 600, "walking stops at the newest synced second")
         XCTAssertEqual(c.awaitingSyncSeconds, 1200)
         XCTAssertEqual(c.caption(), "Over 8 h 40 min synced of 9 h so far")
-        XCTAssertTrue(c.details().contains("20 min not synced yet."))
+        XCTAssertFalse(c.isLowerBound, "a normal sync delay is not missing data")
+        XCTAssertEqual(c.value(), "10 min")
+        XCTAssertFalse(c.details().contains { $0.contains("not synced yet") })
+        // Over 30 min behind: now the total is "at least" and the lag is said.
+        let late = cov(rows, until: 8 * 3600 + 2400, known: known(-60..<(8 * 3600 + 2400)), now: 9 * 3600 + 1800)
+        XCTAssertTrue(late.isLowerBound)
+        XCTAssertEqual(late.value(), "≥ 10 min")
+        XCTAssertTrue(late.details().contains("50 min not synced yet."))
     }
 }
