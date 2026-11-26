@@ -558,3 +558,35 @@ accepted every command. Details: ALARM_CAPABILITIES.md. **Wearer confirmed feeli
   minute, while connected time fell from 15.5 h to 2–7 h. The strap logged only 4–21 BLE_CONNECTION_UP per day, and
   synced HR coverage stayed 95–98 %. The power-offs are reported by macOS to CoreBluetooth; no NOOP build changed.
   Cause not determined (Mac-side Bluetooth power cycling is the leading candidate); no battery-saving claim is made.
+
+## R86 — cause of the ~1/min "Bluetooth powered off" + reconnect counts (2026-11-26, offline; system logs + counter copies, no strap commands)
+
+- **Inputs:** `log show` of subsystem `com.noopapp.noop` and of `bluetoothd`/kernel (retained 2026-11-26 03:57 → 13:40 EST),
+  `pmset -g log` (11-19 → 11-26), the R85 counter copies. Aggregates only; no device address recorded.
+- **What the counter actually counted:** every NOOP `poweredOff` in the log is bluetoothd's broadcast at
+  `kIOMessageSystemWillSleep` ("Clear for system sleep for central session …, state Off" to **every** client, Apple's included),
+  and every `poweredOn` is the next dark wake. Mac sleep entries per day (`pmset`) vs `counts.bluetoothOff`: 11-21 578 vs 578,
+  11-22 1,767 vs 1,764, 11-23 1,222 vs 1,220, 11-24 1,384 vs 1,384, 11-25 1,168 vs 1,166. The radio did not turn off and the
+  strap's LE link stayed up across each sleep: at every wake NOOP found it already system-connected
+  (`retrieveConnectedPeripherals`), which matches the strap's 4–21 BLE_CONNECTION_UP/day. **Counting artefact:** these are Mac
+  sleeps, not Bluetooth power-offs and not link drops.
+- **Why it changed on 11-22:** exposure. Hours asleep per day were 6.6 h (11-21, mostly on AC) and then 17.9 / 15.7 / 21.2 / 14.7 h
+  (11-22 → 11-25, almost all on battery). The wake rate per sleeping hour was similar before and after (~88/h on 11-21,
+  65–138/h afterwards). NOOP's connected time drops by the hours asleep because `linkDown` is recorded at each sleep.
+- **What wakes the Mac every ~36 s (real, not NOOP-driven):** `DarkWake … due to … wifibt SMC.OutboxNotEmpty bluetooth-pcie`;
+  bluetoothd's wake history lists an HCI event every ~35.6 s. Each wake carries the strap's LE connection-parameter request
+  (240–255 ms interval, 6 s timeout). During dark wake bluetoothd answers "Controller connection update pending, saving", and
+  **no "LE Connection Parameters Updated" appeared in 6.5 h of this loop (0 of 1,352 requests)**. The strap repeats the request
+  30 s later (gap histogram: 765 × 30 s), and that repeat wakes the Mac again. NOOP's CLIENT_HELLO on each wake is followed
+  5.38 s later (p10–p90 5.31–5.42 s, n = 727) by another request, which shifts the next one to +35 s; it does not add wakes.
+  After the link timed out (10:38) and NOOP made a fresh connection (10:42) with the Mac fully awake, every request completed
+  within 0.2–4.8 s and the 30-s repeats stopped.
+- **Not a NOOP loop:** in this window there was no reconnect-watchdog fire or 120-s bounce, and no `CBCentralManager` was recreated
+  (the session id stayed the same). The 3-s rescan never ran because CoreBluetooth sends no `didDisconnect` on poweredOff.
+- **Fix (app):** a `poweredOff` is now classified at the next `poweredOn` by `PowerOffClassifier` (WhoopProtocol): if the Mac slept
+  in between (`CLOCK_MONOTONIC_RAW` − `CLOCK_UPTIME_RAW` grew ≥ 1 s) it is counted as `systemSleep`, otherwise as
+  `bluetoothOff`. Counts are attributed to the wake day. Connect/disconnect and connected time keep their meaning (link usable
+  by NOOP). Day files from builds before this fix count sleeps under `bluetoothOff`.
+- **Open:** the Mac dark-waking ~100 times per sleeping hour on battery is a real power cost while NOOP holds the strap link during
+  sleep. A candidate mitigation is to release the link at sleep and reconnect at wake, but it needs a hardware trial (does the strap
+  stop requesting, does the Mac stay asleep, reconnect latency) and was not changed here. No battery-saving claim is made.
