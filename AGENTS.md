@@ -135,7 +135,7 @@ StrandAnalytics tests take ~3.5 min. Tools that open `WhoopStore` can migrate th
 | --- | --- |
 | env `NOOP_TEST_HOST` | Isolated test host (set by scheme) |
 | env `NOOP_FIXTURE_STORE` | DB **copy** path; CoreBluetooth off; prints launch timings |
-| `-noop.fixture.tab trends\|health\|alarms\|settings`, `-noop.fixture.live YES`, `-noop.fixture.battery cycle\|charging`, `-noop.fixture.alarmHistory YES`, `-noop.fixture.alarmDetail YES` | Fixture-only launch options |
+| `-noop.fixture.tab trends\|health\|alarms\|settings`, `-noop.fixture.live YES`, `-noop.fixture.battery cycle\|charging`, `-noop.fixture.alarmHistory YES`, `-noop.fixture.alarmDetail YES`, `-noop.fixture.detail strain\|sleep\|recovery`, `-noop.fixture.day yyyy-MM-dd`, `-noop.fixture.scrollTo <view id>` (e.g. `strain-tiles`) | Fixture-only launch options |
 | `noop.onboarded`, `scoringVersionApplied` (5) | First-run done; applied scoring migration |
 | `noop.bluetoothChoice` | `undecided`/`allowed`/`declined` |
 | `noop.clock.autoResync`, `noop.clock.lastResyncAt` | Daily 5.0 strap-clock re-sync (default on); last attempt |
@@ -247,7 +247,7 @@ What is established, and how (older per-change rows are in git history and the m
 
 - **2026-11-26 #83:** `StepCounterSample.Window.spanSeconds/syncedSeconds` + `ActivityCoverage` + Strain-detail tile. PASS WhoopProtocol 193, StrandAnalytics 512 (`ActivityCoverageTests` 7: empty day, missing reference, midday gap, reset, DST 23/25 h, today/sync lag), app build + hosted 116 (7 env skips, 0 failures; `StrapStepsTests` +1 repository-backed tile test). NOT done: tile looked at in the running app or with VoiceOver (#86).
 
-- **2026-11-26 #86 (partial):** `ActivityTileTests` renders complete / partial / today states at 1180 light, 760 dark, 420 light+dark (`NOOP_RENDER_ACTIVITY=1`) and they were looked at; the today render exposed "≥ 0m" from a normal 20-min sync lag, fixed with the sync grace. Spoken labels asserted (no "≥", no "h"/"m" abbreviations). An `NSHostingView` accessibility-tree walk returns nothing in the test host, so real VoiceOver is NOT checked. Hosted 118 (8 env skips, 0 failures), `ActivityCoverageTests` 7 pass. Not done: VoiceOver by ear, the tile in the running app on a DB copy, #49 real-input/VoiceOver. Seen, not changed: the Steps tile shows no "≥" for today while the day is unfinished (`Window.isComplete` ignores elapsed time).
+- **2026-11-26 #86 (partial):** `ActivityTileTests` renders complete / partial / today states at 1180 light, 760 dark, 420 light+dark (`NOOP_RENDER_ACTIVITY=1`) and they were looked at; the today render exposed "≥ 0m" from a normal 20-min sync lag, fixed with the sync grace. Spoken labels asserted (no "≥", no "h"/"m" abbreviations). An `NSHostingView` accessibility-tree walk returns nothing in the test host, so real VoiceOver is NOT checked. Hosted 118 (8 env skips, 0 failures), `ActivityCoverageTests` 7 pass. Running app on a SQLite-backup copy (`-noop.fixture.detail strain -noop.fixture.day … -noop.fixture.scrollTo strain-tiles`, window captured with `screencapture -l`): a past day with a 45-min gap and a counter reset and today (34-min gap, sync lag within grace) both showed "≥" totals whose walking/running and other time add up to the synced time; light, 1180 pt. Not done: VoiceOver by ear, dark/narrow in the running app, #49 real-input/VoiceOver. Seen, not changed: the Steps tile shows no "≥" for today while the day is unfinished (`Window.isComplete` ignores elapsed time).
 
 Index check (run after file changes; expects no output):
 
@@ -259,7 +259,7 @@ git ls-files --cached --others --exclude-standard | grep -v -e '^AGENTS.md$' -e 
 
 | Date | Change | Checks / remaining |
 | --- | --- | --- |
-| 2026-11-26 | #86 partial: activity/steps tile renders (3 states × 4 width/scheme), VoiceOver spoken text for both tiles, 30-min sync grace before "≥". | Hosted 118 pass; VoiceOver by ear and running app still open. |
+| 2026-11-26 | #86 partial: activity/steps tile renders (3 states × 4 width/scheme), VoiceOver spoken text for both tiles, 30-min sync grace before "≥"; fixture options to open a detail page on a day and scroll to a section; tiles checked in the running app on a DB copy. | Hosted 118 pass; VoiceOver by ear still open. |
 | 2026-11-26 | #83: Walking & running tile in Strain detail with synced coverage and lower-bound labelling (`ActivityCoverage`); steps tile keeps only count caveats. | Package + hosted tests pass; not looked at in the app (#86). |
 | 2026-11-26 | HO1: R18 hold-out passed (float@33 acceleration holds, @29 not a delayed HR copy, @105 ≈ log motion energy, exploratory); event-120 hold-out 3/3 SUPPORTED; EVIDENCE_MATRIX backlog 1–2 done. | Offline on copies; docs only. R18 scale still needs wearer scenarios. |
 | 2026-11-22 | T04: first nightly skin-temperature change (−0.61 °C) and an in-night removal logged; EVIDENCE_MATRIX backlog 5 done. | Docs only, from a DB copy; re-warming tail unchecked. |

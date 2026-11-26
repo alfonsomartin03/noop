@@ -36,16 +36,25 @@ struct ScreenScaffold<Content: View>: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: spacing) {
-                if !embedded { header }
-                content()
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: spacing) {
+                    if !embedded { header }
+                    content()
+                }
+                .padding(.horizontal, NoopMetrics.screenPadding)
+                .padding(.top, embedded ? 8 : 20)
+                .padding(.bottom, 44)
+                .frame(maxWidth: NoopMetrics.contentMaxWidth, alignment: .leading)
+                .frame(maxWidth: .infinity)
             }
-            .padding(.horizontal, NoopMetrics.screenPadding)
-            .padding(.top, embedded ? 8 : 20)
-            .padding(.bottom, 44)
-            .frame(maxWidth: NoopMetrics.contentMaxWidth, alignment: .leading)
-            .frame(maxWidth: .infinity)
+            .task {
+                // Fixture only (`-noop.fixture.scrollTo <id>`): bring a section into view for screenshots, once the
+                // page has loaded its data.
+                guard let id = LaunchMode.fixtureScrollTo else { return }
+                try? await Task.sleep(nanoseconds: 1_500_000_000)
+                proxy.scrollTo(id, anchor: .top)
+            }
         }
         .background(StrandPalette.surfaceBase)
     }
