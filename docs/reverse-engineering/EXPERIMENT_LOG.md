@@ -485,3 +485,44 @@ accepted every command. Details: ALARM_CAPABILITIES.md. **Wearer confirmed feeli
   unknown replies change nothing; live 117 = 4 makes the battery display "Fully charged" while the pack is on.
 - **Not done:** interrupted charge (detach ~60 %, reattach), reconnect with the pack on, pack charge reference, how
   soon after a transition the 151 cache updates (bounded only by +53 s / +3 min), app display seen on screen.
+
+## T04 — first nightly skin-temperature change + an in-night removal (2026-11-22, passive, #43 backlog 5; SQLite-backup copy, no strap commands)
+
+- **Night:** NOOP main sleep 2026-11-22 00:02 → 08:17 EST (`skin-temp-night-v2`, coverage 0.958; earlier nights
+  0.997–1.000).
+- **Nightly values (°C, night ending):** 11-17 32.90 · 11-18 32.84 · 11-19 33.07 · 11-20 32.64 · 11-21 32.45 ·
+  **11-22 32.23**. Reference = median of the 5 prior nights = 32.84.
+- **First change: −0.61 °C** for the night ending 11-22, the date T02 predicted. Earlier nights stay unavailable
+  ("no usable reference"), as designed. Last three nights fall steadily; one value, no reference thermometer, so this
+  is not read as a physiological finding.
+- **In-night removal (not wearer-timed):** WRIST_OFF 02:51:21 → WRIST_ON 02:54:33 (3 min 12 s), inside the night.
+  0 skin-temperature rows inside the interval (515 in the 10 min before, 543 in the 10 min after), so no off-wrist
+  readings can enter the night value — consistent with T03 (the strap records no history off the wrist).
+- **Not checked:** the re-warming tail after re-wear (T03 saw ~30 s of cool readings; a 3-min removal should cool
+  less); whether the lower coverage comes from this removal (192 s ≈ 0.7 %) or other gaps; the Overview caption for a
+  < 5-min removal; the Health tile on screen.
+
+## HO1 — R18 and event-120 hold-outs (2026-11-26, offline, #44 + #45 backlog 1–2; copies only, no strap commands)
+
+- **Inputs:** copies of `OpenWhoop/research-history` (8 day files, 11-18 → 11-25; capture ended at its 7-day limit,
+  last record 11-25 17:11) and a SQLite-backup copy of the app DB at 2026-11-26 11:37. Aggregates only. Rules and
+  candidates were frozen on 11-19 before any hold-out data existed; nothing was re-selected.
+- **R18** (`r18_field_inventory.py --since 2026-11-20`): 590,831 lines, 0 bad CRC, 160 same-second repeats → 481,897
+  unique records (133.9 h; ~83–86k per full day 11-20 → 11-24, 59.9k on 11-25). Activity codes 0 / 1 / 2 = 442,916 /
+  38,492 / **489** (little running).
+  - float@33: 0 negative; medians 0.011 still / 0.269 walk / 0.489 run → **PASS**, dynamic acceleration stays
+    SUPPORTED. r with per-second |Δg| fell to +0.13 (was +0.39) and |g4| p99 rose to 3.44 (was 1.24): heavier tails
+    in daily wear; neither was a frozen rule.
+  - u8@29: equal to HR 82.7 %, median |diff| 0, > 3 bpm apart 0.9 % → **PASS** (still UNRESOLVED). Lag scan ±5 s:
+    equality peaks at 0 s (82.7 %) and falls symmetrically (−1 s 57.3 %, +1 s 56.1 %) → not a delayed copy of HR.
+  - f32@105: medians −5.03 / −2.96 / −2.71 → **PASS**. r +0.70 with ln(float@33), +0.78 / +0.75 / +0.68 with ln of its
+    10 / 60 / 300-s mean; fit ≈ −2.97 + 0.41 ln(@33). → log-scaled short-window motion energy **SUPPORTED
+    (exploratory)**: the window was picked on these data and needs a fresh check before any use.
+  - Inventory otherwise stable (43 constant, 15 few-valued, 54 varying; @105 still the only unknown clean float); no
+    few-valued byte carries > 0.017 bits about activity, so still no motion/rest or quality flag.
+- **Event 120** (`event120_check.py --holdout`): 83 usable reports 11-20 00:53 → 11-26 11:13 (≥ 80 needed);
+  Bonferroni |r| > 0.26 over 3, 3-h time-of-day means removed. u16@18 ~ hr_prev **+0.44**, u16@21 ~ hr_next **−0.41**,
+  u8@9 ~ move_prev **−0.55** — all **SUPPORTED** with the predicted sign. These are correlations with NOOP's own
+  streams, not decodes; event 120 stays an unknown periodic summary with no product use.
+- **Closes** EVIDENCE_MATRIX §8 backlog items 1 and 2. Still open for R18: wearer-annotated still / rotation /
+  translation scenarios to assign a scale, and wear/sleep scenarios for flag candidates.

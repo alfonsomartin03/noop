@@ -1,5 +1,7 @@
 # NOOP documentation
 
+**November 26 roadmap.** [Sprint 2, acquisition evidence and data features](sprints/DATA_FUNCTIONALITY.md) → [Sprint 3, iPhone collection and Mac analysis](sprints/SPRINT_3_PHONE_MAC.md). Sprint 3 supersedes the earlier phone-scoring proposal for the first release.
+
 Current guides describe the macOS app as it is in `main`. Source and tests win over any document. Research reports are dated evidence; archived files are history only.
 
 ## Current guides
@@ -17,6 +19,10 @@ Current guides describe the macOS app as it is in `main`. Source and tests win o
 ## Bluetooth protocol
 
 Start with the [reverse-engineering index](reverse-engineering/README.md), then the [evidence matrix](reverse-engineering/EVIDENCE_MATRIX.md), [command registry](reverse-engineering/COMMAND_REGISTRY.md) and [safety matrix](reverse-engineering/SAFETY_MATRIX.md). [PROTOCOL.md](PROTOCOL.md) is the wire-format reference for 4.0 and 5.0.
+
+## Planned work
+
+- [Sprint: iPhone collection and local Mac archive](sprints/PHONE_MAC_ARCHIVE.md) — proposed implementation, storage policy, delivery order and acceptance gates; not current app behavior.
 
 ## Archive
 
