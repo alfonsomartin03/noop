@@ -14,7 +14,7 @@ Single LLM-maintained entry point: rules, current state, routing and file index.
 
 - Refreshed **2026-11-20** (America/New_York), after the #25 close-out cleanup. Planning links updated 2026-11-21; R18 + event-120 hold-outs recorded 2026-11-26.
 - **NOOP**: local-only macOS companion for WHOOP 4.0/5.0 straps. Internal target/scheme/package prefix **Strand**; bundle `com.noopapp.noop`, product `NOOP.app`, v0.1.0 (1).
-- 395 first-party files (tracked + non-ignored untracked, excluding this file). Size hotspots: `BLEManager.swift` ~2.0k lines, `SleepStager.swift` ~1.3k, `OnboardingWizard.swift` ~1.1k, `TrendSections.swift` ~0.9k — search, don't read whole.
+- 397 first-party files (tracked + non-ignored untracked, excluding this file). Size hotspots: `BLEManager.swift` ~2.0k lines, `SleepStager.swift` ~1.3k, `OnboardingWizard.swift` ~1.1k, `TrendSections.swift` ~0.9k — search, don't read whole.
 - Test methods (counts in files; pass results are in §8): WhoopProtocol 193, WhoopStore 105, StrandAnalytics 512, StrandImport 14, StrandDesign 40 (2 snapshot tests need `STRAND_SNAPSHOT_DIR`), hosted StrandTests 118 (8 env-gated renders: `NOOP_RENDER_TRENDS/OVERVIEW/HEALTH/SETTINGS/ACTIVITY=1`), Python whoop_re + reverse_engineer.
 - Strap research (#25 and #38–#48) is **closed**; outcomes + passive backlog in `docs/reverse-engineering/EVIDENCE_MATRIX.md` §8. Open: #49 functional-age follow-ups.
 
@@ -103,6 +103,8 @@ Packages (Swift tools 5.9; declare macOS 13 / iOS 16; **only a macOS app target 
 
 ## 4 · Known issues and limits
 
+- Since 2026-11-22 the Mac reports Bluetooth powered off ~1,100–1,600 times/day and NOOP reconnects each time (ops counters, R85); pulls still complete and coverage holds, cause not determined.
+- Lost-record holes: whole seconds missing from every history stream in 30–61 s runs (264 since 11-17, R85); not removals, cause unknown.
 - No CI; local test evidence only (§8). `BLEManager` CoreBluetooth paths (ack wiring, stream ownership, counters) are code-reviewed, not unit-tested. Alarm delivery is tested against a fake link.
 - Experimental, unvalidated: steps (no accuracy figure), skin-temperature change (no reference thermometer), VO₂max, functional age/pace, nap detection, smart-wake thresholds, health-monitor and check-in thresholds.
 - Not visually checked: several Settings/Health/Overview states in dark mode, 760/420 pt widths, VoiceOver, keyboard, Reduce Motion (owner deferred).
@@ -219,7 +221,7 @@ Format: `file` — purpose. Tests list `Suite(methods)`.
 ### `Tools`
 - `ble_probe/` — `Sources/ble_probe/main.swift` read-only research probe (`--passive`, `--pack-rev1`, `--c08 --c08-approved`, `--k01 --k01-approved`; SET twins hard-blocked); `make_app.sh`; `bundle/Info.plist`; `Package.swift`.
 - `perf_probe/` — `main.swift` repository/scoring timing on a DB copy (`--score`, `--hash`, `--fa-replay`, `--sleepperf`); `Package.swift`, `Package.resolved`. `strain_replay/` — `main.swift` strain replay; `Package.swift`, `Package.resolved`.
-- `whoop_re/` (stdlib, read-only on copies) — `whoop5_decode.py` + `test_whoop5_decode.py` (needs untracked fixture) + `test_whoop5_realtime.py`; `step_walk_check.py` + `test_step_walk_check.py`; `rr_unit_audit.py` + `test_rr_unit_audit.py`; `live_rr_audit.py` + `test_live_rr_audit.py`; `research_archive_check.py` + `test_research_archive_check.py`; `strap_clock_offset.py`, `step_reset_scan.py`, `ppg_burst_check.py`, `event120_check.py` (+ `--holdout`) with `test_offline_checks.py`; `r18_field_inventory.py` + `test_r18_field_inventory.py`; `ops_metrics.py` + `test_ops_metrics.py`.
+- `whoop_re/` (stdlib, read-only on copies) — `whoop5_decode.py` + `test_whoop5_decode.py` (needs untracked fixture) + `test_whoop5_realtime.py`; `step_walk_check.py` + `test_step_walk_check.py`; `rr_unit_audit.py` + `test_rr_unit_audit.py`; `live_rr_audit.py` + `test_live_rr_audit.py`; `research_archive_check.py` + `test_research_archive_check.py`; `strap_clock_offset.py`, `step_reset_scan.py`, `ppg_burst_check.py`, `event120_check.py` (+ `--holdout`) with `test_offline_checks.py`; `r18_field_inventory.py` + `test_r18_field_inventory.py`; `rewarm_check.py` + `test_rewarm_check.py` (re-warming after re-wear, nightly sensitivity); `ops_metrics.py` + `test_ops_metrics.py`.
 - `reverse_engineer/` — `analyze_export.py` (export score analysis), `sleep_performance_eval.py` + `test_sleep_performance_eval.py`.
 
 ### `docs`
@@ -247,7 +249,9 @@ What is established, and how (older per-change rows are in git history and the m
 
 - **2026-11-26 #83:** `StepCounterSample.Window.spanSeconds/syncedSeconds` + `ActivityCoverage` + Strain-detail tile. PASS WhoopProtocol 193, StrandAnalytics 512 (`ActivityCoverageTests` 7: empty day, missing reference, midday gap, reset, DST 23/25 h, today/sync lag), app build + hosted 116 (7 env skips, 0 failures; `StrapStepsTests` +1 repository-backed tile test). NOT done: tile looked at in the running app or with VoiceOver (#86).
 
-- **2026-11-26 #86 (partial):** `ActivityTileTests` renders complete / partial / today states at 1180 light, 760 dark, 420 light+dark (`NOOP_RENDER_ACTIVITY=1`) and they were looked at; the today render exposed "≥ 0m" from a normal 20-min sync lag, fixed with the sync grace. Spoken labels asserted (no "≥", no "h"/"m" abbreviations). An `NSHostingView` accessibility-tree walk returns nothing in the test host, so real VoiceOver is NOT checked. Hosted 118 (8 env skips, 0 failures), `ActivityCoverageTests` 7 pass. Running app on a SQLite-backup copy (`-noop.fixture.detail strain -noop.fixture.day … -noop.fixture.scrollTo strain-tiles`, window captured with `screencapture -l`): a past day with a 45-min gap and a counter reset and today (34-min gap, sync lag within grace) both showed "≥" totals whose walking/running and other time add up to the synced time; light, 1180 pt. Not done: VoiceOver by ear, dark/narrow in the running app, #49 real-input/VoiceOver. Seen, not changed: the Steps tile shows no "≥" for today while the day is unfinished (`Window.isComplete` ignores elapsed time).
+- **2026-11-26 #86 (partial):** `ActivityTileTests` renders complete / partial / today states at 1180 light, 760 dark, 420 light+dark (`NOOP_RENDER_ACTIVITY=1`) and they were looked at; the today render exposed "≥ 0m" from a normal 20-min sync lag, fixed with the sync grace. Spoken labels asserted (no "≥", no "h"/"m" abbreviations). An `NSHostingView` accessibility-tree walk returns nothing in the test host, so real VoiceOver is NOT checked. Hosted 118 (8 env skips, 0 failures), `ActivityCoverageTests` 7 pass. Running app on a SQLite-backup copy (`-noop.fixture.detail strain -noop.fixture.day … -noop.fixture.scrollTo strain-tiles`, window captured with `screencapture -l`): a past day with a 45-min gap and a counter reset and today (34-min gap, sync lag within grace) both showed "≥" totals whose walking/running and other time add up to the synced time; light, 1180 pt. VoiceOver by ear dropped by the owner 2026-11-26. Not done: dark/narrow in the running app, #49 real-input check. Seen, not changed: the Steps tile shows no "≥" for today while the day is unfinished (`Window.isComplete` ignores elapsed time).
+
+- **2026-11-26 #85:** offline on a SQLite-backup copy and `ops-counters` copies (EXPERIMENT_LOG R85). `rewarm_check.py` 7 tests pass. Re-warming measured on 3 strap-reported removals (one in-night); excluding up to 10 min after re-wear moves the in-night night value 0.01 °C → `skin-temp-night-v2` kept. No charge sessions since 11-20 (gate open). Docs + tool only; no app change.
 
 Index check (run after file changes; expects no output):
 
@@ -259,11 +263,11 @@ git ls-files --cached --others --exclude-standard | grep -v -e '^AGENTS.md$' -e 
 
 | Date | Change | Checks / remaining |
 | --- | --- | --- |
-| 2026-11-26 | #86 partial: activity/steps tile renders (3 states × 4 width/scheme), VoiceOver spoken text for both tiles, 30-min sync grace before "≥"; fixture options to open a detail page on a day and scroll to a section; tiles checked in the running app on a DB copy. | Hosted 118 pass; VoiceOver by ear still open. |
+| 2026-11-26 | #85: `rewarm_check.py`; re-warming ~3–5 min awake / ~10–12 min asleep, nightly value insensitive (kept); charging gate still unobserved; ops counters show ~1/min Bluetooth power-off/reconnect since 11-22. | Copies only; tool tests pass; Bluetooth churn cause open. |
+| 2026-11-26 | #86 partial: activity/steps tile renders (3 states × 4 width/scheme), VoiceOver spoken text for both tiles, 30-min sync grace before "≥"; fixture options to open a detail page on a day and scroll to a section; tiles checked in the running app on a DB copy. | Hosted 118 pass; VoiceOver by ear dropped by owner. |
 | 2026-11-26 | #83: Walking & running tile in Strain detail with synced coverage and lower-bound labelling (`ActivityCoverage`); steps tile keeps only count caveats. | Package + hosted tests pass; not looked at in the app (#86). |
 | 2026-11-26 | HO1: R18 hold-out passed (float@33 acceleration holds, @29 not a delayed HR copy, @105 ≈ log motion energy, exploratory); event-120 hold-out 3/3 SUPPORTED; EVIDENCE_MATRIX backlog 1–2 done. | Offline on copies; docs only. R18 scale still needs wearer scenarios. |
 | 2026-11-22 | T04: first nightly skin-temperature change (−0.61 °C) and an in-night removal logged; EVIDENCE_MATRIX backlog 5 done. | Docs only, from a DB copy; re-warming tail unchecked. |
 | 2026-11-21 | Added PHONE_MAC_ARCHIVE sprint: iPhone collector, local sync, compact history, verified archive receipts, retention/recovery gates and future API boundaries; created milestones 7/8, issues #76–#82. | Docs/source comparison, local links, whitespace and index checks; no implementation or hardware changes. |
 | 2026-11-20 | #25 close-out: dead-code removal (Apple Health, BehaviorInsights, server-sync leftovers), schema constant fix, launch prewarm (single store open off the main actor), docs consolidated/archived, AGENTS condensed, closure + backlog in EVIDENCE_MATRIX §8. | All suites pass; launch timed on a DB copy; changed screens not looked at. |
 | 2026-11-20 | Firmware feasibility reassessed: secure-boot assumption corrected; leads and sources in EVIDENCE_MATRIX §5. | Docs only. |
-| 2026-11-20 | Outdated-text sweep (Live 5.0 claim, Apple Health prompts, explorer rows, step caveat). | Hosted 115 pass. |
