@@ -57,7 +57,9 @@ public struct OpsDay: Codable, Equatable {
 public enum OpsCounter: String, CaseIterable {
     case connect                // link up (didConnect)
     case disconnect             // link down (didDisconnect, or Bluetooth turned off while connected)
-    case bluetoothOff           // the Mac's Bluetooth reported poweredOff (an exposure confound, not a NOOP reconnect)
+    case bluetoothOff           // poweredOff with no Mac sleep before the next poweredOn: Bluetooth really went off
+    case systemSleep            // poweredOff because the Mac went to sleep (bluetoothd turns every client off at
+                                // kIOMessageSystemWillSleep; each dark wake turns it on again) — R86
     case setupAttempt           // 5.0 CLIENT_HELLO setup attempts
     case pullStarted
     case pullCompleted          // strap sent HISTORY_COMPLETE
@@ -66,6 +68,34 @@ public enum OpsCounter: String, CaseIterable {
     case batteryReadSkipped     // periodic level read skipped: the strap had pushed a level recently
     case batteryCharRead        // standard 0x2A19 read
     case rxBytes                // notification bytes received (all characteristics)
+}
+
+/// Tells a CoreBluetooth `poweredOff` caused by the Mac going to sleep apart from Bluetooth really being turned off.
+/// bluetoothd sends every client "Off" at kIOMessageSystemWillSleep and "On" at the next (dark) wake, so the two look
+/// the same at poweredOff time; they differ in whether the Mac slept before the next poweredOn. The caller passes the
+/// total time the Mac has slept since boot (`CLOCK_MONOTONIC_RAW` − `CLOCK_UPTIME_RAW`). Pure; R86.
+public struct PowerOffClassifier {
+    /// Sleep shorter than this between off and on is not treated as a system sleep (clock read jitter).
+    public static let minimumSleep: TimeInterval = 1
+    private var sleptAtOff: TimeInterval?
+
+    public init() {}
+
+    public var isPending: Bool { sleptAtOff != nil }
+
+    /// A poweredOff. Repeated offs before the next on keep the first reading.
+    public mutating func poweredOff(sleptSinceBoot: TimeInterval) {
+        if sleptAtOff == nil { sleptAtOff = sleptSinceBoot }
+    }
+
+    /// A poweredOn: `.systemSleep` if the Mac slept since the pending off, `.bluetoothOff` if not, nil when no off was
+    /// pending (first state callback after launch, or a repeated poweredOn). A real Bluetooth power-off that spans a
+    /// sleep is counted as a sleep.
+    public mutating func poweredOn(sleptSinceBoot: TimeInterval) -> OpsCounter? {
+        guard let off = sleptAtOff else { return nil }
+        sleptAtOff = nil
+        return sleptSinceBoot - off >= Self.minimumSleep ? .systemSleep : .bluetoothOff
+    }
 }
 
 /// Accumulates `OpsDay`s. Pure: the caller supplies times and persists `snapshot` output.

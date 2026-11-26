@@ -115,4 +115,37 @@ final class OpsCountersTests: XCTestCase {
         XCTAssertEqual(days[0].commands["Get Clock"], 2)
         XCTAssertEqual(days[1].commands["Get Clock"], 1)
     }
+
+    // R86: bluetoothd sends every client poweredOff at system sleep and poweredOn at the next dark wake.
+    func testPoweredOffAcrossAMacSleepIsASystemSleepNotBluetoothOff() {
+        var c = PowerOffClassifier()
+        XCTAssertNil(c.poweredOn(sleptSinceBoot: 100), "first poweredOn after launch has no pending off")
+        c.poweredOff(sleptSinceBoot: 100)
+        c.poweredOff(sleptSinceBoot: 100.2)              // a repeated off keeps the first reading
+        XCTAssertTrue(c.isPending)
+        XCTAssertEqual(c.poweredOn(sleptSinceBoot: 130), .systemSleep, "30 s dark-wake loop sleep")
+        XCTAssertFalse(c.isPending)
+        XCTAssertNil(c.poweredOn(sleptSinceBoot: 130), "a repeated poweredOn counts nothing")
+    }
+
+    func testPoweredOffWithoutSleepIsBluetoothOff() {
+        var c = PowerOffClassifier()
+        c.poweredOff(sleptSinceBoot: 500)
+        XCTAssertEqual(c.poweredOn(sleptSinceBoot: 500.4), .bluetoothOff, "clock jitter under 1 s is not a sleep")
+        c.poweredOff(sleptSinceBoot: 500.4)
+        XCTAssertEqual(c.poweredOn(sleptSinceBoot: 500.4), .bluetoothOff)
+    }
+
+    func testSystemSleepIsItsOwnCounterInTheDayFile() {
+        var b = OpsCounterBook(calendar: cal, app: "a", now: t(26, 4))
+        var c = PowerOffClassifier()
+        for i in 0..<3 {                                   // three dark-wake cycles while connected
+            b.linkUp(at: t(26, 4, i))
+            c.poweredOff(sleptSinceBoot: Double(i) * 30)
+            b.linkDown(at: t(26, 4, i))
+            if let k = c.poweredOn(sleptSinceBoot: Double(i) * 30 + 30) { b.count(k, at: t(26, 4, i)) }
+        }
+        let day = b.snapshot(at: t(26, 5))[0]
+        XCTAssertEqual(day.counts, ["connect": 3, "disconnect": 3, "systemSleep": 3])
+    }
 }

@@ -119,6 +119,7 @@ class CounterFileTests(unittest.TestCase):
         self.assertEqual(s["hours"], 2)
         self.assertEqual(s["counts"]["connect"], 3)
         self.assertEqual(s["counts"]["bluetoothOff"], 0, "absent counter is a zero count, not missing")
+        self.assertEqual(s["counts"]["systemSleep"], 0, "pre-R86 files have no systemSleep")
         self.assertEqual(s["per_hour"]["cmd:Get Clock"], 4)
         self.assertEqual(s["per_hour"]["connect"], 1.5)
         self.assertEqual(M.counter_summary({"day": "d", "app": "1.0 (1)"})["apps"], ["1.0 (1)"], "first build's field")
