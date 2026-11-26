@@ -21,7 +21,8 @@ a few days are descriptive: wearer activity, charging and connection time are no
 (`→ 5.0 <label> seq=`), connects, and Mac Bluetooth power-offs (an exposure confound, not a NOOP reconnect).
 
 `--counters` reads NOOP's own per-day counter files (a copy of Application Support/OpenWhoop/ops-counters, written by
-the app since the #46 counter build): connected hours, connects, Mac Bluetooth power-offs, pulls, frames, received
+the app since the #46 counter build): connected hours, connects, Mac Bluetooth power-offs
+(builds before R86 also counted every Mac sleep there; later builds count those as `systemSleep`), pulls, frames, received
 bytes and every command label, each also per connected hour. They survive log rotation. The newest day is partial.
 """
 import glob
@@ -140,7 +141,7 @@ def log_counts(lines):
     return cmds, connects, poweroff, first, last
 
 
-COUNTER_KEYS = ("connect", "disconnect", "bluetoothOff", "setupAttempt", "pullStarted", "pullCompleted",
+COUNTER_KEYS = ("connect", "disconnect", "bluetoothOff", "systemSleep", "setupAttempt", "pullStarted", "pullCompleted",
                 "pullEndedEarly", "historyFrames", "rxBytes", "batteryReadSkipped", "batteryCharRead")
 
 
@@ -182,7 +183,7 @@ def print_counters(directory):
         c = s["counts"]
         tag = "  (newest: partial)" if i == len(days) - 1 else ""
         print(f"{s['day']}  app {' | '.join(s['apps']) or '?'}  fw {','.join(s['firmware']) or '?'}  connected {s['hours']:.1f} h  "
-              f"connects {c['connect']}  BT off {c['bluetoothOff']}  pulls {c['pullStarted']} "
+              f"connects {c['connect']}  BT off {c['bluetoothOff']}  Mac sleeps {c['systemSleep']}  pulls {c['pullStarted']} "
               f"(complete {c['pullCompleted']}, early {c['pullEndedEarly']})  frames {c['historyFrames']}  "
               f"rx {c['rxBytes'] / 1e6:.2f} MB  level reads skipped {c['batteryReadSkipped']}{tag}")
         for k, v in sorted(s["commands"].items(), key=lambda kv: -kv[1]):

@@ -205,6 +205,8 @@ public final class BLEManager: NSObject, ObservableObject {
     /// #46 ordinary-use counters (commands by label, link/pull events, connected time) per local day, written to
     /// `OpenWhoop/ops-counters` at most once a minute and on every disconnect. Counts only.
     private lazy var opsStore: OpsCounterStore? = LaunchMode.bluetoothEnabled ? try? OpsCounterStore.standard() : nil
+    /// Splits poweredOff into a Mac sleep vs Bluetooth really off (R86).
+    private var powerOffClassifier = PowerOffClassifier()
     private lazy var opsBook: OpsCounterBook = {
         let now = Date()
         return OpsCounterBook(app: OpsCounterStore.appVersion,
@@ -947,6 +949,12 @@ public final class BLEManager: NSObject, ObservableObject {
     private func redactedName(_ n: String) -> String {
         n.lowercased().hasPrefix("whoop") ? "WHOOP-…" : "other(\(n.count) chars)"
     }
+    /// Seconds the Mac has slept since boot: MONOTONIC_RAW counts sleep, UPTIME_RAW does not.
+    private static func sleptSinceBoot() -> TimeInterval {
+        let slept = Int64(clock_gettime_nsec_np(CLOCK_MONOTONIC_RAW)) - Int64(clock_gettime_nsec_np(CLOCK_UPTIME_RAW))
+        return TimeInterval(max(0, slept)) / 1e9
+    }
+
     private static func stateName(_ s: CBManagerState) -> String {
         switch s {
         case .unknown: return "unknown"
@@ -1671,12 +1679,14 @@ extension BLEManager: CBCentralManagerDelegate {
         rememberAuthorization()
         if central.state != .poweredOn {
             // CoreBluetooth drops the link without a didDisconnect when Bluetooth goes off; linkDown is idempotent.
-            ops(flush: true) { book, now in
-                if central.state == .poweredOff { book.count(.bluetoothOff, at: now) }
-                book.linkDown(at: now)
-            }
+            // A poweredOff is classified at the next poweredOn: macOS sends one at every system sleep (R86).
+            if central.state == .poweredOff { powerOffClassifier.poweredOff(sleptSinceBoot: BLEManager.sleptSinceBoot()) }
+            ops(flush: true) { book, now in book.linkDown(at: now) }
         }
         guard central.state == .poweredOn else { return }
+        if let kind = powerOffClassifier.poweredOn(sleptSinceBoot: BLEManager.sleptSinceBoot()) {
+            ops { $0.count(kind, at: $1) }
+        }
         // Bootstrap the async store once on first poweredOn (idempotent if already set).
         Task { @MainActor in await bootstrapStore() }
         if let p = restoredPeripheral {
