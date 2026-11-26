@@ -1,5 +1,7 @@
 # NOOP project progress
 
+**November 26 roadmap.** [Sprint 2, acquisition evidence and data features](sprints/DATA_FUNCTIONALITY.md) → [Sprint 3, iPhone collection and Mac analysis](sprints/SPRINT_3_PHONE_MAC.md). Sprint 3 supersedes the earlier phone-scoring proposal for the first release.
+
 *Plain-language project snapshot, last updated November 19, 2026.*
 
 NOOP is an independent macOS companion for WHOOP straps. It works locally on the Mac: there is no NOOP account or cloud service. This page summarizes what has been built and learned so far, and separates working software from findings that still need more evidence.
@@ -48,8 +50,13 @@ The strap-research program ([issue #25](https://github.com/alfonsomartin03/noop/
 
 - **Done:** research capture, live beat-interval units, configuration reads, deterministic trend tests, battery-pack decoding with a "fully charged" signal, the experimental step tile, wrist on/off events, nightly skin temperature, alarm-write and battery-read reductions, daily strap-clock correction, and in-app usage counters.
 - **Decided against:** custom or extracted firmware (no-go), and product use of the optical bursts (no benefit over existing heart rate, no blood-oxygen path).
-- **Still waiting on time or the wearer (no strap writes):** two frozen hold-out checks (around November 25–27), a counted walk for a step-accuracy figure, the first nightly temperature-change value (around November 22), and a few charging and removal edge cases.
+- **Still waiting on time or the wearer (no strap writes):** a counted walk for a step-accuracy figure, the temperature re-warming tail after a removal, and a few charging and removal edge cases.
+- **Hold-out checks done (November 26):** both frozen checks passed on data collected after the rules were fixed. The R18 motion field still reads as dynamic acceleration, the second heart-rate byte is not a delayed copy, and the three event-120 candidates replicated. None of this changes the app.
 - **Healthspan:** the functional-age model and Health section are implemented ([#49](https://github.com/alfonsomartin03/noop/issues/49)); an in-app check with real inputs, accessibility review, evaluation and steps as an input (after #42) remain. It is separate from clinical biological age.
+
+## Planned sprint
+
+[The iPhone collection and local Mac archive sprint](sprints/PHONE_MAC_ARCHIVE.md) outlines phone-only strap pairing, direct local sync, compact phone history, safe archival and on-demand detail. It is planning only; no iOS target, sync or pruning has been implemented. Installation feasibility and measured storage/scoring requirements are the first gates.
 
 ## How to read project claims
 

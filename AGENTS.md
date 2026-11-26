@@ -12,9 +12,9 @@ Single LLM-maintained entry point: rules, current state, routing and file index.
 
 ## 1 · Snapshot
 
-- Refreshed **2026-11-20** (America/New_York), after the #25 close-out cleanup.
+- Refreshed **2026-11-20** (America/New_York), after the #25 close-out cleanup. Planning links updated 2026-11-21; R18 + event-120 hold-outs recorded 2026-11-26.
 - **NOOP**: local-only macOS companion for WHOOP 4.0/5.0 straps. Internal target/scheme/package prefix **Strand**; bundle `com.noopapp.noop`, product `NOOP.app`, v0.1.0 (1).
-- 389 first-party files (tracked + non-ignored untracked, excluding this file). Size hotspots: `BLEManager.swift` ~2.0k lines, `SleepStager.swift` ~1.3k, `OnboardingWizard.swift` ~1.1k, `TrendSections.swift` ~0.9k — search, don't read whole.
+- 390 first-party files (tracked + non-ignored untracked, excluding this file). Size hotspots: `BLEManager.swift` ~2.0k lines, `SleepStager.swift` ~1.3k, `OnboardingWizard.swift` ~1.1k, `TrendSections.swift` ~0.9k — search, don't read whole.
 - Test methods (counts in files; pass results are in §8): WhoopProtocol 193, WhoopStore 105, StrandAnalytics 505, StrandImport 14, StrandDesign 40 (2 snapshot tests need `STRAND_SNAPSHOT_DIR`), hosted StrandTests 115 (7 env-gated renders: `NOOP_RENDER_TRENDS/OVERVIEW/HEALTH/SETTINGS=1`), Python whoop_re + reverse_engineer.
 - Strap research (#25 and #38–#48) is **closed**; outcomes + passive backlog in `docs/reverse-engineering/EVIDENCE_MATRIX.md` §8. Open: #49 functional-age follow-ups.
 
@@ -53,6 +53,9 @@ Packages (Swift tools 5.9; declare macOS 13 / iOS 16; **only a macOS app target 
 ## 3 · Current behavior (verified against source 2026-11-20)
 
 ### App and UI
+
+- Sprint 2 plans coverage-aware activity detail. Sprint 3 assigns collection/display to iPhone and storage/scoring to Mac, superseding phone scoring for the initial release.
+- Planned only: `docs/sprints/PHONE_MAC_ARCHIVE.md` outlines an iPhone collector, local Mac archive, compact phone history and safe pruning, with future read-only API gateway boundaries; milestones 7/8 and issues #76–#81 track delivery, #82 is future backlog. None is implemented.
 
 - `AppEntry` checks `NOOP_TEST_HOST` (tests get no BLE/store). Single strap identity `my-whoop`; derived rows `my-whoop-noop`.
 - **Launch:** `AppModel.init` calls `Repository.prewarm()`, which opens the store once and reads the dashboard rows on a detached task while the first window is built; all `ensureStore()` callers share that open (before: 4 concurrent opens, each running the migrator, and the first read waited ~250 ms for the main actor). Then: refresh, wait ~6 s, apply version rescoring, analyze every 15 min. New chunks: UI refresh throttled ~2 s; scoring after ~8 s quiet; scoring always on a detached utility task.
@@ -109,6 +112,8 @@ Packages (Swift tools 5.9; declare macOS 13 / iOS 16; **only a macOS app target 
 - A stash `stash@{0}` (issue/46 docs backup) exists in the original checkout; contents not reviewed.
 
 ## 5 · Build, configuration, runtime switches
+
+- Phone/archive sprint adds no current target, setting or permission; proposed configuration is gated in `docs/sprints/PHONE_MAC_ARCHIVE.md`; future API gateways remain opt-in and out of sprint scope.
 
 - `project.yml` (XcodeGen) is canonical and regenerates `Info.plist` (version from `MARKETING_VERSION`/`CURRENT_PROJECT_VERSION`); `Strand.xcodeproj` is generated and ignored. macOS 13+, Swift 5 mode, minimal strict concurrency. BLEManager's main-actor delegate warnings are expected.
 - Entitlements: sandbox, Bluetooth, user-selected read/write. `Signing.xcconfig` optionally includes ignored `Local.xcconfig` (template `Local.xcconfig.example`).
@@ -218,6 +223,8 @@ Format: `file` — purpose. Tests list `Suite(methods)`.
 - `reverse_engineer/` — `analyze_export.py` (export score analysis), `sleep_performance_eval.py` + `test_sleep_performance_eval.py`.
 
 ### `docs`
+- `sprints/DATA_FUNCTIONALITY.md` — issue review and Sprint 2. `sprints/SPRINT_3_PHONE_MAC.md` — foreground LAN sync and Mac analysis.
+- `sprints/PHONE_MAC_ARCHIVE.md` — planned iPhone collector/local archive sprint, ordered work packages, acceptance gates, GitHub tracking and future API gateway boundaries.
 - Current: `README.md` (index), `ARCHITECTURE.md`, `BUILD.md`, `CONTRIBUTING.md`, `PRIVACY_SECURITY.md`, `PROJECT_PROGRESS.md`, `PROTOCOL.md` (wire format), `MEASUREMENT_VALIDITY.md`, `SLEEP_SESSIONS.md`, `NAP_DETECTION.md`, `HEALTH_MODELS.md`. `assets/` — `banner.svg`, `logo.svg`.
 - `archive/` (historical): `SLEEP_STRAIN_AUDIT.md`, `SLEEP_RECOVERY_RESEARCH_2026-10-27.md`, `WORKOUT_STRAIN_RESEARCH_2026-10-30.md`, `WORKOUT_STRAIN_REPORT.md`, `WHOOP_REVERSE_ENGINEERING.md`, `HR_BROADCAST_RESEARCH.md`, `BLE_REVERSE_ENGINEERING.md`, `AUDIT.md`, `TEST_RESULTS.md`, `UNKNOWN_CAPABILITIES.md`.
 - `reverse-engineering/` — `README.md`, `EVIDENCE_MATRIX.md` (evidence levels, firmware review, **#25 closure + backlog §8**), `CAPABILITY_MATRIX.md`, `RESEARCH_CAPTURE.md`, `SAFETY_MATRIX.md`, `COMMAND_REGISTRY.md` + `whoop5_commands.json`, `GATT_MAP.md`, `PROTOCOL_SPEC.md`, `PACKET_TYPES.md`, `SENSOR_STREAMS.md`, `STATE_MACHINE.md`, `ALARM_CAPABILITIES.md`, `EXPERIMENT_LOG.md`.
@@ -226,6 +233,12 @@ Format: `file` — purpose. Tests list `Suite(methods)`.
 ## 8 · Verification record
 
 What is established, and how (older per-change rows are in git history and the merged PRs):
+
+- **2026-11-21 sprint plan:** documentation only; source compared for target, storage, cursor and backup boundaries. Path/link, whitespace and §8 index checks passed; GitHub milestones 7/8 and issues #76–#82 created. No app tests or hardware checks run; phone/sync/retention and API gateway behavior remain unimplemented.
+
+- **2026-11-26 HO1:** frozen R18 (`r18_field_inventory.py --since 2026-11-20`, 481,897 records) and event-120 (`event120_check.py --holdout`, 83 reports) hold-outs run on a research-history copy and a SQLite-backup copy: every frozen rule passed / 3 of 3 candidates SUPPORTED (EXPERIMENT_LOG HO1). Docs only; no app change, no tests run.
+
+- **2026-11-22 T04:** passive read of a SQLite-backup copy: first nightly skin-temperature change (−0.61 °C, night ending 11-22) and a 3-min in-night removal with no samples while off (EXPERIMENT_LOG T04). Docs only; no tests run.
 
 - **Hardware-confirmed (fw 50.43.1.0):** on-device alarm + read-back (H04); alarm writes 2/day after read-before-write; event 3 charging bit; 151 `[01]` pack layout and 117 = 4 full (C06b); wrist events 10/9 (C02a, T03); 121/128 read layout (C08); SET_CLOCK + daily re-sync; live R–R ms (L01); research capture A01; step counter tracks walking/running, alarm-linked resets (S01).
 - **Unit/integration-tested only:** everything else in §3, including alarm delivery (fake link), charging presentation, ack gate, check-ins, highlights, functional age.
@@ -242,11 +255,11 @@ git ls-files --cached --others --exclude-standard | grep -v -e '^AGENTS.md$' -e 
 
 | Date | Change | Checks / remaining |
 | --- | --- | --- |
+| 2026-11-26 | HO1: R18 hold-out passed (float@33 acceleration holds, @29 not a delayed HR copy, @105 ≈ log motion energy, exploratory); event-120 hold-out 3/3 SUPPORTED; EVIDENCE_MATRIX backlog 1–2 done. | Offline on copies; docs only. R18 scale still needs wearer scenarios. |
+| 2026-11-22 | T04: first nightly skin-temperature change (−0.61 °C) and an in-night removal logged; EVIDENCE_MATRIX backlog 5 done. | Docs only, from a DB copy; re-warming tail unchecked. |
+| 2026-11-21 | Added PHONE_MAC_ARCHIVE sprint: iPhone collector, local sync, compact history, verified archive receipts, retention/recovery gates and future API boundaries; created milestones 7/8, issues #76–#82. | Docs/source comparison, local links, whitespace and index checks; no implementation or hardware changes. |
 | 2026-11-20 | #25 close-out: dead-code removal (Apple Health, BehaviorInsights, server-sync leftovers), schema constant fix, launch prewarm (single store open off the main actor), docs consolidated/archived, AGENTS condensed, closure + backlog in EVIDENCE_MATRIX §8. | All suites pass; launch timed on a DB copy; changed screens not looked at. |
 | 2026-11-20 | Firmware feasibility reassessed: secure-boot assumption corrected; leads and sources in EVIDENCE_MATRIX §5. | Docs only. |
 | 2026-11-20 | Outdated-text sweep (Live 5.0 claim, Apple Health prompts, explorer rows, step caveat). | Hosted 115 pass. |
 | 2026-11-20 | Removed "Keep data on strap"; every saved history chunk is acked. | Hosted 115 pass; not run against the strap. |
 | 2026-11-20 | Settings rework + charging illustration redraw. | StrandDesign 40 + hosted 115 pass; light 1180 pt looked at. |
-| 2026-11-20 | #41 charging session: 151 `[01]` layout, 117 = 4 full, 109 pack report; app decodes them. | Protocol 193 + hosted 115 pass. |
-| 2026-11-20 | Live-HR sheet closes on a click outside it. | Hosted 114 pass. |
-| 2026-11-20 | S01 night 3: step reset 1 s after the early smart-wake ring; another during the T03 removal. | Docs only. |
