@@ -262,9 +262,9 @@ and stopping rule. Outcomes, one row per follow-up issue:
 2. ~~R18 hold-out~~ — **run 2026-11-26** on 481,897 records (11-20 → 11-25): every frozen rule held (EXPERIMENT_LOG HO1).
 3. W04 counted walk (tally counter, ≥ 1,000 steps, still edges) → step error bound; > 5 % error drops the feature.
 4. Step reset on a deadline (non-early) ring; a tap-free removal.
-5. ~~First nightly skin-temperature change and an in-night off-wrist interval~~ — **seen 2026-11-22** (EXPERIMENT_LOG T04: −0.61 °C; 3-min removal at 02:51, no samples while off). Re-warming tail still unchecked.
-6. Charging: interrupted charge (~60 %), reconnect with the pack on, 151 latency after a transition.
-7. #46 counters over several days; a controlled discharge window.
+5. ~~First nightly skin-temperature change and an in-night off-wrist interval~~ — **seen 2026-11-22** (EXPERIMENT_LOG T04: −0.61 °C; 3-min removal at 02:51, no samples while off). Re-warming tail **checked 2026-11-26** (EXPERIMENT_LOG R85): ~3–5 min awake, ~10–12 min asleep; night value moves 0.01 °C if excluded → kept as is.
+6. Charging: interrupted charge (~60 %), reconnect with the pack on, 151 latency after a transition. **Still unobserved** at R85 (no charge since 11-20).
+7. ~~#46 counters over several days~~ — **8 days read 2026-11-26** (R85): ~1,100–1,600 Mac Bluetooth power-off / reconnect cycles per day since 11-22, cause open. A controlled discharge window is still open (natural ~10 %/day seen).
 
 Never in scope without a new owner decision: firmware writes or extraction, key sweeps, SET twins (39/41/43),
 121/128 writes.

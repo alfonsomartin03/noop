@@ -526,3 +526,35 @@ accepted every command. Details: ALARM_CAPABILITIES.md. **Wearer confirmed feeli
   streams, not decodes; event 120 stays an unknown periodic summary with no product use.
 - **Closes** EVIDENCE_MATRIX §8 backlog items 1 and 2. Still open for R18: wearer-annotated still / rotation /
   translation scenarios to assign a scale, and wear/sleep scenarios for flag candidates.
+
+## R85 — re-warming after re-wear, charging and multi-day operation counts (2026-11-26, offline, #85; copies only, no strap commands)
+
+- **Inputs:** SQLite-backup copy of the app DB at 2026-11-26 13:23 EST and copies of `OpenWhoop/ops-counters`
+  (11-19 → 11-26, newest partial). Skin temperature stored from 11-16 14:40 (842,244 rows, `centi_celsius`).
+  `Tools/whoop_re/rewarm_check.py` (new) and `ops_metrics.py`. Aggregates only.
+- **Removals with temperature on both sides:** the three strap-reported pairs since 11-16 (C02a 2 min, T03 24 min, T04
+  3 min in-night). All three start cool (first-minute minimum ≥ 0.5 °C below both the 10 min before and the 10–20 min
+  after). Re-warming to within 0.2 °C of the 10–20-min level: **~3.3 min** (C02a, day), **~5 min** (T03, day, first
+  30 s at 28.5 °C), **~10–12 min** (T04, asleep: 31.0 → 32.1 °C in steady 30-s steps, not settled within 10 min).
+  n = 3, one in-night; no reference thermometer.
+- **Unlabelled holes:** 29 gaps ≥ 60 s in the skin stream, **all 60–61 s**, the same seconds missing from HR, gravity
+  and step rows, no wear/charge/link event nearby, and **none starts cool**: lost or unrecorded records, not removals.
+  HR has 264 such whole-record holes of 30–61 s since 11-17 (103 of 30–39 s, 86 of 40–49 s, 44 of 50–59 s, 29 of
+  60–61 s). Cause unknown; recorded here, not investigated.
+- **Nightly sensitivity (`skin-temp-night-v2`):** recomputing the night median while also excluding the first
+  0 / 30 / 60 / 120 / 300 / 600 s after every hole in the night: the T04 night (the only in-night removal) moves
+  **32.23 → 32.24 °C (spread 0.01 °C)**; nights with only lost-record holes move ≤ 0.11 °C (11-24, a short 4-h night).
+  A ~10-min tail is ~2 % of an 8-h night and the median absorbs it.
+- **Decision:** **retain** the current night value (exclude strap-reported off time only, no re-warming exclusion).
+  Revisit if removals become longer or more frequent inside nights; then a 10-min post-re-wear exclusion is the
+  measured candidate.
+- **Charging:** no charge session since C02b (11-20). Battery 100 % (11-21) → 44 % (11-26 ~13:00) with no CHARGING_ON,
+  pack or 117 events; the 99 → 85 % band ran at 10.4 %/day (11-21 → 11-22), matching the six-day average (~10 %/day).
+  Interrupted charge, reconnect with the pack on and 151 latency remain **unobserved**.
+- **Operation counts (in-app counters, same build since 11-20 18:14 UTC):** per day 11-21 → 11-25: pulls 68 / 28 / 35
+  / 14 / 35 (early ends 3 / 2 / 6 / 4 / 3), history frames ~95–99k, received ~11.4–12.0 MB, `Set Clock` 1/day, alarm
+  writes 0–2/day. **Link churn changed on 11-22:** NOOP counted connects 561 → **1,582 / 1,128 / 1,123 / 1,068** and the
+  Mac reported Bluetooth powered off a similar number of times (578 → 1,764 / 1,220 / 1,384 / 1,166), about once a
+  minute, while connected time fell from 15.5 h to 2–7 h. The strap logged only 4–21 BLE_CONNECTION_UP per day, and
+  synced HR coverage stayed 95–98 %. The power-offs are reported by macOS to CoreBluetooth; no NOOP build changed.
+  Cause not determined (Mac-side Bluetooth power cycling is the leading candidate); no battery-saving claim is made.
