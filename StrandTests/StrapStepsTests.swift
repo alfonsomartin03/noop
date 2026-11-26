@@ -31,7 +31,7 @@ final class StrapStepsTests: XCTestCase {
         XCTAssertEqual(w.resets, 1)
         XCTAssertEqual(w.activityOneSeconds, 120)
         XCTAssertEqual(w.activityTwoSeconds, 60)
-        XCTAssertEqual(StrainDetailView.stepDetails(w), ["Walking 2m · Running 1m", "Counter reset detected; steps after it are counted from the strap's new count.", "The strap resets this counter on its own (seen right after alarm wake-ups and once after it was taken off) and its accuracy is unverified, so this may be an incomplete daily count."])
+        XCTAssertEqual(StrainDetailView.stepDetails(w), ["Counter reset detected; steps after it are counted from the strap's new count.", "The strap resets this counter on its own (seen right after alarm wake-ups and once after it was taken off) and its accuracy is unverified, so this may be an incomplete daily count."])
     }
 
     func testNoStepRowsMeansNoTileAndMissingReferenceIsSaid() async throws {
@@ -64,6 +64,31 @@ final class StrapStepsTests: XCTestCase {
         XCTAssertEqual(w.activityOneSeconds, 300 + 300, "the 20-min gap is not walking time")
         XCTAssertEqual(w.unknownSeconds, 1_200)
         XCTAssertFalse(w.isComplete)
-        XCTAssertEqual(StrainDetailView.stepDetails(w), ["Walking 10m", "No synced data for 20m; walking and running time there is not counted.", "The strap resets this counter on its own (seen right after alarm wake-ups and once after it was taken off) and its accuracy is unverified, so this may be an incomplete daily count."])
+        XCTAssertEqual(StrainDetailView.stepDetails(w), ["No synced data for 20m; walking and running time there is not counted.", "The strap resets this counter on its own (seen right after alarm wake-ups and once after it was taken off) and its accuracy is unverified, so this may be an incomplete daily count."])
+    }
+
+    /// #83: the Walking & running tile over a stored day: synced seconds only, partial totals as lower bounds.
+    func testActivityTileShowsSyncedCoverageAndLowerBound() async throws {
+        let (repo, store) = try await repo()
+        let r = try XCTUnwrap(DayMath.range("2026-03-10"))
+        func s(_ dt: Int, _ c: Int, _ a: Int) -> StepCounterSample { StepCounterSample(ts: r.from + dt, counter: c, activity: a) }
+        // Walking 10:00–10:30 with 10:10–10:20 unsynced; synced from midnight to 12:00 then nothing more.
+        let t = 10 * 3600
+        let rows = [s(-60, 0, 0), s(t, 0, 1), s(t + 1800, 2_000, 0)]
+        let synced = Array(-60..<(t + 600)) + Array((t + 1200)..<(12 * 3600))
+        _ = try await store.insert(Streams(hr: synced.map { HRSample(ts: r.from + $0, bpm: 80) }, steps: rows), deviceId: device)
+        let w = await repo.strapSteps(from: r.from, to: r.to)
+        let now = Date(timeIntervalSince1970: TimeInterval(r.from + 13 * 3600))
+        let a = try XCTUnwrap(StrainDetailView.activity(w, day: r, now: now))
+        XCTAssertEqual(a.walkingSeconds, 1200)
+        XCTAssertEqual(a.syncedSeconds, 12 * 3600 - 600)
+        XCTAssertEqual(a.gapSeconds, 600)
+        XCTAssertEqual(a.awaitingSyncSeconds, 3600)
+        XCTAssertEqual(a.value(duration: StrainDetailView.duration), "≥ 20m")
+        XCTAssertEqual(a.caption(duration: StrainDetailView.duration), "Over 11h\u{00A0}50m synced of 13h\u{00A0}0m so far")
+        XCTAssertEqual(a.details(duration: StrainDetailView.duration),
+                       ["Walking 20m", "Not walking or running: 11h\u{00A0}30m.", "No synced data for 10m; activity there is unknown.",
+                        "1h\u{00A0}0m not synced yet.", "Totals are at least these: unsynced time is not counted."])
+        XCTAssertNil(StrainDetailView.activity(nil, day: r), "no step rows (4.0 strap, older data): no tile")
     }
 }

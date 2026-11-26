@@ -244,7 +244,8 @@ final class Whoop5HistoricalTests: XCTestCase {
         XCTAssertEqual(cp, [s(0, 100), s(2, 100, 1), s(3, 106, 1), s(4, 107, 1), s(5, 109, 1), s(6, 109)])
         let w = StepCounterSample.window(cp, from: 1, to: 10)
         XCTAssertEqual(w, .init(steps: 9, resets: 0, hasStartReference: true, activityOneSeconds: 4, activityTwoSeconds: 0,
-                                unknownSeconds: 0))
+                                unknownSeconds: 0, spanSeconds: 9))
+        XCTAssertEqual(w.syncedSeconds, 9)
         XCTAssertEqual(StepCounterSample.window(cp, from: 3, to: 5).steps, 1, "increase at `from` belongs before the window")
         XCTAssertFalse(StepCounterSample.window(cp, from: -5, to: 10).hasStartReference)
         // A drop is a reset: never negative, never the old total; the post-reset value is steps since the reset.
@@ -275,6 +276,8 @@ final class Whoop5HistoricalTests: XCTestCase {
         let gap = StepCounterSample.window(rows, from: 0, to: 600, until: 600, known: known)
         XCTAssertEqual(gap.activityOneSeconds, 50 + 50, "only synced seconds count: 100..<150 and 450..<500, not the gap")
         XCTAssertEqual(gap.unknownSeconds, 300)
+        XCTAssertEqual(gap.spanSeconds, 600)
+        XCTAssertEqual(gap.syncedSeconds, 300, "walking + running never exceed synced time")
         XCTAssertEqual(gap.steps, 400, "increases across a gap are still real steps")
         XCTAssertFalse(gap.isComplete, "a reset hidden in the gap could lose steps: the count is at least 400")
         // Without `known` the old assumption (continuous between change points) is kept; fully synced data agrees with it.
@@ -292,7 +295,9 @@ final class Whoop5HistoricalTests: XCTestCase {
         XCTAssertEqual(StepCounterSample.window(late, from: 0, to: 2000, until: 2000,
                                                 known: StepCounterSample.knownRuns(Array(-7200..<2000))).steps, 1_000)
         // Time past the end of known data is not "unknown inside the window": it is clipped, as before.
-        XCTAssertEqual(StepCounterSample.window(rows, from: 0, to: 1000, until: 600, known: known).unknownSeconds, 300)
+        let clipped = StepCounterSample.window(rows, from: 0, to: 1000, until: 600, known: known)
+        XCTAssertEqual(clipped.unknownSeconds, 300)
+        XCTAssertEqual(clipped.spanSeconds, 600, "the span stops at the end of known data, never at the end of the day")
     }
 
     func testDropsImplausibleGravityButKeepsHeartRate() throws {

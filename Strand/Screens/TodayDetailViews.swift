@@ -581,6 +581,7 @@ struct StrainDetailView: View {
     @State private var workouts: [WorkoutRow] = []
     @State private var selectedWorkout: WorkoutSelection?
     @State private var strapSteps: StepCounterSample.Window?
+    @State private var activity: ActivityCoverage?
     @State private var load: DayLoadRecord?
 
     private static let strengthWords = ["strength", "weight", "lift", "functional", "crossfit", "gym", "resistance", "hiit"]
@@ -643,6 +644,11 @@ struct StrainDetailView: View {
                     DetailTile(title: "Strength time", value: DayMath.hm(strengthSeconds / 60),
                                caption: "Weights, gym and functional sessions", tint: StrandPalette.metricRose)
                 }
+                if let a = activity {
+                    DetailTile(title: "Walking & running", value: a.value(duration: Self.duration),
+                               caption: a.caption(duration: Self.duration) + " · experimental",
+                               tint: StrandPalette.statusPositive, details: a.details(duration: Self.duration))
+                }
                 if let s = strapSteps {
                     DetailTile(title: "Steps", value: (s.isComplete ? "" : "≥ ") + s.steps.formatted(),
                                caption: "Recorded strap increases · experimental",
@@ -664,13 +670,16 @@ struct StrainDetailView: View {
         .sheet(item: $selectedWorkout) { WorkoutDetailView(workout: $0.row) }
     }
 
-    /// Walking / running time from the strap's activity code, and what the count leaves out.
+    static func duration(_ seconds: Int) -> String { DayMath.hm(Double(seconds) / 60) }
+
+    /// Walking/running time over the day's synced seconds (#83), from the same window as the steps tile.
+    static func activity(_ w: StepCounterSample.Window?, day: (from: Int, to: Int), now: Date = Date()) -> ActivityCoverage? {
+        w.map { ActivityCoverage.compute(window: $0, dayStart: day.from, dayEnd: day.to, now: Int(now.timeIntervalSince1970)) }
+    }
+
+    /// What the step count leaves out (walking/running time is its own tile).
     static func stepDetails(_ s: StepCounterSample.Window) -> [String] {
         var out: [String] = []
-        var motion: [String] = []
-        if s.activityOneSeconds >= 60 { motion.append("Walking \(DayMath.hm(Double(s.activityOneSeconds) / 60))") }
-        if s.activityTwoSeconds >= 60 { motion.append("Running \(DayMath.hm(Double(s.activityTwoSeconds) / 60))") }
-        if !motion.isEmpty { out.append(motion.joined(separator: " · ")) }
         if !s.hasStartReference { out.append("Counted from the first synced step of the day.") }
         if s.resets > 0 { out.append("Counter reset detected; steps after it are counted from the strap's new count.") }
         if s.unknownSeconds >= 60 {
@@ -769,5 +778,6 @@ struct StrainDetailView: View {
         cached = await DayHRStats.build(hr: samples, profile: profile, restingHR: day?.restingHr, maxHR: load?.calibration.hrMax)
         workouts = await repo.workoutRows().filter { $0.startTs >= r.from && $0.startTs < r.to }.sorted { $0.startTs < $1.startTs }
         strapSteps = await repo.strapSteps(from: r.from, to: r.to)
+        activity = Self.activity(strapSteps, day: r)
     }
 }

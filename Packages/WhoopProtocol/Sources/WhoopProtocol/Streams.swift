@@ -97,6 +97,12 @@ public struct StepCounterSample: Equatable, Codable {
         /// points can't tell "unchanged" from "missing", so activity time there is not counted and a reset there would
         /// hide steps: the count is then a lower bound.
         public let unknownSeconds: Int
+        /// Seconds in [from, min(to, until)): the part of the window that has been synced at all (time past the end of
+        /// known data is not in it). Without `known`, all of it is assumed synced.
+        public var spanSeconds: Int = 0
+        /// Seconds of the span holding a synced record: `spanSeconds - unknownSeconds`. Activity time is measured only
+        /// over these, so walking + running ≤ synced.
+        public var syncedSeconds: Int { max(0, spanSeconds - unknownSeconds) }
 
         /// True only with a start reference, no reset and no unknown time: otherwise `steps` is "at least".
         /// Resets also count as incomplete until the reset boundary is established (EVIDENCE_MATRIX S01, two nights).
@@ -155,7 +161,7 @@ public struct StepCounterSample: Equatable, Codable {
         }
         let unknown = known.map { max(0, end - from) - covered(from, end, by: $0) } ?? 0
         return Window(steps: steps, resets: resets, hasStartReference: reference != nil, activityOneSeconds: walk,
-                      activityTwoSeconds: run, unknownSeconds: unknown)
+                      activityTwoSeconds: run, unknownSeconds: unknown, spanSeconds: max(0, end - from))
     }
 }
 
