@@ -660,6 +660,7 @@ struct StrainDetailView: View {
                 if let a = activity { Self.activityTile(a) }
                 if let s = strapSteps { Self.stepsTile(s) }
             }
+            .id("strain-tiles")
 
             if !workouts.isEmpty {
                 VStack(alignment: .leading, spacing: 10) {

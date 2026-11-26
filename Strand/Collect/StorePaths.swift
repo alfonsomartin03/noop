@@ -36,4 +36,17 @@ enum LaunchMode {
     /// Fixture only: `-noop.fixture.alarmDetail YES` opens the newest history occurrence's detail sheet.
     static var fixtureAlarmDetail: Bool { fixtureStore != nil && UserDefaults.standard.bool(forKey: "noop.fixture.alarmDetail") }
     static var fixtureAlarmHistory: Bool { fixtureStore != nil && UserDefaults.standard.bool(forKey: "noop.fixture.alarmHistory") }
+    /// Fixture only: `-noop.fixture.detail strain|sleep|recovery` opens that Overview detail page on launch, and
+    /// `-noop.fixture.day yyyy-MM-dd` picks the day (default: newest with data), for visual checks (#86).
+    static var fixtureDetail: TodayDetail? {
+        switch fixtureStore == nil ? nil : UserDefaults.standard.string(forKey: "noop.fixture.detail") {
+        case "strain": return .strain
+        case "sleep": return .sleep
+        case "recovery": return .recovery
+        default: return nil
+        }
+    }
+    /// Fixture only: `-noop.fixture.scrollTo strain-tiles` scrolls the page to the view with that id after loading.
+    static var fixtureScrollTo: String? { fixtureStore == nil ? nil : UserDefaults.standard.string(forKey: "noop.fixture.scrollTo") }
+    static var fixtureDay: String? { fixtureStore == nil ? nil : UserDefaults.standard.string(forKey: "noop.fixture.day") }
 }

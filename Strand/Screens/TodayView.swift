@@ -17,9 +17,9 @@ struct TodayView: View {
     @Environment(\.navigate) private var navigate
 
     /// Day picked in the calendar strip (yyyy-MM-dd); nil follows the newest day with data.
-    @State private var selectedDay: String?
+    @State private var selectedDay: String? = LaunchMode.fixtureDay
     /// Which square is open, or nil for the dashboard.
-    @State private var detail: TodayDetail?
+    @State private var detail: TodayDetail? = LaunchMode.fixtureDetail
     /// The picked day's strap heart-rate samples, summarised once per load.
     @State private var dayStats: DayHRStats?
     @State private var offWrist: [WristWear.OffInterval] = []
