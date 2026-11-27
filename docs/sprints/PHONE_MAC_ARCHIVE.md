@@ -165,6 +165,8 @@ Acceptance: pairing, wrong/revoked peer, denied local-network permission, interr
 
 Acceptance: months of scores browse offline; a late batch updates the right day without duplicates; DST and time-zone boundaries correct; cache size measured.
 
+*2026-11-27, done in code:* History screen (1M / 3M / All averages and trend lines over days that have a value, month list opening a day); Mac day strings stay labels and day arithmetic is DST-tested (`ScoreHistory`); newest revision wins; a year of cached scores ≈ 150 KB. Checked in the simulator against a database copy (30-day averages matched). Not on a real iPhone yet.
+
 ### 6. Delete phone data after Mac receipt, recovery and release gate (#81)
 
 - Turn on deletion: remove an outbox batch only after its durable, generation-matched receipt, in small recoverable transactions; reclaim disk space (WAL included) without disrupting collection.

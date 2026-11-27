@@ -20,6 +20,12 @@ public struct DailySummary: Equatable, Codable, Sendable {
     public let coverage: [String: Double]
     public let removed: Bool
 
+    public init(day: String, revision: Int64, changedAt: Int, values: [String: Double], coverage: [String: Double],
+                removed: Bool) {
+        self.day = day; self.revision = revision; self.changedAt = changedAt; self.values = values
+        self.coverage = coverage; self.removed = removed
+    }
+
     public static let units: [String: String] = [
         "recovery": "%", "strain": "strain (0–21)", "totalSleepMin": "min", "efficiency": "%",
         "deepMin": "min", "remMin": "min", "lightMin": "min", "disturbances": "count",
