@@ -69,6 +69,35 @@ Rules:
 
 Acceptance: working install, measured outbox budget, coupling list, recorded foreground/lock/relaunch behaviour.
 
+**Measured outbox budget (2026-11-27).** One WHOOP 5.0 (fw 50.43.1.0), 7 complete local days 11-20 → 11-26 (≈ 84,000 history records/day, near-full wear), from a SQLite-backup copy and the archive folders. Bytes include each table's unique index.
+
+| Data class | Rows/day | MB/day stored as rows |
+| --- | --- | --- |
+| Gravity (x, y, z) | 84,185 | 6.3 |
+| Skin temperature | 84,346 | 5.5 |
+| Heart rate | 84,343 | 4.2 |
+| R–R intervals | 42,998 | 2.4 |
+| Step counter + activity | 7,207 | 0.4 |
+| Events, battery, alarm events | ~1,900 | 0.2 |
+| **Decoded rows, total** | | **18.9** |
+| Mandatory undecoded history (JSONL) | ~2,900 lines | 0.9 (0.2 compressed) |
+
+The same day as raw history frames (124 bytes each) is 10.6 MB, or 3.5 MB compressed (zlib level 6).
+
+What this means for the phone:
+
+| Mac away for | Decoded rows + undecoded | Raw frames + undecoded |
+| --- | --- | --- |
+| 1 day | ~20 MB | ~11.5 MB |
+| 7 days | ~140 MB | ~80 MB |
+| 30 days | ~600 MB | ~350 MB |
+| 90 days | ~1.8 GB | ~1.0 GB |
+
+- Any modern iPhone can hold weeks of outbox; the budget is not a blocker. With daily syncs the outbox stays around one day (~20 MB) plus the batch in flight.
+- A compressed daily transfer is ~3.5–4 MB, small for a local network.
+- Design option for #77, not decided: keep the outbox as raw frames (about half the size, and the Mac re-decodes with its own decoder) rather than decoded rows. Persist-before-ack still applies either way.
+- Not measured: WAL and temporary-transfer peaks on the phone, iOS file-system overhead, research capture (off on the phone; ~34 MB/day as JSONL on the Mac).
+
 ### 2. Durable outbox and Mac receipts (#77)
 
 - Phone: stable source identity, monotonic batch sequence, batch ID and digest. Save every collected record and mandatory undecoded history before acknowledging the strap.
