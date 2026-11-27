@@ -146,7 +146,7 @@ final class AppModel: ObservableObject {
         analysisDebounce?.cancel()
         live.processingStatus = "Updating sleep, recovery, and activity metrics…"
         let started = Date()
-        AppModel.syncLog.notice("Processing: started (download \(downloadComplete ? "complete" : "ended early", privacy: .public))")
+        if LaunchMode.diagnostics { AppModel.syncLog.notice("Processing: started (download \(downloadComplete ? "complete" : "ended early", privacy: .public))") }
         Task { @MainActor [weak self] in
             guard let self else { return }
             var ok = await self.intelligence.analyzeRecent()
@@ -160,7 +160,7 @@ final class AppModel: ObservableObject {
             await self.repo.refresh()
             self.repo.dataVersion += 1
             self.live.processingStatus = nil
-            AppModel.syncLog.notice("Processing: \(ok ? "finished" : "FAILED", privacy: .public) in \(Int(Date().timeIntervalSince(started)), privacy: .public) s")
+            if LaunchMode.diagnostics { AppModel.syncLog.notice("Processing: \(ok ? "finished" : "FAILED", privacy: .public) in \(Int(Date().timeIntervalSince(started)), privacy: .public) s") }
             if ok {
                 if downloadComplete {
                     self.live.syncSession?.processingFinished()

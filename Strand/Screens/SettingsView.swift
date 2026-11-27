@@ -167,8 +167,10 @@ struct SettingsView: View {
 
     private var dataSection: some View {
         SettingsSection(icon: "externaldrive", title: "Data") {
-            ResearchCaptureRow()
-            SettingsDivider()
+            if LaunchMode.diagnostics {
+                ResearchCaptureRow()
+                SettingsDivider()
+            }
             SettingsRow(title: "Recalculate scores", detail: "Re-score every stored day with the current methods") {
                 Button(model.intelligence.computing ? "Recalculating…" : "Recalculate") {
                     Task { await model.intelligence.recomputeAll() }
