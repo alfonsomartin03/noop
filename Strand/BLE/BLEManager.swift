@@ -204,7 +204,7 @@ public final class BLEManager: NSObject, ObservableObject {
     private lazy var liveRRArchive: RawHistoryArchive? = try? RawHistoryArchive.liveRR()
     /// #46 ordinary-use counters (commands by label, link/pull events, connected time) per local day, written to
     /// `OpenWhoop/ops-counters` at most once a minute and on every disconnect. Counts only.
-    private lazy var opsStore: OpsCounterStore? = LaunchMode.bluetoothEnabled ? try? OpsCounterStore.standard() : nil
+    private lazy var opsStore: OpsCounterStore? = LaunchMode.bluetoothEnabled && LaunchMode.diagnostics ? try? OpsCounterStore.standard() : nil
     private lazy var opsBook: OpsCounterBook = {
         let now = Date()
         return OpsCounterBook(app: OpsCounterStore.appVersion,
@@ -268,7 +268,7 @@ public final class BLEManager: NSObject, ObservableObject {
         try? await store.upsertDevice(id: deviceId, mac: nil, name: "WHOOP 4.0")
         // Research toggle — OFF by default. When disabled the app is decoded-only and never
         // persists raw frames. Flip "enableRawCapture" in UserDefaults to capture raw again.
-        let enableRawCapture = UserDefaults.standard.bool(forKey: "enableRawCapture")
+        let enableRawCapture = LaunchMode.diagnostics && UserDefaults.standard.bool(forKey: "enableRawCapture")
         collector = Collector(store: store, deviceId: deviceId,
                               enableRawCapture: enableRawCapture)
         // Keep a history of battery readings so drain can be measured, not just the current level.
@@ -938,6 +938,7 @@ public final class BLEManager: NSObject, ObservableObject {
     }
 
     private func log(_ s: String) {
+        guard LaunchMode.diagnostics else { return }
         state.append(log: "[\(timestamp())] \(s)")
         // The unified log can be exported (sysdiagnose, Console) — redact device identifiers there.
         BLEManager.osLog.notice("\(Redactor.redact(s), privacy: .public)")
@@ -1025,7 +1026,7 @@ public final class BLEManager: NSObject, ObservableObject {
         whoop5ChunkUndecoded = []
         whoop5ChunkResearch = []
         researchFramesSeen = ResearchFrameFilter()
-        whoop5ResearchCapture = ResearchCapture.load().flatMap { $0.isActive() ? $0 : nil }
+        whoop5ResearchCapture = LaunchMode.diagnostics ? ResearchCapture.load().flatMap { $0.isActive() ? $0 : nil } : nil
         if let c = whoop5ResearchCapture { log("History: research capture \(c.id) active — full frames of decoded records are kept") }
         state.historySummary = nil
         state.historyFrames = 0
@@ -1626,6 +1627,7 @@ extension BLEManager {
     /// Counts what each realtime packet carries and, once a session shows intervals, archives its frames (with the 5
     /// minutes before) for `Tools/whoop_re/live_rr_audit.py`. Never sends anything; nothing reads the archive in-app.
     fileprivate func noteRealtimeEvidence(_ rt: Whoop5Realtime, frame: [UInt8]) {
+        guard LaunchMode.diagnostics else { return }
         if realtimeTally.startsNewSession(rt) { endRealtimeEvidenceSession() }
         realtimeTally.add(rt, frameLength: frame.count)
         realtimeRecent.append((frame, Int(rt.timestamp)))

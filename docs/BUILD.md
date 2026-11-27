@@ -57,11 +57,33 @@ To inspect or time the real app against a **copy** of a database, without Blueto
 
 ```sh
 sqlite3 "file:<path to whoop.sqlite>?mode=ro" ".backup /tmp/noop-copy.sqlite"
+xcodebuild -project Strand.xcodeproj -scheme Strand -configuration Release -destination 'platform=macOS' \
+  -derivedDataPath /tmp/noop-derived CODE_SIGNING_ALLOWED=NO SWIFT_ACTIVE_COMPILATION_CONDITIONS=NOOP_DIAGNOSTICS build
 NOOP_FIXTURE_STORE=/tmp/noop-copy.sqlite /tmp/noop-derived/Build/Products/Release/NOOP.app/Contents/MacOS/NOOP \
   -noop.onboarded YES -scoringVersionApplied 5
 ```
 
+Fixture launches need a diagnostic build: Debug, or Release with `NOOP_DIAGNOSTICS` as above (a plain Release build ignores `NOOP_FIXTURE_STORE`).
+
 With `NOOP_FIXTURE_STORE` set, `StorePaths` returns that file, no CoreBluetooth manager is created (nothing scans, connects or sends a command), and the app prints `[perf] launch-to-content` and `[perf] repository refresh` timings to stderr. Fixture-only arguments: `-noop.fixture.tab trends|settings` opens on a destination; `-noop.fixture.live YES` opens the live-strap sheet; `-noop.fixture.battery cycle` plays synthetic idle → charging → full → disconnected battery states (8 s each) through the real battery surfaces, and `-noop.fixture.battery charging` holds a charging reading. The copy is opened read-write and can be migrated or re-scored; discard it afterwards. An unsigned build is not sandboxed, so it keeps its preferences in `~/Library/Preferences/com.noopapp.noop.plist`, apart from the sandboxed app's container.
+
+## Release build
+
+`LaunchMode.diagnostics` is true only in Debug (or with `NOOP_DIAGNOSTICS`). A plain Release build compiles out the
+test host (`NOOP_TEST_HOST`), fixture launches and `[perf]` timings, the connection log and its unified-log lines,
+sync-processing log lines, ops-counter files, live R–R evidence archiving, raw capture and research capture (its
+Settings row is hidden). Undecodable history is still archived (`OpenWhoop/undecoded-history`): it protects data.
+
+```sh
+xcodegen generate
+xcodebuild -project Strand.xcodeproj -scheme Strand -configuration Release -destination 'platform=macOS' \
+  -derivedDataPath /tmp/noop-release build
+ditto -c -k --keepParent /tmp/noop-release/Build/Products/Release/NOOP.app NOOP-<version>.zip
+```
+
+The build is signed with the team in `Local.xcconfig` (Apple Development); it is not Developer ID signed or notarized,
+so another Mac's Gatekeeper blocks it until the user allows it in System Settings ▸ Privacy & Security. Versions stay
+0.x until 1.0, the phone + Mac release.
 
 ## Diagnostic tools
 
