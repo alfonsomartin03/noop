@@ -4,7 +4,7 @@ import WhoopProtocol
 import WhoopStore
 @testable import NOOP
 
-/// Strain page "Steps" tile from the 5.0 strap step counter (issue #25; experimental, walks W01–W03).
+/// Strain page "Steps" tile from the 5.0 strap step counter (issue #25; walks W01–W03, accepted as accurate 2026-11-27, #84).
 @MainActor
 final class StrapStepsTests: XCTestCase {
     private let device = "test-whoop"

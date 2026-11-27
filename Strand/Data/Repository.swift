@@ -395,8 +395,8 @@ final class Repository: ObservableObject {
         return WristWear.offIntervals(events, until: known).filter { $0.end > from && $0.start < to }
     }
 
-    /// The strap's own step counter over [from, to) (5.0 only; nil with no step rows in the range). Experimental: the
-    /// counter tracked walking and running to the second in walks W01–W03; no accuracy figure. Counts increases, so the
+    /// The strap's own step counter over [from, to) (5.0 only; nil with no step rows in the range). Accepted as accurate
+    /// (owner, 2026-11-27, #84): it tracked walking and running to the second in walks W01–W03. Counts increases, so the
     /// strap's reset (seen once at waking, S01) never subtracts; activity time stops at the newest synced heart-rate
     /// second and at every interior gap: a second counts as synced only if it holds a stored heart-rate sample or a
     /// step change point (both come from the same history records). Missing time makes the count "at least".

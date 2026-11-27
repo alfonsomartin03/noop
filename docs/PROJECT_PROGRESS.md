@@ -14,7 +14,7 @@ NOOP is an independent macOS companion for WHOOP straps. It works locally on the
 - **Get context from your own records:** Health views compare selected measurements with personal history; Highlights call out notable days and streaks. Optional morning and evening check-ins can be compared with later measurements. These features describe patterns in a person's data, not causes or diagnoses.
 - **See device status:** the app presents live heart rate and battery information. Battery and charging details depend on what the strap reports and may be unavailable on some devices or firmware.
 - **Use alarms:** NOOP includes alarm scheduling, smart-wake logic, delivery tracking, and alarm history. The logic has been tested in software; the complete alarm and vibration experience has not been confirmed across real strap and Mac sleep conditions.
-- **Explore strap steps:** a Strain detail tile shows recorded step-counter increases and walking/running time from a WHOOP 5.0. It is marked experimental: a reliable accuracy figure and full visual/accessibility review are still outstanding. It does not affect NOOP scores.
+- **Explore strap steps:** a Strain detail tile shows recorded step-counter increases and walking/running time from a WHOOP 5.0. The owner accepted the step counter as accurate on 2026-11-27 from the earlier walk and reset tests (#84), so the Steps tile is no longer marked experimental; a day with sync gaps still shows its count as a lower bound. Walking/running time stays experimental. Steps do not affect NOOP scores or functional age.
 
 NOOP computes its own estimates. Imported WHOOP scores are kept separate; agreement with an imported score does not prove either result is accurate. The app is not a medical device.
 
@@ -50,7 +50,7 @@ The strap-research program ([issue #25](https://github.com/alfonsomartin03/noop/
 
 - **Done:** research capture, live beat-interval units, configuration reads, deterministic trend tests, battery-pack decoding with a "fully charged" signal, the experimental step tile, wrist on/off events, nightly skin temperature, alarm-write and battery-read reductions, daily strap-clock correction, and in-app usage counters.
 - **Decided against:** custom or extracted firmware (no-go), and product use of the optical bursts (no benefit over existing heart rate, no blood-oxygen path).
-- **Still waiting on time or the wearer (no strap writes):** a counted walk for a step-accuracy figure, the temperature re-warming tail after a removal, and a few charging and removal edge cases.
+- **Still waiting on time or the wearer (no strap writes):** the temperature re-warming tail after a removal, and a few charging and removal edge cases.
 - **Hold-out checks done (November 26):** both frozen checks passed on data collected after the rules were fixed. The R18 motion field still reads as dynamic acceleration, the second heart-rate byte is not a delayed copy, and the three event-120 candidates replicated. None of this changes the app.
 - **Healthspan:** the functional-age model and Health section are implemented ([#49](https://github.com/alfonsomartin03/noop/issues/49)); an in-app check with real inputs, accessibility review, evaluation and steps as an input (after #42) remain. It is separate from clinical biological age.
 

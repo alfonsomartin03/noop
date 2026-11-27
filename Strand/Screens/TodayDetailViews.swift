@@ -696,13 +696,13 @@ struct StrainDetailView: View {
                             + a.details(duration: spokenDuration).map { $0.replacingOccurrences(of: " · ", with: ", ") })
     }
 
-    /// Strap step-counter tile (experimental); an incomplete count is "≥" and spoken as "at least".
+    /// Strap step-counter tile (counter accepted as accurate by the owner 2026-11-27, #84); an incomplete count is "≥" and spoken as "at least".
     static func stepsTile(_ s: StepCounterSample.Window) -> DetailTile {
         let n = s.steps.formatted()
         return DetailTile(title: "Steps", value: (s.isComplete ? "" : "≥ ") + n,
-                          caption: "Recorded strap increases · experimental",
+                          caption: "Recorded strap increases",
                           tint: StrandPalette.statusPositive, details: stepDetails(s),
-                          spoken: [(s.isComplete ? "" : "at least ") + n + " steps", "Recorded strap increases, experimental"]
+                          spoken: [(s.isComplete ? "" : "at least ") + n + " steps", "Recorded strap increases"]
                             + stepDetails(s, duration: spokenDuration))
     }
 

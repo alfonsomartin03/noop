@@ -97,7 +97,7 @@ final class FunctionalAgeSnapshotTests: XCTestCase {
         XCTAssertNil(s.current)
         XCTAssertNil(s.pace)
         XCTAssertTrue(s.reasons.contains("Birth date (Settings ▸ Profile)"))
-        XCTAssertTrue(s.reasons.contains { $0.contains("measured VO₂max") && $0.contains("#42") })
+        XCTAssertTrue(s.reasons.contains { $0.contains("measured VO₂max") && $0.contains("daily steps are not used") })
         XCTAssertTrue(s.reasons.contains("Last 180 days — Resting heart rate: 40 of 90 days with complete data"))
         // Sleep on every third night: 60 of 180 days, below the 90-day minimum.
         let gaps = S.summarize(days: days(200, sleep: { $0 % 3 == 0 ? 7 : nil }), birth: birth, asOf: asOf,
