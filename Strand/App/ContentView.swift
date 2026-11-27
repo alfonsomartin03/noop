@@ -15,5 +15,16 @@ struct ContentView: View {
             }
         }
         .animation(.easeInOut(duration: 0.35), value: onboarded)
+        .task {
+            // Fixture only (`-noop.fixture.appearance dark|light`): force the app's appearance for screenshots.
+            if let a = LaunchMode.fixtureAppearance { NSApp.appearance = NSAppearance(named: a == "dark" ? .darkAqua : .aqua) }
+            // Fixture only (`-noop.fixture.width 1000`): resize the window for narrow-width screenshots.
+            guard let w = LaunchMode.fixtureWidth else { return }
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            guard let win = NSApp.windows.first(where: { $0.isVisible && $0.canBecomeMain }) else { return }
+            var f = win.frame
+            f.size.width = CGFloat(w)
+            win.setFrame(f, display: true)
+        }
     }
 }

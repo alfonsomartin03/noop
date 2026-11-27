@@ -57,5 +57,13 @@ enum LaunchMode {
     }
     /// Fixture only: `-noop.fixture.scrollTo strain-tiles` scrolls the page to the view with that id after loading.
     static var fixtureScrollTo: String? { fixtureStore == nil ? nil : UserDefaults.standard.string(forKey: "noop.fixture.scrollTo") }
+    /// Fixture only: `-noop.fixture.width <points>` resizes the main window after launch (floor: the 1000-pt minimum).
+    static var fixtureWidth: Int? {
+        guard fixtureStore != nil else { return nil }
+        let w = UserDefaults.standard.integer(forKey: "noop.fixture.width")
+        return w > 0 ? w : nil
+    }
+    /// Fixture only: `-noop.fixture.appearance dark|light` forces the app's appearance (system setting otherwise).
+    static var fixtureAppearance: String? { fixtureStore == nil ? nil : UserDefaults.standard.string(forKey: "noop.fixture.appearance") }
     static var fixtureDay: String? { fixtureStore == nil ? nil : UserDefaults.standard.string(forKey: "noop.fixture.day") }
 }
