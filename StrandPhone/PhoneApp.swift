@@ -91,10 +91,23 @@ final class PhoneSyncModel: ObservableObject {
                                              : "Couldn't send everything; it stays on this iPhone until the next try."
             }
         } catch {
-            message = "Couldn't reach your Mac. Is NOOP open with “Receive from iPhone” on?"
+            message = "Couldn't reach your Mac. Is NOOP open with “Receive from iPhone” on? (\(Self.reason(error)))"
         }
         c.disconnect()
         await load()
+    }
+
+    /// A short technical reason for the status line.
+    static func reason(_ error: Error) -> String {
+        if let c = error as? ChannelError {
+            switch c {
+            case .unknownPeer: return "this iPhone or Mac isn't paired"
+            case .remote(let m): return m
+            case .closed: return "connection closed"
+            default: return "\(c)"
+            }
+        }
+        return error.localizedDescription
     }
 
     func forget(_ mac: TrustedPeer) {
@@ -134,6 +147,7 @@ struct PhoneHomeView: View {
     @State private var showSettings = false
     @State private var confirmCollect = false
     @State private var showHistory = false
+    @State private var detail: PhoneDetailKind?
 
     private var byDay: [String: DailySummary] { Dictionary(sync.scores.map { ($0.day, $0) }, uniquingKeysWith: { a, _ in a }) }
     private var activeDay: String { selectedDay ?? sync.scores.first?.day ?? PhoneWeekStrip.string(Date()) }
@@ -174,6 +188,9 @@ struct PhoneHomeView: View {
         .refreshable { if !sync.macs.isEmpty { await sync.syncNow() } }
         .task { await sync.load() }
         .sheet(isPresented: $showSettings) { PhoneSettingsView().environmentObject(sync) }
+        .sheet(item: $detail) { kind in
+            if let a = active { PhoneDetailView(kind: kind, summary: a, history: sync.scores) }
+        }
         .sheet(isPresented: $showHistory) {
             PhoneHistoryView(scores: sync.scores) { day in selectedDay = day; showHistory = false }
         }
@@ -270,7 +287,7 @@ struct PhoneHomeView: View {
     private var recoveryCard: some View {
         let score = active?.values["recovery"]
         let tint = score.map { StrandPalette.recoveryColor($0) } ?? StrandPalette.scoreMissing
-        return StrandWidget("Recovery", symbol: "circle.dotted.circle", tint: tint) {
+        return StrandWidget("Recovery", symbol: "circle.dotted.circle", tint: tint, action: { detail = .recovery }) {
             HStack(spacing: 18) {
                 ProgressRing(fraction: (score ?? 0) / 100, tint: tint, lineWidth: 12) {
                     VStack(spacing: 0) {
@@ -294,7 +311,7 @@ struct PhoneHomeView: View {
     private var sleepCard: some View {
         let v = active?.values ?? [:]
         let total = v["totalSleepMin"]
-        return StrandWidget("Sleep", symbol: "bed.double.fill", tint: StrandPalette.sleepLight) {
+        return StrandWidget("Sleep", symbol: "bed.double.fill", tint: StrandPalette.sleepLight, action: { detail = .sleep }) {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text(total.map(Self.hm) ?? "—")
@@ -315,7 +332,7 @@ struct PhoneHomeView: View {
     private var strainCard: some View {
         let v = active?.values["strain"]
         let tint = v.map { StrandPalette.strainColor($0) } ?? StrandPalette.scoreMissing
-        return StrandWidget("Strain", symbol: "flame.fill", tint: tint) {
+        return StrandWidget("Strain", symbol: "flame.fill", tint: tint, action: { detail = .strain }) {
             HStack(spacing: 18) {
                 ProgressRing(fraction: (v ?? 0) / 21, tint: tint, lineWidth: 12) {
                     VStack(spacing: 0) {

@@ -20,6 +20,8 @@ final class MacSyncService: ObservableObject {
     @Published private(set) var companionMode = CompanionMode.isOn
     /// Set by AppModel: switches the strap link off/on.
     var applyCompanionMode: ((Bool) -> Void)?
+    /// Set by AppModel: called when a phone is paired (to build the detail it will ask for).
+    var onPhonePaired: (() -> Void)?
 
     static let receivingKey = "noop.sync.receiving"
     /// Set by a backup import; consumed at the next launch to bump the archive generation (#81).
@@ -83,7 +85,10 @@ final class MacSyncService: ObservableObject {
                 Task { @MainActor in self?.lastUpload = Date(); self?.onDataReceived() }
             }
             ep.onPaired = { [weak self] _ in
-                Task { @MainActor in self?.phones = (try? self?.trust.peers()) ?? []; self?.pairingOpenUntil = nil }
+                Task { @MainActor in
+                    self?.phones = (try? self?.trust.peers()) ?? []; self?.pairingOpenUntil = nil
+                    self?.onPhonePaired?()
+                }
             }
             let l = MacSyncListener(endpoint: ep)
             port = try await l.start()

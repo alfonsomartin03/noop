@@ -2,7 +2,7 @@
 
 **Vision (owner, 2026-11-27).** The iPhone is a collector and a display. It downloads data from the strap, keeps it only until the Mac has it, and shows the scores the Mac sends back. The Mac stores everything, runs the existing analytics and returns the scores. The phone never scores and never keeps a long-term history of raw data.
 
-**Phone display rule (owner, 2026-11-27):** like WHOOP's phone app, the phone shows basic static summaries only: one row of numbers per day (recovery, strain, sleep and their few supporting values) and averages of them. No raw readings, live heart rate, heart-rate curves, hypnograms, trend charts or detail downloads go to or appear on the phone. The raw data the phone collects is never displayed; it waits for the Mac and is then deleted.
+**Phone display rule (owner, 2026-11-27):** like WHOOP's phone app, the phone shows basic static summaries only: one row of numbers per day (recovery, strain, sleep and their few supporting values) and averages of them. No raw readings, live heart rate, heart-rate curves, hypnograms, trend charts or detail downloads go to or appear on the phone. The raw data the phone collects is never displayed; it waits for the Mac and is then deleted. Each card opens a detail page like WHOOP's (owner, 2026-11-27): Recovery vitals against a 30-day average, Sleep need / performance / times / stages, Strain calories / heart rate / zone minutes / activities. All are static per-day numbers computed on the Mac.
 
     Strap → iPhone outbox (temporary) → trusted Mac → WhoopStore → IncrementalScorer
                   ↑            │ deleted after the Mac's receipt          │

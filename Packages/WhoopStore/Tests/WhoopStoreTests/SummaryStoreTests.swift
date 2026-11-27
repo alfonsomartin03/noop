@@ -87,4 +87,29 @@ final class SummaryStoreTests: XCTestCase {
         let shown = try await phone.cachedSummaries()
         XCTAssertTrue(shown.isEmpty, "the phone stops showing a removed day")
     }
+
+    func testDetailAddsValuesAndWorkoutsAndOnlyChangesRevisionWhenItChanges() async throws {
+        let mac = try await WhoopStore.inMemory()
+        _ = try await mac.upsertDailyMetrics([day("2026-11-25", recovery: 70)], deviceId: dev)
+        let top = try await mac.dailySummaries(deviceId: dev, since: 0).map(\.revision).max()!
+        let w = WorkoutSummary(sport: "Running", startTs: 1_795_000_000, durationMin: 42, strain: 12.1, avgHr: 151, maxHr: 178, kcal: 480)
+        let detail = SummaryDetail(values: ["kcal": 2400, "zone2Min": 35, "recovery": 1], workouts: [w])
+        try await mac.setSummaryDetail(deviceId: dev, day: "2026-11-25", detail: detail)
+        let s = try await mac.dailySummaries(deviceId: dev, since: top)
+        XCTAssertEqual(s.count, 1)
+        XCTAssertEqual(s[0].values["kcal"], 2400)
+        XCTAssertEqual(s[0].values["recovery"], 70, "a detail value never overrides the scored value")
+        XCTAssertEqual(s[0].workouts, [w])
+        try await mac.setSummaryDetail(deviceId: dev, day: "2026-11-25", detail: detail)          // same content again
+        let none = try await mac.dailySummaries(deviceId: dev, since: s[0].revision)
+        XCTAssertTrue(none.isEmpty)
+        let missing = try await mac.daysMissingSummaryDetail(deviceId: dev)
+        XCTAssertTrue(missing.isEmpty)
+    }
+
+    func testOldCachedSummariesWithoutWorkoutsStillDecode() throws {
+        let json = #"{"day":"2026-11-25","revision":1,"changedAt":1,"values":{"recovery":70},"coverage":{},"removed":false}"#
+        let s = try JSONDecoder().decode(DailySummary.self, from: Data(json.utf8))
+        XCTAssertNil(s.workouts)
+    }
 }

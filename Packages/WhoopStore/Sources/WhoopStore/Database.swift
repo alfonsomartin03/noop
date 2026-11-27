@@ -499,6 +499,25 @@ extension WhoopStore {
                 t.column("generation", .integer).notNull()
             }
         }
+        migrator.registerMigration("v24") { db in
+            // Per-day detail the Mac adds to the phone's static summaries (sleep need/times, energy, HR, zone minutes,
+            // workouts): small numbers only, never samples or curves.
+            try db.create(table: "summaryDetail") { t in
+                t.column("deviceId", .text).notNull()
+                t.column("day", .text).notNull()
+                t.column("payloadJSON", .text).notNull()
+                t.primaryKey(["deviceId", "day"])
+            }
+        }
+        migrator.registerMigration("v25") { db in
+            // Phone: which Mac archive (id + generation) the score cache came from. Revisions only mean something
+            // within one archive; another archive (restored, replaced, a fresh copy) means "start over".
+            try db.create(table: "scoreCacheSource") { t in
+                t.column("id", .integer).primaryKey().check { $0 == 1 }
+                t.column("archiveId", .text).notNull()
+                t.column("generation", .integer).notNull()
+            }
+        }
         return migrator
     }
 }
