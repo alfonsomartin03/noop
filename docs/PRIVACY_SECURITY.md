@@ -16,7 +16,9 @@ The database is not application-encrypted. Backups, captures, and exports may co
 
 ## App configuration
 
-The checked-in entitlements enable the App Sandbox, Bluetooth, and user-selected file read/write access. They do not grant network client/server access. `project.yml` currently disables Hardened Runtime; the development configuration is not evidence of release notarization or a completed security audit.
+The checked-in entitlements enable the App Sandbox, Bluetooth, and user-selected file read/write access. They do not grant network client/server access. The `StrandSync` package contains a local-network sync session for the planned iPhone collector (#79); neither app uses it yet, and the Mac app would need the network-server entitlement before it could listen.
+
+Planned sync security (#79, implemented in `StrandSync`, tested on loopback only): each device keeps a long-term X25519 key in its Keychain (this device only, not iCloud). Phones pair only while the user has opened a short, single-attempt pairing window on the Mac; both screens show a 6-digit code derived from the connection, and both users must confirm it matches before either device pins the other. The handshake commits to its random key first, so a device in the middle cannot steer the codes to match. Sessions use fresh keys and authenticated encryption (ChaChaPoly) with per-direction counters; unknown or revoked devices are refused at the first message, and an altered or replayed record ends the session. Nothing is advertised on the network; the phone connects to an address the user enters. `project.yml` currently disables Hardened Runtime; the development configuration is not evidence of release notarization or a completed security audit.
 
 ## Contributor requirements
 
