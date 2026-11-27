@@ -30,7 +30,7 @@ AlarmController → AlarmPlanner / SmartWakeDecider → AlarmDeliveryTransaction
 | `StrandAnalytics` | HRV, sleep staging/sessions, recovery, load/strain, workouts, causal baselines/replay, incremental scoring, alarms, health models | WhoopProtocol, WhoopStore |
 | `StrandImport` | WHOOP CSV export (ZIP or folder) parsing | ZIPFoundation |
 | `StrandDesign` | Palette, typography, motion, cards, charts, charging illustration, zone spectrum | — |
-| `StrandSync` | Phone → Mac batch envelope (version, digest), Mac archive ingest and receipts, phone outbox sync pass (#77; no real transport yet) | WhoopProtocol, WhoopStore |
+| `StrandSync` | Phone → Mac batch envelope (version, digest), Mac archive ingest and receipts, phone outbox sync pass (#77), encrypted local-network session with code-confirmed pairing and Keychain trust (#79; not wired into the apps yet) | WhoopProtocol, WhoopStore |
 
 Manifests declare macOS 13 / iOS 17 and all build for iOS. App targets: macOS `Strand` and the iOS shell `StrandPhone` (no strap code yet).
 
