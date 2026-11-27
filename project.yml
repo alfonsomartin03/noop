@@ -81,6 +81,9 @@ targets:
       - path: StrandPhone
         excludes:
           - "Info.plist"
+      # Shared with the Mac (#78): the same strap link, decoding and persist-before-ack collection.
+      - path: Strand/BLE
+      - path: Strand/Collect
     info:
       path: StrandPhone/Info.plist
       properties:
@@ -104,6 +107,7 @@ targets:
       - package: WhoopStore
       - package: StrandDesign
       - package: StrandSync
+      - package: StrandAnalytics
   StrandTests:
     type: bundle.unit-test
     platform: macOS

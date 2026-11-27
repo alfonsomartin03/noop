@@ -339,13 +339,17 @@ struct ConnectionStrip: View {
                 Image(systemName: "antenna.radiowaves.left.and.right.slash")
                     .font(.system(size: 16, weight: .semibold)).foregroundStyle(StrandPalette.textSecondary)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("WHOOP not connected").font(.system(size: 14, weight: .semibold))
+                    Text(model.sync.companionMode ? "Your iPhone collects from the strap" : "WHOOP not connected")
+                        .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(StrandPalette.textPrimary)
-                    Text("Keep your strap nearby and connect to see live heart rate.")
+                    Text(model.sync.companionMode ? "Companion mode: this Mac stores and scores what the iPhone sends."
+                                                  : "Keep your strap nearby and connect to see live heart rate.")
                         .font(.system(size: 12)).foregroundStyle(StrandPalette.textSecondary)
                 }
                 Spacer()
-                Button("Connect") { model.scan() }.buttonStyle(.strandPrimary)
+                if !model.sync.companionMode {
+                    Button("Connect") { model.scan() }.buttonStyle(.strandPrimary)
+                }
             }
             .padding(NoopMetrics.cardPadding)
             .strandSurface()

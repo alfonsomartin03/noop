@@ -361,6 +361,15 @@ private struct IPhoneSyncSection: View {
                         .disabled(sync.pairingOpenUntil != nil)
                 }
             }
+            SettingsDivider()
+            SettingsRow(title: "Let the iPhone collect (companion mode)",
+                        detail: sync.companionMode
+                            ? "This Mac no longer talks to the strap: no scanning, reconnects, clock or alarm commands. Strap alarms can't be set from here. Turn off to collect on this Mac again (the strap must be re-paired to it)."
+                            : "Turn on before pairing the strap with your iPhone. History and scores stay on this Mac.",
+                        detailTone: sync.companionMode ? StrandPalette.statusWarningInk : nil) {
+                Toggle("", isOn: Binding(get: { sync.companionMode }, set: { sync.setCompanionMode($0) }))
+                    .labelsHidden().toggleStyle(.switch)
+            }
             ForEach(sync.phones, id: \.publicKey) { phone in
                 SettingsDivider()
                 SettingsRow(title: phone.name,

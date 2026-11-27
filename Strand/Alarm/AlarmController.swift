@@ -8,21 +8,7 @@ import WhoopStore
 
 // MARK: - Interfaces (BLE, notifications, history) so the controller runs against doubles in tests
 
-/// The alarm commands NOOP may send (verified forms only; BLEManager builds the payloads).
-enum AlarmStrapCommand: Equatable { case set(strapSeconds: UInt32), get, run, disableAll }
-
-/// What AlarmController needs from the strap link. BLEManager conforms.
-@MainActor
-protocol AlarmStrapLink: AnyObject {
-    /// A bonded WHOOP 5.0 link that can take alarm commands now.
-    var alarmLinkReady: Bool { get }
-    var alarmClock: ClockEstimate? { get }
-    /// Sends one command; returns its app sequence number (replies echo it), nil when not sent.
-    func sendAlarmCommand(_ c: AlarmStrapCommand) -> UInt8?
-    /// Realtime HR stream ownership: the stream stays on while any owner holds it.
-    func acquireRealtime(owner: String)
-    func releaseRealtime(owner: String)
-}
+// `AlarmStrapCommand` and `AlarmStrapLink` live in Strand/BLE/AlarmStrapLink.swift (shared with the iPhone target).
 
 enum AlarmNotificationOutcome: Equatable {
     case submitted(critical: Bool)
@@ -141,7 +127,7 @@ final class AlarmController: ObservableObject {
     private var buffer = WakeEvidenceBuffer()
     private var activity: NSObjectProtocol?
     private var holdsRealtime = false
-    static let realtimeOwner = "alarm"
+    static let realtimeOwner = AlarmRealtime.owner
 
     /// Occurrences that are finished (dismissed, or their deadline passed): never scheduled again. Key `alarm.fired`.
     private var completed: Set<String>

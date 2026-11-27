@@ -11,8 +11,16 @@ import StrandDesign
 @main
 struct PhoneApp: App {
     @StateObject private var sync = PhoneSyncModel()
+    @StateObject private var collector = PhoneCollector()
     var body: some Scene {
-        WindowGroup { PhoneHomeView().environmentObject(sync) }
+        WindowGroup {
+            PhoneHomeView().environmentObject(sync).environmentObject(collector)
+                .onAppear {
+                    collector.onDataSaved = { Task { await sync.load() } }
+                    // After each strap download, hand the data to the Mac if one is paired (and reachable).
+                    collector.onDownloadFinished = { Task { if !sync.macs.isEmpty { await sync.syncNow() } } }
+                }
+        }
     }
 }
 
@@ -62,6 +70,7 @@ final class PhoneSyncModel: ObservableObject {
         busy = true; defer { busy = false }
         do {
             let s = try await openStore()
+            try await UndecodedForwarder.forward(into: s)
             let r = try await PhoneOutbox(store: s).sync(over: c)
             let changed = try await c.refreshScores(into: s)
             lastSync = Date()
@@ -97,11 +106,8 @@ final class PhoneSyncModel: ObservableObject {
 
     private func openStore() async throws -> WhoopStore {
         if let store { return store }
-        let dir = try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask,
-                                              appropriateFor: nil, create: true)
-            .appendingPathComponent("OpenWhoop", isDirectory: true)
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        let s = try await WhoopStore(path: dir.appendingPathComponent("phone-outbox.sqlite").path)
+        // The same file the strap collector writes (StorePaths); it is this phone's outbox.
+        let s = try await WhoopStore(path: try StorePaths.defaultDatabasePath())
         store = s
         return s
     }
@@ -109,8 +115,10 @@ final class PhoneSyncModel: ObservableObject {
 
 struct PhoneHomeView: View {
     @EnvironmentObject var sync: PhoneSyncModel
+    @EnvironmentObject var collector: PhoneCollector
     @State private var selectedDay: String?
     @State private var showSettings = false
+    @State private var confirmCollect = false
 
     private var byDay: [String: DailySummary] { Dictionary(sync.scores.map { ($0.day, $0) }, uniquingKeysWith: { a, _ in a }) }
     private var activeDay: String { selectedDay ?? sync.scores.first?.day ?? PhoneWeekStrip.string(Date()) }
@@ -121,6 +129,7 @@ struct PhoneHomeView: View {
             VStack(alignment: .leading, spacing: 16) {
                 header
                 syncStrip
+                strapStrip
                 PhoneWeekStrip(activeDay: activeDay, byDay: byDay) { selectedDay = $0 }
                 if sync.scores.isEmpty {
                     StrandNotice(symbol: "sparkles", title: "No scores yet",
@@ -194,6 +203,33 @@ struct PhoneHomeView: View {
         }
         .padding(14)
         .strandSurface()
+    }
+
+    private var strapStrip: some View {
+        HStack(spacing: 12) {
+            Image(systemName: collector.live.connected ? "applewatch.radiowaves.left.and.right" : "applewatch.slash")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(collector.live.connected ? StrandPalette.statusPositive : StrandPalette.textSecondary)
+                .frame(width: 32, height: 32).background(StrandPalette.surfaceInset, in: Circle())
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Strap").font(.system(size: 15, weight: .semibold)).foregroundStyle(StrandPalette.textPrimary)
+                Text(collector.statusLine).font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary).lineLimit(2)
+            }
+            Spacer(minLength: 8)
+            Button(collector.active ? "Stop" : "Collect") {
+                if collector.active { collector.stop() } else { confirmCollect = true }
+            }
+            .font(.system(size: 14, weight: .semibold)).foregroundStyle(StrandPalette.accentInk)
+            .padding(.horizontal, 14).padding(.vertical, 8)
+            .background(StrandPalette.accentMuted, in: Capsule())
+        }
+        .padding(14)
+        .strandSurface()
+        .confirmationDialog("Collect from your strap on this iPhone?", isPresented: $confirmCollect, titleVisibility: .visible) {
+            Button("Collect from strap") { collector.start() }
+        } message: {
+            Text("Turn on companion mode on your Mac first (Settings ▸ iPhone sync), then pair the strap with this iPhone when asked. The strap talks to one device at a time.")
+        }
     }
 
     private var syncDetail: String {
@@ -417,8 +453,6 @@ struct PhoneSettingsView: View {
                     Text("On the Mac: Settings ▸ iPhone sync ▸ Receive from iPhone, then Pair iPhone. Both devices must be on the same network. Swipe a paired Mac to forget it.")
                 }
                 Section("This iPhone") {
-                    Text("Collecting from the strap comes in a later version; for now this iPhone shows your Mac's scores.")
-                        .font(.footnote).foregroundStyle(.secondary)
                     LabeledContent("Waiting for the Mac", value: "\(sync.pending) batch\(sync.pending == 1 ? "" : "es")")
                     LabeledContent("Bluetooth", value: bluetooth.state)
                     Button("Check Bluetooth") { bluetooth.check() }

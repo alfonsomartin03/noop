@@ -31,7 +31,7 @@ enum LaunchMode {
     /// Fixture only: start the iPhone-sync receiver with pairing open and codes auto-accepted (#79 checks).
     static var fixtureSyncPair: Bool { fixtureStore != nil && UserDefaults.standard.bool(forKey: "noop.fixture.syncPair") }
     /// False in a fixture launch: no CoreBluetooth manager is created, so nothing scans, connects or sends commands.
-    static var bluetoothEnabled: Bool { fixtureStore == nil }
+    static var bluetoothEnabled: Bool { fixtureStore == nil && !CompanionMode.isOn }
     /// Process start, for the launch-to-content timing a fixture launch prints.
     static let started = Date()
 
@@ -47,6 +47,7 @@ enum LaunchMode {
     /// Fixture only: `-noop.fixture.alarmDetail YES` opens the newest history occurrence's detail sheet.
     static var fixtureAlarmDetail: Bool { fixtureStore != nil && UserDefaults.standard.bool(forKey: "noop.fixture.alarmDetail") }
     static var fixtureAlarmHistory: Bool { fixtureStore != nil && UserDefaults.standard.bool(forKey: "noop.fixture.alarmHistory") }
+    #if os(macOS)
     /// Fixture only: `-noop.fixture.detail strain|sleep|recovery` opens that Overview detail page on launch, and
     /// `-noop.fixture.day yyyy-MM-dd` picks the day (default: newest with data), for visual checks (#86).
     static var fixtureDetail: TodayDetail? {
@@ -57,6 +58,7 @@ enum LaunchMode {
         default: return nil
         }
     }
+    #endif
     /// Fixture only: `-noop.fixture.scrollTo strain-tiles` scrolls the page to the view with that id after loading.
     static var fixtureScrollTo: String? { fixtureStore == nil ? nil : UserDefaults.standard.string(forKey: "noop.fixture.scrollTo") }
     /// Fixture only: `-noop.fixture.width <points>` resizes the main window after launch (floor: the 1000-pt minimum).

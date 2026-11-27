@@ -53,7 +53,7 @@ STRAND_SNAPSHOT_DIR=/tmp/noop-snapshots swift test --package-path Packages/Stran
 
 ## iPhone collector shell (#76)
 
-`StrandPhone` is an iOS 17 app target (bundle `com.noopapp.noop.phone`). It pairs with the Mac (Mac: Settings ▸ iPhone sync ▸ Receive from iPhone, then Pair iPhone; phone: enter the Mac's address and tap Pair with Mac, then confirm the same code on both), sends its outbox and shows the scores the Mac returns. It never scans or connects to a strap yet.
+`StrandPhone` is an iOS 17 app target (bundle `com.noopapp.noop.phone`). It pairs with the Mac (Mac: Settings ▸ iPhone sync ▸ Receive from iPhone, then Pair iPhone; phone: enter the Mac's address and tap Pair with Mac, then confirm the same code on both), sends its outbox and shows the scores the Mac returns. It collects from the strap only after you tap Collect (turn on companion mode on the Mac first and pair the strap with the iPhone), in the foreground.
 
 Simulator check without a second device: run the Debug Mac app on a database copy with `NOOP_FIXTURE_STORE=<copy> … -noop.fixture.syncPair YES` (receiver on, pairing auto-accepted), then in the simulator app enter `127.0.0.1` and pair.
 
