@@ -34,6 +34,10 @@ final class PhoneSyncModel: ObservableObject {
     @Published var scores: [DailySummary] = []
     @Published var pending = 0
     @Published var lastSync: Date?
+    @Published var storage: PhoneStorage?
+    /// Free space on the phone (bytes), for the low-space warning.
+    @Published var freeBytes: Int64?
+    static let lowSpaceBytes: Int64 = 500_000_000
     /// Set while pairing: the code to compare with the Mac's screen.
     @Published var pairingCode: String?
     private var decision: CheckedContinuation<Bool, Never>?
@@ -49,6 +53,9 @@ final class PhoneSyncModel: ObservableObject {
             let s = try await openStore()
             scores = try await s.cachedSummaries().reversed()
             pending = try await s.pendingOutboxBatches().count
+            storage = try await s.phoneStorage()
+            freeBytes = (try? URL(fileURLWithPath: NSHomeDirectory()).resourceValues(
+                forKeys: [.volumeAvailableCapacityForImportantUsageKey]))?.volumeAvailableCapacityForImportantUsage
         } catch { message = "Could not open local storage: \(error.localizedDescription)" }
     }
 
@@ -71,11 +78,18 @@ final class PhoneSyncModel: ObservableObject {
         do {
             let s = try await openStore()
             try await UndecodedForwarder.forward(into: s)
-            let r = try await PhoneOutbox(store: s).sync(over: c)
+            let outbox = PhoneOutbox(store: s)
+            let r = try await outbox.sync(over: c)
             let changed = try await c.refreshScores(into: s)
+            // Free space held by data the Mac confirmed more than two days ago (#81).
+            try await outbox.cleanUp()
             lastSync = Date()
-            message = r.stoppedAt == nil ? "Up to date. \(changed) day\(changed == 1 ? "" : "s") updated."
-                                         : "Couldn't send everything; it stays on this iPhone until the next try."
+            if r.requeued > 0 {
+                message = "Your Mac's archive was restored or replaced; \(r.requeued) batch\(r.requeued == 1 ? " was" : "es were") sent again."
+            } else {
+                message = r.stoppedAt == nil ? "Up to date. \(changed) day\(changed == 1 ? "" : "s") updated."
+                                             : "Couldn't send everything; it stays on this iPhone until the next try."
+            }
         } catch {
             message = "Couldn't reach your Mac. Is NOOP open with “Receive from iPhone” on?"
         }
@@ -240,6 +254,10 @@ struct PhoneHomeView: View {
 
     private var syncDetail: String {
         if let m = sync.message, sync.busy == false, sync.lastSync == nil { return m }
+        if let free = sync.freeBytes, free < PhoneSyncModel.lowSpaceBytes {
+            return "iPhone almost full: collection is at risk until your Mac takes the data"
+        }
+        if let lost = sync.storage?.possiblyLost, !lost.isEmpty { return "Some data may be missing on your Mac — see Settings" }
         var parts: [String] = []
         if let last = sync.lastSync { parts.append("Synced \(last.formatted(date: .omitted, time: .shortened))") }
         if sync.pending > 0 { parts.append("\(sync.pending) batch\(sync.pending == 1 ? "" : "es") waiting") }
@@ -452,8 +470,29 @@ struct PhoneSettingsView: View {
                 } footer: {
                     Text("On the Mac: Settings ▸ iPhone sync ▸ Receive from iPhone, then Pair iPhone. Both devices must be on the same network. Swipe a paired Mac to forget it.")
                 }
+                Section {
+                    if let st = sync.storage {
+                        LabeledContent("NOOP data on this iPhone", value: ByteCountFormatter.string(fromByteCount: Int64(st.databaseBytes), countStyle: .file))
+                        LabeledContent("Waiting to send", value: "\(st.pendingBatches) batch\(st.pendingBatches == 1 ? "" : "es")")
+                        LabeledContent("Confirmed, deleted after 2 days", value: "\(st.waitingToDelete)")
+                        if let last = st.lastReceiptAt {
+                            LabeledContent("Mac last confirmed", value: Date(timeIntervalSince1970: TimeInterval(last)).formatted(date: .abbreviated, time: .shortened))
+                        }
+                        ForEach(Array(st.possiblyLost.enumerated()), id: \.offset) { _, span in
+                            Text("May be missing on your Mac: \(Date(timeIntervalSince1970: TimeInterval(span.lowerBound)).formatted(date: .abbreviated, time: .shortened)) – \(Date(timeIntervalSince1970: TimeInterval(span.upperBound)).formatted(date: .abbreviated, time: .shortened)). This iPhone had already deleted it when the Mac's archive was restored or replaced.")
+                                .font(.footnote).foregroundStyle(.orange)
+                        }
+                    }
+                    if let free = sync.freeBytes {
+                        LabeledContent("Free space", value: ByteCountFormatter.string(fromByteCount: free, countStyle: .file))
+                            .foregroundStyle(free < PhoneSyncModel.lowSpaceBytes ? .orange : .primary)
+                    }
+                } header: {
+                    Text("Storage")
+                } footer: {
+                    Text("Strap data stays here until your Mac confirms it has it, then is deleted two days later. If the Mac is away, data waits here; it is never deleted unconfirmed.")
+                }
                 Section("This iPhone") {
-                    LabeledContent("Waiting for the Mac", value: "\(sync.pending) batch\(sync.pending == 1 ? "" : "es")")
                     LabeledContent("Bluetooth", value: bluetooth.state)
                     Button("Check Bluetooth") { bluetooth.check() }
                     LabeledContent("App version", value: PhoneHomeView.version)

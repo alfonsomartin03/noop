@@ -139,6 +139,9 @@ enum DataBackup {
             removeIfPresent(URL(fileURLWithPath: dbPath + "-shm"))
 
             try fm.copyItem(at: source, to: dbURL)
+            // The restored archive may lack data a phone already deleted: start a new sync generation at the next
+            // launch, so the phone re-sends what it still holds and flags what it no longer has (#81).
+            UserDefaults.standard.set(true, forKey: MacSyncService.restoredKey)
             return .imported(sidecar: sidecar)
         } catch {
             return .failure("Import failed: \(error.localizedDescription)")

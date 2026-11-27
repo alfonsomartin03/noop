@@ -56,9 +56,11 @@ extension WhoopStore {
     @discardableResult
     public func bumpSyncArchiveGeneration() async throws -> SyncArchiveIdentity {
         try syncWrite { db in
+            // Time-based so a restore of an OLDER backup (with a lower stored generation) still moves forward.
             let current = try Self.archiveIdentity(db)
-            try db.execute(sql: "UPDATE syncArchive SET generation = ? WHERE id = 1", arguments: [current.generation + 1])
-            return SyncArchiveIdentity(archiveId: current.archiveId, generation: current.generation + 1)
+            let next = max(current.generation + 1, Int(Date().timeIntervalSince1970))
+            try db.execute(sql: "UPDATE syncArchive SET generation = ? WHERE id = 1", arguments: [next])
+            return SyncArchiveIdentity(archiveId: current.archiveId, generation: next)
         }
     }
 
@@ -81,7 +83,13 @@ extension WhoopStore {
         try syncWrite { db in
             if let existing = try Self.receipt(db, batchId: batchId) {
                 guard existing.digest == digest else { throw SyncIngestError.digestMismatch(batchId: batchId) }
-                return .duplicate(existing)
+                // A receipt from before a restore (#81): its rows were restored with it (same transaction), so this
+                // archive does hold the batch; re-stamp it with the current identity so the phone can trust it.
+                let id = try Self.archiveIdentity(db)
+                guard existing.archiveId != id.archiveId || existing.generation != id.generation else { return .duplicate(existing) }
+                try db.execute(sql: "UPDATE syncReceipt SET archiveId = ?, generation = ? WHERE batchId = ?",
+                               arguments: [id.archiveId, id.generation, batchId])
+                return .duplicate(try Self.receipt(db, batchId: batchId)!)
             }
             if let other = try String.fetchOne(db, sql: "SELECT batchId FROM syncReceipt WHERE sourceId = ? AND sequence = ?",
                                                arguments: [sourceId, sequence]) {

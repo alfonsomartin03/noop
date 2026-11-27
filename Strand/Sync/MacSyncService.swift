@@ -22,6 +22,8 @@ final class MacSyncService: ObservableObject {
     var applyCompanionMode: ((Bool) -> Void)?
 
     static let receivingKey = "noop.sync.receiving"
+    /// Set by a backup import; consumed at the next launch to bump the archive generation (#81).
+    static let restoredKey = "noop.sync.archiveRestored"
     /// Fixture launches keep their keys apart from the real app's.
     private let trust = KeychainTrustStore(service: LaunchMode.fixtureStore == nil ? "com.noopapp.noop.sync"
                                                                                     : "com.noopapp.noop.sync.fixture")
@@ -41,6 +43,13 @@ final class MacSyncService: ObservableObject {
 
     /// Restores the user's last choice (never in fixture or test launches).
     func restore() {
+        if UserDefaults.standard.bool(forKey: Self.restoredKey), LaunchMode.fixtureStore == nil {
+            Task {
+                if let store = await storeProvider(), (try? await store.bumpSyncArchiveGeneration()) != nil {
+                    UserDefaults.standard.set(false, forKey: Self.restoredKey)
+                }
+            }
+        }
         if LaunchMode.fixtureStore != nil {
             #if DEBUG || NOOP_DIAGNOSTICS
             guard LaunchMode.fixtureSyncPair else { return }

@@ -40,10 +40,10 @@ final class PhoneCollector: ObservableObject {
 
     var statusLine: String {
         guard active else { return "Not collecting" }
-        if live.historyBusy { return "Downloading history · \(live.syncSavedRows) rows saved" }
+        // Status only: the phone shows no live heart rate or other raw readings (owner rule, 2026-11-27).
+        if live.historyBusy { return "Downloading from your strap…" }
         if live.connected {
             var parts = ["Connected"]
-            if let hr = live.heartRate { parts.append("\(hr) bpm") }
             if let b = live.batteryPct { parts.append("battery \(Int(b.rounded()))%") }
             return parts.joined(separator: " · ")
         }

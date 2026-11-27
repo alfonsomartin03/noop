@@ -1,5 +1,6 @@
 import Foundation
 import WhoopStore
+import WhoopProtocol
 
 /// What the Mac sends back for a batch it has durably archived. The phone may delete the batch only after it holds a
 /// receipt whose `batchId` and `digest` match what it sent and whose archive identity it trusts (#81).
@@ -44,9 +45,12 @@ public struct MacArchiveIngestor {
         let env = try SyncEnvelope.open(data)
         let b = env.batch
         if let existing = try await store.syncReceipt(batchId: b.batchId) {
-            // Replay after a lost reply: answer from the stored receipt, write nothing (not even undecoded lines).
+            // Replay after a lost reply (or to a restored archive): write no rows or undecoded lines; the store answers
+            // from the stored receipt, re-stamped with the current archive identity if it predates a restore (#81).
             guard existing.digest == env.digest else { throw SyncIngestError.digestMismatch(batchId: b.batchId) }
-            return SyncReceipt(existing, newlyArchived: false)
+            let r = try await store.ingestSyncBatch(batchId: b.batchId, sourceId: b.sourceId, sequence: b.sequence,
+                                                    digest: env.digest, deviceId: b.deviceId, streams: Streams(), now: now)
+            return SyncReceipt(r.receipt, newlyArchived: false)
         }
         if !b.undecoded.isEmpty { try rawSink(b.undecoded, b) }
         let result = try await store.ingestSyncBatch(batchId: b.batchId, sourceId: b.sourceId, sequence: b.sequence,

@@ -3,8 +3,8 @@ import WhoopStore
 import StrandSync
 import StrandDesign
 
-/// #80: every score the Mac has sent, browsable offline. Averages and trend lines use only days that have a value
-/// (missing is never 0); each row opens that day on the home screen.
+/// #80: every score the Mac has sent, browsable offline, as static daily summaries: an average per range (days without
+/// a value are left out, never counted as 0) and the list of days. No charts or raw readings (owner rule, 2026-11-27).
 struct PhoneHistoryView: View {
     let scores: [DailySummary]
     let open: (String) -> Void
@@ -58,15 +58,12 @@ struct PhoneHistoryView: View {
         let avg = ScoreHistory.average(series)
         return StrandWidget(title, symbol: symbol, tint: tint,
                             trailing: avg.map { "\($0.daysWithValue) of \($0.daysAsked) days" }) {
-            HStack(alignment: .bottom, spacing: 14) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(avg.map { format($0.value) } ?? "—")
-                        .font(.system(size: 30, weight: .bold).monospacedDigit())
-                        .foregroundStyle(avg == nil ? StrandPalette.textTertiary : StrandPalette.textPrimary)
-                    Text("average").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
-                }
-                // Days without a value are left out of the line rather than drawn as 0.
-                WidgetSpark(series.compactMap { $0 }, tint: tint).frame(height: 44)
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(avg.map { format($0.value) } ?? "—")
+                    .font(.system(size: 30, weight: .bold).monospacedDigit())
+                    .foregroundStyle(avg == nil ? StrandPalette.textTertiary : StrandPalette.textPrimary)
+                Text("average").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                Spacer(minLength: 0)
             }
         }
         .accessibilityElement(children: .combine)

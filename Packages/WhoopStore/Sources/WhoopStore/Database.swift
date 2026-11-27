@@ -480,6 +480,25 @@ extension WhoopStore {
                 t.column("receivedAt", .integer).notNull()
             }
         }
+        migrator.registerMigration("v23") { db in
+            // Deleting phone data after the Mac has it (#81). Each batch remembers which archive (id + generation)
+            // confirmed it, when its rows were deleted, the time span they covered, and whether that span may be lost
+            // because the archive that confirmed it was later restored or replaced. `syncCurrentArchive` is the Mac
+            // archive the phone trusts now (from its newest receipt).
+            try db.alter(table: "syncOutbox") { t in
+                t.add(column: "receiptArchiveId", .text)
+                t.add(column: "receiptGeneration", .integer)
+                t.add(column: "deletedAt", .integer)
+                t.add(column: "tsLo", .integer)
+                t.add(column: "tsHi", .integer)
+                t.add(column: "possiblyLost", .boolean).notNull().defaults(to: false)
+            }
+            try db.create(table: "syncCurrentArchive") { t in
+                t.column("id", .integer).primaryKey().check { $0 == 1 }
+                t.column("archiveId", .text).notNull()
+                t.column("generation", .integer).notNull()
+            }
+        }
         return migrator
     }
 }

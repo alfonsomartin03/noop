@@ -2,6 +2,8 @@
 
 **Vision (owner, 2026-11-27).** The iPhone is a collector and a display. It downloads data from the strap, keeps it only until the Mac has it, and shows the scores the Mac sends back. The Mac stores everything, runs the existing analytics and returns the scores. The phone never scores and never keeps a long-term history of raw data.
 
+**Phone display rule (owner, 2026-11-27):** like WHOOP's phone app, the phone shows basic static summaries only: one row of numbers per day (recovery, strain, sleep and their few supporting values) and averages of them. No raw readings, live heart rate, heart-rate curves, hypnograms, trend charts or detail downloads go to or appear on the phone. The raw data the phone collects is never displayed; it waits for the Mac and is then deleted.
+
     Strap → iPhone outbox (temporary) → trusted Mac → WhoopStore → IncrementalScorer
                   ↑            │ deleted after the Mac's receipt          │
                   └──── daily scores and summaries, cached for display ───┘
@@ -175,6 +177,18 @@ Acceptance: months of scores browse offline; a late batch updates the right day 
 - Document phone replacement, Mac replacement, trust reset and returning to Mac collection (needs re-pairing).
 
 Acceptance: crash before/after commit, receipt and deletion; full disks; long Mac absence; restored older archive; phone reinstall. Demonstrate collect → upload → receipt → delete → scores still shown, on copies first.
+
+*2026-11-27, done in code (not on hardware):* the phone deletes a batch's rows only when its receipt comes from the archive it trusts now (id and generation) and 48 h have passed since; one transaction per batch; each table keeps its newest row so rowids never restart below the outbox; freed pages are reused and the WAL truncated. Importing a backup on the Mac starts a new (time-based) generation at the next launch; the phone then re-sends every batch it still holds and flags already-deleted spans as "may be missing on your Mac". A replay to a restored Mac is re-stamped with the current generation. Phone Settings shows storage, waiting batches, last confirmation, free space and any possibly-missing spans; the home strip warns below 500 MB free.
+
+### Operating notes
+
+- **Mac away for days:** the phone keeps everything unconfirmed (about 20 MB/day). Nothing is deleted without a current receipt. Below 500 MB free the phone warns that collection is at risk.
+- **Back up the Mac:** two days after the Mac confirms data, the phone deletes its copy and the Mac holds the only one. Use Settings ▸ Data ▸ Back up regularly.
+- **Restore a Mac backup:** import it in Settings ▸ Data and relaunch. NOOP starts a new sync generation; on the next sync the phone re-sends what it still has. Anything the phone had already deleted and the backup lacks is listed on the phone as "may be missing on your Mac". Restoring by copying files in Finder skips this: use the import.
+- **Replace the Mac:** set up NOOP, restore your backup, turn on the receiver, and pair the phone again (forget the old Mac on the phone). The new archive counts as a different archive: the phone re-sends what it holds.
+- **Replace or reinstall the phone:** unsent data on the old phone is lost unless it syncs first. Sync, then pair the new phone (Forget the old one on the Mac). The strap must be paired to the new phone.
+- **Reset trust:** forget the device on both sides (Mac: Settings ▸ iPhone sync ▸ Forget; phone: swipe the Mac in Settings), then pair again with the code.
+- **Return to Mac collection:** sync the phone, stop collecting on it, turn off companion mode on the Mac, and pair the strap with the Mac again. Neither device takes over the strap on its own.
 
 ## Future extension: personal API gateways
 

@@ -348,7 +348,7 @@ private struct IPhoneSyncSection: View {
     var body: some View {
         SettingsSection(icon: "iphone", title: "iPhone sync",
                         subtitle: "A paired iPhone can collect from your strap and hand the data to this Mac, which keeps it and scores it. Works on your local network only.",
-                        footer: "Data from the iPhone travels encrypted and only to phones you paired here. While the receiver is on, this Mac still collects from the strap itself.") {
+                        footer: "Data from the iPhone travels encrypted and only to phones you paired here. The iPhone deletes its copy two days after this Mac confirms it, so this Mac then holds the only copy: keep a backup (Settings ▸ Data). After restoring a backup, the iPhone sends again whatever it still has.") {
             SettingsRow(title: "Receive from iPhone", detail: detail) {
                 Toggle("", isOn: Binding(get: { sync.receiving }, set: { on in Task { await sync.setReceiving(on) } }))
                     .labelsHidden().toggleStyle(.switch)

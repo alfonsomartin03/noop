@@ -116,6 +116,6 @@ final class SyncTests: XCTestCase {
         let receipt = try await ingestor(store, Sink()).ingest(try SyncEnvelope.seal(batch()).encoded())
         let id = try await store.syncArchiveIdentity()
         XCTAssertEqual(receipt.archiveId, id.archiveId)
-        XCTAssertEqual(receipt.generation, 2)
+        XCTAssertEqual(receipt.generation, id.generation)
     }
 }
