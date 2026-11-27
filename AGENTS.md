@@ -108,7 +108,7 @@ Packages (Swift tools 5.9; declare macOS 13 / iOS 16; **only a macOS app target 
 - Lost-record holes: whole seconds missing from every history stream in 30–61 s runs (264 since 11-17, R85); not removals, cause unknown.
 - No CI; local test evidence only (§8). `BLEManager` CoreBluetooth paths (ack wiring, stream ownership, counters) are code-reviewed, not unit-tested. Alarm delivery is tested against a fake link.
 - Experimental, unvalidated: steps (no accuracy figure), skin-temperature change (no reference thermometer), VO₂max, functional age/pace, nap detection, smart-wake thresholds, health-monitor and check-in thresholds.
-- Not visually checked: several Settings/Health/Overview states in dark mode, 760/420 pt widths, VoiceOver, keyboard, Reduce Motion (owner deferred).
+- Not visually checked: several Settings/Health/Overview states in dark mode, VoiceOver, keyboard, Reduce Motion (owner deferred). The window's minimum is 1000 pt, so 760/420 pt exist only in test renders. Seen, not changed: scrolled content passes under the floating battery badge (it can cover the zone bar's right end) and the window buttons.
 - Stage source label shows the current scoring version; rows don't store their own.
 - `Tools/whoop_re/fixtures/whoop5_frames.json` is untracked (`.gitignore` `Fixtures/` matches case-insensitively on macOS), so `test_whoop5_decode.py` fails in fresh clones.
 - Older dated reports live in `docs/archive/` and describe superseded behavior. `ALARM_CAPABILITIES.md` rows predating H02b/H04/H07 are stale.
@@ -139,7 +139,7 @@ StrandAnalytics tests take ~3.5 min. Tools that open `WhoopStore` can migrate th
 | `LaunchMode.diagnostics` / `NOOP_DIAGNOSTICS` | True in Debug; Release opts in only with `SWIFT_ACTIVE_COMPILATION_CONDITIONS=NOOP_DIAGNOSTICS` (fixture timing). Gates every row below that is test/diagnostic |
 | env `NOOP_TEST_HOST` | Isolated test host (set by scheme; diagnostic builds) |
 | env `NOOP_FIXTURE_STORE` | DB **copy** path; CoreBluetooth off; prints launch timings (diagnostic builds) |
-| `-noop.fixture.tab trends\|health\|alarms\|settings`, `-noop.fixture.live YES`, `-noop.fixture.battery cycle\|charging`, `-noop.fixture.alarmHistory YES`, `-noop.fixture.alarmDetail YES`, `-noop.fixture.detail strain\|sleep\|recovery`, `-noop.fixture.day yyyy-MM-dd`, `-noop.fixture.scrollTo <view id>` (e.g. `strain-tiles`) | Fixture-only launch options |
+| `-noop.fixture.tab trends\|health\|alarms\|settings`, `-noop.fixture.live YES`, `-noop.fixture.battery cycle\|charging`, `-noop.fixture.alarmHistory YES`, `-noop.fixture.alarmDetail YES`, `-noop.fixture.detail strain\|sleep\|recovery`, `-noop.fixture.day yyyy-MM-dd`, `-noop.fixture.scrollTo <view id>` (e.g. `strain-tiles`), `-noop.fixture.width <pt>` (≥ 1000, the window minimum), `-noop.fixture.appearance dark\|light` | Fixture-only launch options |
 | `noop.onboarded`, `scoringVersionApplied` (5) | First-run done; applied scoring migration |
 | `noop.bluetoothChoice` | `undecided`/`allowed`/`declined` |
 | `noop.clock.autoResync`, `noop.clock.lastResyncAt` | Daily 5.0 strap-clock re-sync (default on); last attempt |
@@ -258,6 +258,8 @@ What is established, and how (older per-change rows are in git history and the m
 
 - **2026-11-27 v0.2.0:** 11-27 lost its night (two blocks each missing one strict bar: 0.840 quiet / 0.075 dip). `sleep-core-fragments-v2` + 3 `SleepStagerTests`. On a SQLite-backup copy, 21 days re-scored: 11-27 now 540 min / recovery 74.9; 11-20 starts 23:59 (still, HR ~60 from 23:30; 411 → 464 min, recovery 45.0 → 41.5); other nights within 2 min, recovery ≤ 0.3 pt. PASS StrandAnalytics 515, hosted 118 (8 env skips), Release build (fixture/test-host/`[perf]` strings absent from the binary). NOT done: the Release app launched against the strap (would compete with the running Debug app), other packages not re-run (unchanged).
 
+- **2026-11-27 #86 close-out:** running Debug app on a SQLite-backup copy with `-noop.fixture.width/appearance` (window captured with `screencapture -l`): Strain tiles for 11-19 (25-min gap + reset) at 1180 and 1000 pt dark, 11-26 (two resets, 37-min gap) and today at 1000 pt dark, plus 1000 pt light. Walking/running + other time = synced time on every day; "≥" and gap lines match; no clipping. Real VoiceOver dropped by the owner; #49's real-input check stays on #49. No tests needed (fixture-only options).
+
 Index check (run after file changes; expects no output):
 
 ```sh
@@ -268,6 +270,7 @@ git ls-files --cached --others --exclude-standard | grep -v -e '^AGENTS.md$' -e 
 
 | Date | Change | Checks / remaining |
 | --- | --- | --- |
+| 2026-11-27 | #86 closed: activity tiles checked in the running app in dark mode and at the 1000-pt window minimum (fixture `width`/`appearance` options added). | Running-app captures on a DB copy; VoiceOver by ear dropped. |
 | 2026-11-27 | v0.2.0 pre-release: sleep fragments v2 (night split into two near-miss blocks no longer lost); Release build compiles out test/diagnostic paths (`LaunchMode.diagnostics`); version 0.2.0 (2); BUILD.md release section. | Analytics 515 + hosted 118 pass; DB-copy re-score; Release app not run against the strap. |
 | 2026-11-26 | R86: "Bluetooth powered off" ~1/min was the Mac sleeping (dark wakes every ~36 s on battery, driven by the strap's repeated LE parameter request); power-offs across a sleep now count as `systemSleep`. | WhoopProtocol 196 + hosted 118 pass; wakes themselves not changed. |
 | 2026-11-26 | #85: `rewarm_check.py`; re-warming ~3–5 min awake / ~10–12 min asleep, nightly value insensitive (kept); charging gate still unobserved; ops counters show ~1/min Bluetooth power-off/reconnect since 11-22. | Copies only; tool tests pass; Bluetooth churn cause open. |
@@ -275,4 +278,3 @@ git ls-files --cached --others --exclude-standard | grep -v -e '^AGENTS.md$' -e 
 | 2026-11-26 | #83: Walking & running tile in Strain detail with synced coverage and lower-bound labelling (`ActivityCoverage`); steps tile keeps only count caveats. | Package + hosted tests pass; not looked at in the app (#86). |
 | 2026-11-26 | HO1: R18 hold-out passed (float@33 acceleration holds, @29 not a delayed HR copy, @105 ≈ log motion energy, exploratory); event-120 hold-out 3/3 SUPPORTED; EVIDENCE_MATRIX backlog 1–2 done. | Offline on copies; docs only. R18 scale still needs wearer scenarios. |
 | 2026-11-22 | T04: first nightly skin-temperature change (−0.61 °C) and an in-night removal logged; EVIDENCE_MATRIX backlog 5 done. | Docs only, from a DB copy; re-warming tail unchecked. |
-| 2026-11-21 | Added PHONE_MAC_ARCHIVE sprint: iPhone collector, local sync, compact history, verified archive receipts, retention/recovery gates and future API boundaries; created milestones 7/8, issues #76–#82. | Docs/source comparison, local links, whitespace and index checks; no implementation or hardware changes. |
