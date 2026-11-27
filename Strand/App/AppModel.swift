@@ -78,6 +78,7 @@ final class AppModel: ObservableObject {
                 await self.intelligence.analyzeRecent()          // then scores catch up (refreshes the repo)
                 await self.repo.refresh()
                 self.repo.dataVersion += 1
+                await self.refreshSummaryDetails()
             }
         }
         // Battery readings (0x2A19, GET_BATTERY_LEVEL) feed the notification policy.
@@ -125,6 +126,7 @@ final class AppModel: ObservableObject {
             .sink { [weak self] _ in self?.alarms.syncDeviceAlarm() }.store(in: &hrCancellables)
 
         sync.applyCompanionMode = { [weak self] on in self?.ble.setCompanionMode(on) }
+        sync.onPhonePaired = { [weak self] in Task { await self?.refreshSummaryDetails(); await self?.refreshSummaryDetails() } }
         sync.restore()
         if let mode = LaunchMode.fixtureBattery, ["cycle", "charging"].contains(mode) { playFixtureBattery(mode) }
         if LaunchMode.fixtureAlarmHistory { seedFixtureAlarmHistory() }
@@ -140,6 +142,7 @@ final class AppModel: ObservableObject {
             await self.intelligence.recomputeIfRulesChanged()  // one-time full re-score after a scoring-rule change
             while !Task.isCancelled {
                 await self.intelligence.analyzeRecent()
+                await self.refreshSummaryDetails()
                 try? await Task.sleep(nanoseconds: 900_000_000_000)  // 15 min, matches the offload cadence
             }
         }
@@ -322,4 +325,20 @@ final class AppModel: ObservableObject {
             importing = false
         }
     }
+
+    // MARK: - iPhone detail (#79/#80)
+
+    /// Recomputes the static per-day detail the paired iPhone shows for the last 3 days, plus up to 30 older scored
+    /// days that have none yet. Skipped entirely until an iPhone is paired (Mac-only users pay nothing).
+    func refreshSummaryDetails() async {
+        guard !sync.phones.isEmpty, let store = await repo.storeHandle() else { return }
+        let noopId = deviceId + "-noop"
+        let recent = Array(repo.days.suffix(3).map(\.day))
+        let missing = ((try? await store.daysMissingSummaryDetail(deviceId: noopId)) ?? []).suffix(30)
+        for day in Array(Set(recent + missing)).sorted() {
+            guard let detail = await SummaryDetailBuilder.build(day: day, repo: repo, profile: profile) else { continue }
+            try? await store.setSummaryDetail(deviceId: noopId, day: day, detail: detail)
+        }
+    }
+
 }

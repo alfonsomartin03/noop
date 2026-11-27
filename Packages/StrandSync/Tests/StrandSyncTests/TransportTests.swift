@@ -308,4 +308,19 @@ final class TransportTests: XCTestCase {
         let changed = try await phone.refreshScores(into: phoneStore)
         XCTAssertEqual(changed, 450)
     }
+
+    func testAnotherMacArchiveReplacesTheScoreCacheInsteadOfLookingCurrent() async throws {
+        let mac = makeMac(), phone = makePhone(mac)
+        try await pairBoth(mac, phone)
+        try await score(["2026-11-25", "2026-11-26"], recovery: 66)
+        try await phone.refreshScores(into: phoneStore)
+        // The Mac's archive is restored from a backup: revisions restart and its identity changes.
+        _ = try await macStore.bumpSyncArchiveGeneration()
+        try await macStore.setSummaryDetail(deviceId: "my-whoop-noop", day: "2026-11-26",
+                                            detail: SummaryDetail(values: ["kcal": 2100], workouts: []))
+        let changed = try await phone.refreshScores(into: phoneStore)
+        XCTAssertEqual(changed, 2, "the whole cache is refilled from the restored archive")
+        let shown = try await phoneStore.cachedSummaries()
+        XCTAssertEqual(shown.last?.values["kcal"], 2100)
+    }
 }

@@ -1,8 +1,11 @@
 import Foundation
 import WhoopStore
 
-/// "Send me the daily summaries that changed after revision `since`." Replies are pages of at most `pageSize`.
-struct SummaryRequest: Codable { let since: Int64 }
+/// "Send me the daily summaries that changed after revision `since`", with the archive the phone's cache came from.
+/// Replies are pages of at most `pageSize`. Revisions only mean something within one archive: when the phone's
+/// archive is missing or different (restored, replaced, a fresh copy), the Mac answers from 0 with `reset`.
+struct SummaryRequest: Codable { let since: Int64; let archiveId: String?; let generation: Int? }
+struct SummaryPage: Codable { let archiveId: String; let generation: Int; let reset: Bool; let summaries: [DailySummary] }
 
 // SyncEndpoints.swift — the two ends of a phone ↔ Mac session (#79), over any `ByteStream`.
 
@@ -72,9 +75,12 @@ public final class MacSyncEndpoint {
             case .summaries:
                 do {
                     let req = try JSONDecoder().decode(SummaryRequest.self, from: body)
-                    let page = try await ingestor.store.dailySummaries(deviceId: summaryDeviceId, since: req.since,
-                                                                       limit: Self.pageSize)
-                    try await session.send(.summaries, try JSONEncoder().encode(page))
+                    let id = try await ingestor.store.syncArchiveIdentity()
+                    let reset = req.archiveId != id.archiveId || req.generation != id.generation
+                    let page = try await ingestor.store.dailySummaries(deviceId: summaryDeviceId,
+                                                                       since: reset ? 0 : req.since, limit: Self.pageSize)
+                    try await session.send(.summaries, try JSONEncoder().encode(
+                        SummaryPage(archiveId: id.archiveId, generation: id.generation, reset: reset, summaries: page)))
                 } catch {
                     try? await session.send(.error, Data("summaries unavailable: \(error)".utf8))
                 }
@@ -138,11 +144,16 @@ public final class PhoneSyncClient: SyncTransport {
     public func refreshScores(into store: WhoopStore) async throws -> Int {
         var changed = 0
         while true {
+            let source = try await store.scoreCacheArchive()
             let since = try await store.cachedSummaryRevision()
-            let page = try await request(.summaries, try JSONEncoder().encode(SummaryRequest(since: since)))
-            let summaries = try JSONDecoder().decode([DailySummary].self, from: page)
-            changed += try await store.cacheSummaries(summaries)
-            if summaries.count < MacSyncEndpoint.pageSize { return changed }
+            let data = try await request(.summaries, try JSONEncoder().encode(
+                SummaryRequest(since: since, archiveId: source?.archiveId, generation: source?.generation)))
+            let page = try JSONDecoder().decode(SummaryPage.self, from: data)
+            if page.reset {
+                try await store.resetScoreCache(archive: SyncArchiveRef(archiveId: page.archiveId, generation: page.generation))
+            }
+            changed += try await store.cacheSummaries(page.summaries)
+            if page.summaries.count < MacSyncEndpoint.pageSize { return changed }
         }
     }
 
