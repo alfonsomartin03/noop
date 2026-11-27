@@ -124,6 +124,7 @@ final class AppModel: ObservableObject {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.alarms.syncDeviceAlarm() }.store(in: &hrCancellables)
 
+        sync.applyCompanionMode = { [weak self] on in self?.ble.setCompanionMode(on) }
         sync.restore()
         if let mode = LaunchMode.fixtureBattery, ["cycle", "charging"].contains(mode) { playFixtureBattery(mode) }
         if LaunchMode.fixtureAlarmHistory { seedFixtureAlarmHistory() }

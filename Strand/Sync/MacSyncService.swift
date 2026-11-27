@@ -16,6 +16,10 @@ final class MacSyncService: ObservableObject {
     /// Set while a phone is pairing: the code to compare with the phone's screen.
     @Published var pairingCode: String?
     @Published private(set) var pairingOpenUntil: Date?
+    /// Companion mode (#78): the iPhone collects; this Mac sends nothing to the strap.
+    @Published private(set) var companionMode = CompanionMode.isOn
+    /// Set by AppModel: switches the strap link off/on.
+    var applyCompanionMode: ((Bool) -> Void)?
 
     static let receivingKey = "noop.sync.receiving"
     /// Fixture launches keep their keys apart from the real app's.
@@ -92,6 +96,11 @@ final class MacSyncService: ObservableObject {
     func answerPairing(_ match: Bool) {
         pairingCode = nil
         decision?.resume(returning: match); decision = nil
+    }
+
+    func setCompanionMode(_ on: Bool) {
+        applyCompanionMode?(on)
+        companionMode = CompanionMode.isOn
     }
 
     func forget(_ peer: TrustedPeer) {

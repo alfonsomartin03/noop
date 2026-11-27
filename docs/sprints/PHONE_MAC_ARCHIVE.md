@@ -142,6 +142,8 @@ Acceptance: tests for lost replies, duplicates, out-of-order and late batches, i
 
 Acceptance: collect with the Mac offline; reopen both apps; scores appear after sync; stale, partial and missing states are correct after relaunch.
 
+*2026-11-27, built (not hardware-tested):* the phone compiles the Mac's `Strand/BLE` + `Strand/Collect` and collects into its own store (= outbox) after the user taps Collect, forwards undecoded history into the outbox, and syncs after each download; the Mac has a companion-mode switch that stops all strap activity. Foreground only. Left: the hardware trial (companion mode on, strap re-paired to the iPhone, collect with the Mac offline, sync, compare), lock/relaunch behaviour, background collection as a separate gate.
+
 ### 4. Trusted local sync and handoff (#79)
 
 - Native local-network transport, pairing confirmed with a code, trust in Keychain, unknown peers rejected; no unauthenticated health-data endpoint. Works without internet.

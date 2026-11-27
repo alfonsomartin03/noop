@@ -303,9 +303,29 @@ public final class BLEManager: NSObject, ObservableObject {
 
     // MARK: Bluetooth access
 
+    /// Mac companion mode (#78): on = disconnect and drop the central, so nothing talks to the strap; off = start
+    /// Bluetooth again if the user allowed it.
+    public func setCompanionMode(_ on: Bool) {
+        CompanionMode.set(on)
+        if on {
+            disconnect()
+            reconnectTimer?.cancel()
+            reconnectTimer = nil
+            state.nextReconnectAt = nil
+            central?.delegate = nil
+            central = nil
+            log("Companion mode: this Mac no longer talks to the strap; the iPhone collects")
+        } else if LaunchMode.bluetoothEnabled,
+                  BluetoothChoice.shouldStartBluetooth(stored: state.bluetoothChoice, authorization: CBCentralManager.authorization) {
+            intentionalDisconnect = false
+            startCentral()
+            connect()
+        }
+    }
+
     /// Create the central (raises the system prompt if macOS has not asked yet) and the reconnect watchdog.
     private func startCentral() {
-        guard central == nil else { return }
+        guard central == nil, !CompanionMode.isOn else { return }
         central = CBCentralManager(delegate: self, queue: .main)
         startReconnectTimer()
     }
@@ -372,6 +392,7 @@ public final class BLEManager: NSObject, ObservableObject {
     // MARK: Public API
     // Scan by service first; if nothing is found, fall back to an unfiltered name-based scan (see startUnfilteredScan).
     public func connect() {
+        guard !CompanionMode.isOn else { log("Companion mode: the iPhone collects; not connecting"); return }
         intentionalDisconnect = false
         guard let central, central.state == .poweredOn else {
             log("Bluetooth not ready: \(central.map { BLEManager.stateName($0.state) } ?? (state.bluetoothChoice == .declined ? "turned off in NOOP" : "off for this launch")); authorization=\(BLEManager.authName(CBCentralManager.authorization))")
@@ -904,7 +925,7 @@ public final class BLEManager: NSObject, ObservableObject {
             backfilling: backfilling || whoop5HistoryActive) else { return }
         // A wake window owns the live stream: an automatic offload now would only interrupt the evidence smart wake
         // reads (history is never live evidence). The data stays on the strap and syncs after the window.
-        if trigger == .periodic, realtimeOwners.contains(AlarmController.realtimeOwner) {
+        if trigger == .periodic, realtimeOwners.contains(AlarmRealtime.owner) {
             log("Backfill: periodic sync deferred during the alarm's wake window")
             return
         }
