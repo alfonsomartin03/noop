@@ -98,4 +98,18 @@ final class SyncReceiptTests: XCTestCase {
                                       streams: Streams(hr: [HRSample(ts: 300, bpm: 70)])).receipt
         XCTAssertEqual(second.generation, 2)
     }
+
+    func testExplicitBeatPositionsKeepIdenticalBeatsSplitAcrossBatches() async throws {
+        let store = try await WhoopStore.inMemory()
+        let beat = Streams(rr: [RRInterval(ts: 100, rrMs: 460)])
+        _ = try await store.ingestSyncBatch(batchId: "a", sourceId: "phone", sequence: 1, digest: "da",
+                                            deviceId: "my-whoop", streams: beat, rrSeq: [0])
+        _ = try await store.ingestSyncBatch(batchId: "b", sourceId: "phone", sequence: 2, digest: "db",
+                                            deviceId: "my-whoop", streams: beat, rrSeq: [1])
+        // A replayed position is not stored twice.
+        _ = try await store.ingestSyncBatch(batchId: "c", sourceId: "phone", sequence: 3, digest: "dc",
+                                            deviceId: "my-whoop", streams: beat, rrSeq: [1])
+        let rr = try await store.rrIntervals(deviceId: "my-whoop", from: 0, to: 1000, limit: 10)
+        XCTAssertEqual(rr.count, 2)
+    }
 }

@@ -13,13 +13,17 @@ public struct SyncBatch: Equatable, Codable {
     public let deviceId: String
     public let createdAt: Int
     public let streams: Streams
+    /// Position of each `streams.rr` beat within its second (same order); empty = let the Mac align by value.
+    public let rrSeq: [Int]
     /// `RawHistoryArchive` JSONL lines for history NOOP could not decode; never dropped.
     public let undecoded: [String]
 
     public init(formatVersion: Int = SyncFormat.current, batchId: String = UUID().uuidString, sourceId: String,
-                sequence: Int64, deviceId: String, createdAt: Int, streams: Streams, undecoded: [String] = []) {
+                sequence: Int64, deviceId: String, createdAt: Int, streams: Streams, rrSeq: [Int] = [],
+                undecoded: [String] = []) {
         self.formatVersion = formatVersion; self.batchId = batchId; self.sourceId = sourceId; self.sequence = sequence
-        self.deviceId = deviceId; self.createdAt = createdAt; self.streams = streams; self.undecoded = undecoded
+        self.deviceId = deviceId; self.createdAt = createdAt; self.streams = streams; self.rrSeq = rrSeq
+        self.undecoded = undecoded
     }
 
     /// Records carried (rows + undecoded lines), for status and logs.

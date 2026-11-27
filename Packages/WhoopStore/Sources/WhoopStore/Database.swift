@@ -439,6 +439,30 @@ extension WhoopStore {
                 t.column("generation", .integer).notNull()
             }
         }
+        migrator.registerMigration("v21") { db in
+            // Phone outbox (#77). Collected rows stay in their normal tables; a batch records, per table, the rowid range
+            // it covers, so nothing is stored twice and the batch can be rebuilt byte-identically after a crash. The
+            // receipt columns are filled when the Mac confirms the batch; deleting covered rows is #81, not here.
+            try db.create(table: "syncSource") { t in
+                t.column("id", .integer).primaryKey().check { $0 == 1 }
+                t.column("sourceId", .text).notNull()
+            }
+            try db.create(table: "syncUndecoded") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("line", .text).notNull()
+            }
+            try db.create(table: "syncOutbox") { t in
+                t.column("sequence", .integer).primaryKey()
+                t.column("batchId", .text).notNull().unique()
+                t.column("sourceId", .text).notNull()
+                t.column("deviceId", .text).notNull()
+                t.column("createdAt", .integer).notNull()
+                t.column("rangesJSON", .text).notNull()
+                t.column("digest", .text)
+                t.column("receiptJSON", .text)
+                t.column("receiptedAt", .integer)
+            }
+        }
         return migrator
     }
 }

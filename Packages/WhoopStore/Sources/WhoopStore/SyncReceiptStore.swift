@@ -68,14 +68,16 @@ extension WhoopStore {
 
     /// Archives one phone batch and its receipt atomically. See the file header for the rules.
     public func ingestSyncBatch(batchId: String, sourceId: String, sequence: Int64, digest: String,
-                                deviceId: String, streams: Streams, now: Date = Date()) async throws -> SyncIngestResult {
+                                deviceId: String, streams: Streams, rrSeq: [Int]? = nil,
+                                now: Date = Date()) async throws -> SyncIngestResult {
         try ingestSyncBatch(batchId: batchId, sourceId: sourceId, sequence: sequence, digest: digest,
-                            deviceId: deviceId, streams: streams, now: now, beforeReceipt: nil)
+                            deviceId: deviceId, streams: streams, rrSeq: rrSeq, now: now, beforeReceipt: nil)
     }
 
     /// `beforeReceipt` runs inside the transaction after the rows are written (tests use it to fail mid-way).
     func ingestSyncBatch(batchId: String, sourceId: String, sequence: Int64, digest: String, deviceId: String,
-                         streams: Streams, now: Date, beforeReceipt: (() throws -> Void)?) throws -> SyncIngestResult {
+                         streams: Streams, rrSeq: [Int]? = nil, now: Date,
+                         beforeReceipt: (() throws -> Void)?) throws -> SyncIngestResult {
         try syncWrite { db in
             if let existing = try Self.receipt(db, batchId: batchId) {
                 guard existing.digest == digest else { throw SyncIngestError.digestMismatch(batchId: batchId) }
@@ -86,7 +88,21 @@ extension WhoopStore {
                 throw SyncIngestError.sequenceTaken(sourceId: sourceId, sequence: sequence, byBatch: other)
             }
             let before = db.totalChangesCount
-            _ = try Self.insertRows(streams, deviceId: deviceId, db: db)
+            if let rrSeq, rrSeq.count == streams.rr.count, !streams.rr.isEmpty {
+                // The sender knows each beat's position within its second: store exactly that (a second's beats may
+                // be split across batches, and value-based alignment would merge two identical beats).
+                var rest = streams; rest.rr = []
+                _ = try Self.insertRows(rest, deviceId: deviceId, db: db)
+                let stmt = try db.cachedStatement(sql: """
+                    INSERT INTO rrInterval (deviceId, ts, seq, rrMs) VALUES (?, ?, ?, ?)
+                    ON CONFLICT(deviceId, ts, seq, rrMs) DO NOTHING
+                    """)
+                for (beat, seq) in zip(streams.rr, rrSeq) {
+                    try stmt.execute(arguments: [deviceId, beat.ts, seq, beat.rrMs])
+                }
+            } else {
+                _ = try Self.insertRows(streams, deviceId: deviceId, db: db)
+            }
             let inserted = db.totalChangesCount - before
             try beforeReceipt?()
             let id = try Self.archiveIdentity(db)
