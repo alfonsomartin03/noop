@@ -96,7 +96,7 @@ final class OutboxStoreTests: XCTestCase {
         XCTAssertEqual(unbatched, 0)
         var pending = try await store.pendingOutboxBatches()
         XCTAssertEqual(pending.map(\.sequence), [m.sequence])
-        try await store.recordOutboxReceipt(sequence: m.sequence, receiptJSON: "{}", now: Date(timeIntervalSince1970: 50))
+        try await store.recordOutboxReceipt(sequence: m.sequence, receiptJSON: "{}", archive: SyncArchiveRef(archiveId: "a", generation: 1), now: Date(timeIntervalSince1970: 50))
         pending = try await store.pendingOutboxBatches()
         XCTAssertTrue(pending.isEmpty)
         let last = try await store.lastOutboxReceiptAt()

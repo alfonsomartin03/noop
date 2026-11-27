@@ -92,11 +92,11 @@ final class SyncReceiptTests: XCTestCase {
         let store = try await WhoopStore.inMemory()
         let first = try await ingest(store).receipt
         let bumped = try await store.bumpSyncArchiveGeneration()
-        XCTAssertEqual(bumped.generation, 2)
+        XCTAssertGreaterThan(bumped.generation, first.generation, "time-based: a restore always moves forward")
         XCTAssertEqual(bumped.archiveId, first.archiveId)
         let second = try await ingest(store, batch: "b2", seq: 2, digest: "d2",
                                       streams: Streams(hr: [HRSample(ts: 300, bpm: 70)])).receipt
-        XCTAssertEqual(second.generation, 2)
+        XCTAssertEqual(second.generation, bumped.generation)
     }
 
     func testExplicitBeatPositionsKeepIdenticalBeatsSplitAcrossBatches() async throws {

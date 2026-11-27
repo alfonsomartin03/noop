@@ -18,6 +18,10 @@ public struct PhoneOutbox {
 
     public struct PassResult: Equatable, Sendable {
         public var confirmed: [Int64] = []
+        /// Batches sent again because the Mac's archive was restored or replaced (#81).
+        public var requeued = 0
+        /// Already-deleted batches whose data may now be on neither device (see `PhoneStorage.possiblyLost`).
+        public var newlyPossiblyLost = 0
         /// The pass stopped at this batch (no reply, or a reply that didn't confirm it); it stays pending.
         public var stoppedAt: Int64?
     }
@@ -25,9 +29,26 @@ public struct PhoneOutbox {
     let store: WhoopStore
     let deviceId: String
     let maxRowsPerTable: Int
+    /// How long confirmed data stays on the phone before deletion (#81).
+    let deletionGrace: TimeInterval
 
-    public init(store: WhoopStore, deviceId: String = "my-whoop", maxRowsPerTable: Int = 20_000) {
+    public init(store: WhoopStore, deviceId: String = "my-whoop", maxRowsPerTable: Int = 20_000,
+                deletionGrace: TimeInterval = WhoopStore.defaultDeletionGrace) {
         self.store = store; self.deviceId = deviceId; self.maxRowsPerTable = maxRowsPerTable
+        self.deletionGrace = deletionGrace
+    }
+
+    /// Deletes the rows of every batch the trusted archive confirmed at least `deletionGrace` ago, one batch per
+    /// transaction, then truncates the WAL. Freed pages are reused by new collection (the file stops growing; it is
+    /// not shrunk, which would need a full VACUUM during collection). Returns rows deleted.
+    @discardableResult
+    public func cleanUp(now: Date = Date()) async throws -> Int {
+        var rows = 0
+        for seq in try await store.deletableOutboxBatches(now: now, grace: deletionGrace) {
+            rows += try await store.deleteOutboxBatch(sequence: seq, now: now, grace: deletionGrace) ?? 0
+        }
+        if rows > 0 { try? await store.checkpointWAL() }
+        return rows
     }
 
     /// The sealed envelope for a batch, rebuilt from its ranges. The digest is stored on first seal and must match later.
@@ -58,7 +79,17 @@ public struct PhoneOutbox {
             guard let receipt = try? JSONDecoder().decode(SyncReceipt.self, from: reply), receipt.confirms(env) else {
                 result.stoppedAt = seq; break
             }
-            try await store.recordOutboxReceipt(sequence: seq, receiptJSON: String(decoding: reply, as: UTF8.self), now: now)
+            let outcome = try await store.recordOutboxReceipt(
+                sequence: seq, receiptJSON: String(decoding: reply, as: UTF8.self),
+                archive: SyncArchiveRef(archiveId: receipt.archiveId, generation: receipt.generation), now: now)
+            switch outcome {
+            case .stale:
+                result.stoppedAt = seq; return result
+            case .archiveChanged(let requeued, let lost):
+                result.requeued += requeued; result.newlyPossiblyLost += lost
+                queue = try await store.pendingOutboxBatches().map(\.sequence).filter { $0 != seq }
+            case .recorded: break
+            }
             result.confirmed.append(seq)
         }
         return result

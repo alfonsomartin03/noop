@@ -106,4 +106,41 @@ final class PhoneOutboxTests: XCTestCase {
         let receipt = try await mac.syncReceipt(batchId: cut.batchId)
         XCTAssertEqual(receipt?.digest, sealedOnce.digest)
     }
+
+    // MARK: #81 deleting phone data after the Mac has it
+
+    func testCollectUploadConfirmDeleteAndScoresStayVisible() async throws {
+        try await collect(1...100)
+        let t0 = Date(timeIntervalSince1970: 2_000_000)
+        let outbox = PhoneOutbox(store: phone, deletionGrace: 3600)
+        _ = try await outbox.sync(over: transport(), now: t0)
+        try await phone.cacheSummaries([DailySummary(day: "2026-11-27", revision: 1, changedAt: 1, values: ["recovery": 70],
+                                                     coverage: [:], removed: false)])
+        var deleted = try await outbox.cleanUp(now: t0.addingTimeInterval(60))
+        XCTAssertEqual(deleted, 0, "inside the grace period")
+        deleted = try await outbox.cleanUp(now: t0.addingTimeInterval(3600))
+        XCTAssertEqual(deleted, 99)
+        let phoneRows = try await phone.storageStats_rowCountsForTest().hr
+        let macRows = try await mac.storageStats_rowCountsForTest().hr
+        XCTAssertEqual(phoneRows, 1)
+        XCTAssertEqual(macRows, 100, "the Mac keeps everything")
+        let shown = try await phone.cachedSummaries()
+        XCTAssertEqual(shown.first?.values["recovery"], 70, "scores are not touched by cleanup")
+    }
+
+    func testAMacRestoredFromBackupGetsConfirmedBatchesAgainBeforeTheyAreDeleted() async throws {
+        let t0 = Date(timeIntervalSince1970: 2_000_000)
+        let outbox = PhoneOutbox(store: phone, deletionGrace: 3600)
+        try await collect(1...10)
+        _ = try await outbox.sync(over: transport(), now: t0)                  // batch 1 confirmed, still on the phone
+        _ = try await mac.bumpSyncArchiveGeneration()                          // the Mac was restored from a backup
+        try await collect(11...20)
+        let r = try await outbox.sync(over: transport(), now: t0)
+        XCTAssertEqual(r.requeued, 1, "batch 1 was confirmed by the archive before the restore")
+        XCTAssertEqual(r.confirmed.sorted(), [1, 2])
+        let deletable = try await phone.deletableOutboxBatches(now: t0.addingTimeInterval(3600), grace: 3600)
+        XCTAssertEqual(deletable, [1, 2], "both now confirmed by the restored archive")
+        let macRows = try await mac.storageStats_rowCountsForTest().hr
+        XCTAssertEqual(macRows, 20)
+    }
 }

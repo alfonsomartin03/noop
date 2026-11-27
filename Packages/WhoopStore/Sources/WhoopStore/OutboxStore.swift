@@ -162,15 +162,6 @@ extension WhoopStore {
         }
     }
 
-    /// Stores the Mac's receipt (already checked by the caller against the batch it sent). Idempotent.
-    public func recordOutboxReceipt(sequence: Int64, receiptJSON: String, now: Date = Date()) async throws {
-        try syncWrite { db in
-            try db.execute(sql: """
-                UPDATE syncOutbox SET receiptJSON = ?, receiptedAt = ? WHERE sequence = ? AND receiptedAt IS NULL
-                """, arguments: [receiptJSON, Int(now.timeIntervalSince1970), sequence])
-        }
-    }
-
     /// Rows collected but not yet claimed by any batch (for "pending" status), per table.
     public func unbatchedRowCount() async throws -> Int {
         try syncRead { db in
