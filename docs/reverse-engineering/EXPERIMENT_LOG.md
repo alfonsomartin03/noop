@@ -590,3 +590,7 @@ accepted every command. Details: ALARM_CAPABILITIES.md. **Wearer confirmed feeli
 - **Open:** the Mac dark-waking ~100 times per sleeping hour on battery is a real power cost while NOOP holds the strap link during
   sleep. A candidate mitigation is to release the link at sleep and reconnect at wake, but it needs a hardware trial (does the strap
   stop requesting, does the Mac stay asleep, reconnect latency) and was not changed here. No battery-saving claim is made.
+
+## D84 — step counter accepted (2026-11-27, owner decision, no strap commands)
+
+- The owner accepts the strap step counter as accurate from the earlier manual counts (W01/W02) and S01. W04 and the remaining reset checks are dropped; no further step validation is planned (#84 closed).

@@ -349,7 +349,7 @@ public func decodeWhoop5Realtime(_ frame: [UInt8]) -> Whoop5Realtime? {
 ///   16 rr[i] u16 ms · 37/41/45 gravity x/y/z float32 (g) · 49 step counter u16 · 55 activity code u8
 ///   · 65 skin temperature u16, 1/100 °C
 /// Step counter / activity (issue #25): ryanbr/noop R18 layout; locally the counter rose only around activity code 1.
-/// UNVALIDATED against counted steps: stored for that check, shown nowhere.
+/// Accepted as accurate by owner decision 2026-11-27 (#84, from walks W01–W03); shown in the Strain Steps tile.
 /// Skin temperature (issue #25): offset and scale from two independent layouts (ryanbr/noop R18 frame byte 73,
 /// Asherlc payload 65), consistent on 544/544 local raw frames (≈ 35 °C, matching the firmware console's
 /// `skin_temp`). SUPPORTED, not calibrated against a reference thermometer; wrist skin, not core temperature.

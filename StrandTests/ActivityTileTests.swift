@@ -42,7 +42,7 @@ final class ActivityTileTests: XCTestCase {
         XCTAssertTrue(a.contains("No synced data for 6 hours; activity there is unknown."), a)
         XCTAssertTrue(a.contains("Totals are at least these"), a)
         let st = try XCTUnwrap(StrainDetailView.stepsTile(p.1).spokenLabel)
-        XCTAssertTrue(st.hasPrefix("Steps, at least 897 steps, Recorded strap increases, experimental"), st)
+        XCTAssertTrue(st.hasPrefix("Steps, at least 897 steps, Recorded strap increases"), st)
         XCTAssertTrue(st.contains("No synced data for 6 hours"), st)
         for label in [a, st, StrainDetailView.activityTile(complete.0).spokenLabel!, StrainDetailView.activityTile(today.0).spokenLabel!] {
             XCTAssertFalse(label.contains("≥"), label)

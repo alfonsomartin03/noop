@@ -10,7 +10,7 @@ import Foundation
 ///   PROJECTED age impact; pace compares the two over a 6-calendar-month horizon (true length from the calendar).
 /// - Value per window = median of the daily values. One source per contributor per window: the source (NOOP or
 ///   import) with more days in that window, NOOP on a tie; sources never mix inside a window.
-/// - Daily steps are not used until #42 validates completeness: they always report "not validated yet".
+/// - Daily steps are not used (owner choice; the counter itself is accepted as accurate, #84): activity/fitness needs a measured VO₂max.
 public enum FunctionalAgeSnapshot {
     public static let longWindowDays = 180, longMinDays = 90
     public static let shortWindowDays = 30, shortMinDays = 20
@@ -106,7 +106,7 @@ public enum FunctionalAgeSnapshot {
                 measuredVO2 = nil
             }
         } else {
-            reasons.append("Activity or fitness: enter a measured VO₂max in Settings ▸ Profile (daily steps are not validated yet, #42)")
+            reasons.append("Activity or fitness: enter a measured VO₂max in Settings ▸ Profile (daily steps are not used for this yet)")
         }
         let long = inputs(days: days, window: windowDays(asOf: asOf, length: longWindowDays, calendar: calendar),
                           minDays: longMinDays, measuredVO2: measuredVO2)

@@ -110,7 +110,7 @@ overlap between groups (fit people sleep better and have a lower RHR) is not rem
   `Repository.functionalAgeDays` passes NOOP and imported rows separately, so they never mix.
 - **Resting HR and sleep:** resting HR comes from `DailyMetric.restingHr`; sleep hours from `totalSleepMin / 60`
   (0 = missing).
-- **Steps:** not used until #42 validates completeness. Activity/fitness therefore needs a measured VO₂max; there is
+- **Steps:** not used (owner choice; the counter is accepted as accurate since 2026-11-27, #84). Activity/fitness therefore needs a measured VO₂max; there is
   no entry field yet.
 - **Age:** comes only from an optional **birth date** (Settings ▸ Profile, `profile.birthDate`). The integer age is
   not used, so birthdays never step.
