@@ -51,6 +51,17 @@ The generated test action sets `NOOP_TEST_HOST=1`; `AppEntry` uses a bare proces
 STRAND_SNAPSHOT_DIR=/tmp/noop-snapshots swift test --package-path Packages/StrandDesign
 ```
 
+## iPhone collector shell (#76)
+
+`StrandPhone` is an iOS 17 app target (bundle `com.noopapp.noop.phone`) that only checks it can run: app version, bundled protocol schema, an empty local store (`OpenWhoop/phone-outbox.sqlite`) and Bluetooth state on a tap. It never scans or connects to a strap.
+
+```sh
+xcodegen generate
+xcodebuild -project Strand.xcodeproj -scheme StrandPhone -destination 'platform=iOS Simulator,name=iPhone 18 Pro' -derivedDataPath /tmp/noop-phone build
+```
+
+On your iPhone with a free Apple ID: connect the phone, turn on Developer Mode (Settings ▸ Privacy & Security), open `Strand.xcodeproj`, pick the `StrandPhone` scheme and your phone, and Run. Signing uses the team in `Local.xcconfig`. Then trust the developer profile on the phone (Settings ▸ General ▸ VPN & Device Management). A free team's install expires after 7 days; run again from Xcode to renew.
+
 ## Fixture launch
 
 To inspect or time the real app against a **copy** of a database, without Bluetooth:

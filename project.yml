@@ -3,6 +3,7 @@ options:
   bundleIdPrefix: com.noopapp
   deploymentTarget:
     macOS: "13.0"
+    iOS: "17.0"
   createIntermediateGroups: true
   groupSortPosition: top
 configFiles:
@@ -66,6 +67,36 @@ targets:
       - package: StrandAnalytics
       - package: StrandImport
       - package: StrandDesign
+  StrandPhone:
+    # iPhone collector shell (#76). Collects nothing yet; see docs/sprints/PHONE_MAC_ARCHIVE.md.
+    type: application
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: StrandPhone
+        excludes:
+          - "Info.plist"
+    info:
+      path: StrandPhone/Info.plist
+      properties:
+        CFBundleName: NOOP
+        CFBundleDisplayName: NOOP
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        UILaunchScreen: {}
+        UIApplicationSupportsIndirectInputEvents: true
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        NSBluetoothAlwaysUsageDescription: "NOOP connects directly to your WHOOP strap over Bluetooth to download its data, which it keeps on this iPhone only until your Mac has it."
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.noopapp.noop.phone
+        PRODUCT_NAME: NOOP
+        TARGETED_DEVICE_FAMILY: "1"
+        GENERATE_INFOPLIST_FILE: NO
+    dependencies:
+      - package: WhoopProtocol
+      - package: WhoopStore
+      - package: StrandDesign
   StrandTests:
     type: bundle.unit-test
     platform: macOS
@@ -99,3 +130,9 @@ schemes:
         - variable: NOOP_TEST_HOST
           value: "1"
           isEnabled: true
+  StrandPhone:
+    build:
+      targets:
+        StrandPhone: all
+    run:
+      config: Debug
