@@ -98,6 +98,32 @@ What this means for the phone:
 - Design option for #77, not decided: keep the outbox as raw frames (about half the size, and the Mac re-decodes with its own decoder) rather than decoded rows. Persist-before-ack still applies either way.
 - Not measured: WAL and temporary-transfer peaks on the phone, iOS file-system overhead, research capture (off on the phone; ~34 MB/day as JSONL on the Mac).
 
+**macOS-only code inventory (2026-11-27).** Found by searching `Strand/` for AppKit, notification, file-panel and window APIs, then compiling `Strand/BLE` + `Strand/Collect` into a temporary copy of the `StrandPhone` target for the iOS Simulator (reverted afterwards).
+
+*Collection path, reusable on the phone.* `Strand/BLE` and `Strand/Collect` compile for iOS except for three references:
+
+| Blocker | Where | Fix when extracting |
+| --- | --- | --- |
+| `AlarmStrapLink`, `AlarmStrapCommand` | defined in `Strand/Alarm/AlarmController.swift` (imports AppKit), used by `BLEManager` | Move the two types into their own file under `Strand/BLE`, or leave the alarm link out of the phone build |
+| `TodayDetail` | `StorePaths.fixtureDetail` (fixture launch option) | Move the fixture options next to the screens, or compile them only on macOS |
+
+Compiling is not the same as working: on iOS the collector still needs a phone lifecycle (foreground only at first; suspension, relaunch and CoreBluetooth state restoration are untested), and the liveness/reconnect timers assume a Mac that stays running. `PowerOffClassifier`'s Mac-sleep classification has no phone meaning.
+
+*Mac shell, to be replaced or left out on the phone.*
+
+| Code | macOS dependency | On the phone |
+| --- | --- | --- |
+| `StrandApp.swift` (`AppEntry`), `ContentView.swift` | `NSApplication`, `NSApp`, `NSAppearance`, window and menu-bar scenes, commands | New `StrandPhone` entry (exists) |
+| `AppModel.swift` | `NSWorkspace.open`; owns scoring, imports, alarms | New, smaller phone model: collector + outbox + sync + score cache |
+| `RootView.swift` | `NSEvent` outside-click monitor, `NSHapticFeedbackManager`, `NSViewRepresentable`, hover/keyboard shortcuts | New phone screens; StrandDesign components reused |
+| `MenuBar/MenuBarContent.swift` | `MenuBarExtra` | None |
+| `Alarm/AlarmController.swift` | `NSWorkspace` sleep/wake notifications, UserNotifications | Not in the first release |
+| `Data/DataBackup.swift`, `Screens/DataSourcesView.swift` | `NSOpenPanel`/`NSSavePanel`, file importer | None (backup and import stay on the Mac) |
+| `Device/BatteryMonitor.swift`, `Data/CheckInSettings.swift` | UserNotifications (exists on iOS) | Battery alerts optional later; check-ins stay on the Mac |
+| `Data/Repository.swift`, `IntelligenceEngine.swift`, `Profile.swift`, all of `Strand/Screens` | SwiftUI with Mac-only modifiers in places (hover, help, context menus, keyboard) | Stay on the Mac; scoring and history are the Mac's job |
+
+The shared packages (WhoopProtocol, WhoopStore, StrandAnalytics, StrandImport, StrandDesign) already build for iOS (PR #92). The phone needs WhoopProtocol, WhoopStore and StrandDesign. It doesn't need StrandAnalytics or StrandImport.
+
 ### 2. Durable outbox and Mac receipts (#77)
 
 - Phone: stable source identity, monotonic batch sequence, batch ID and digest. Save every collected record and mandatory undecoded history before acknowledging the strap.
