@@ -12,8 +12,8 @@ Single LLM-maintained entry point: rules, current state, routing and file index.
 
 ## 1 · Snapshot
 
-- Refreshed **2026-11-20** (America/New_York), after the #25 close-out cleanup; v0.2.0 release 2026-11-27. Planning links updated 2026-11-21; R18 + event-120 hold-outs recorded 2026-11-26.
-- **NOOP**: local-only macOS companion for WHOOP 4.0/5.0 straps. Internal target/scheme/package prefix **Strand**; bundle `com.noopapp.noop`, product `NOOP.app`, v0.2.0 (2) — first tagged pre-release (`v0.2.0`, GitHub release with zipped app); 1.0 is reserved for the phone + Mac release.
+- Refreshed **2026-11-20** (America/New_York), after the #25 close-out cleanup; v0.2.0 release 2026-11-27; **v1.0.0 Mac-only release 2026-11-27** (DMG, branch `release/1.0`). Planning links updated 2026-11-21; R18 + event-120 hold-outs recorded 2026-11-26.
+- **NOOP**: local-only macOS companion for WHOOP 4.0/5.0 straps. Internal target/scheme/package prefix **Strand**; bundle `com.noopapp.noop`, product `NOOP.app`, v1.0.0 (3) — Mac-only release (`v1.0.0`, GitHub release with a drag-to-Applications DMG); v0.2.0 (2) was the first pre-release. The phone + Mac release will take a later version.
 - 397 first-party files (tracked + non-ignored untracked, excluding this file). Size hotspots: `BLEManager.swift` ~2.0k lines, `SleepStager.swift` ~1.3k, `OnboardingWizard.swift` ~1.1k, `TrendSections.swift` ~0.9k — search, don't read whole.
 - Test methods (counts in files; pass results are in §8): WhoopProtocol 196, WhoopStore 105, StrandAnalytics 515, StrandImport 14, StrandDesign 40 (2 snapshot tests need `STRAND_SNAPSHOT_DIR`), hosted StrandTests 118 (8 env-gated renders: `NOOP_RENDER_TRENDS/OVERVIEW/HEALTH/SETTINGS/ACTIVITY=1`), Python whoop_re + reverse_engineer.
 - Strap research (#25 and #38–#48) is **closed**; outcomes + passive backlog in `docs/reverse-engineering/EVIDENCE_MATRIX.md` §8. Open: #49 functional-age follow-ups.
@@ -34,7 +34,6 @@ AppEntry (NOOP_TEST_HOST? bare host) -> StrandApp -> AppModel (one instance; win
 
 | Concern | Start in | Checks |
 | --- | --- | --- |
-| 2026-11-27 | #49: functional age checked in the running app with the owner's real birth date, measured VO₂max and history (ready state, "<18", pace 0.8×). | DB copy + launch-argument profile; light 1180 pt only. |
 | Lifecycle, scheduling, launch | `Strand/App/AppModel.swift`, `Strand/Data/Repository.swift` | hosted `StrandTests`; fixture launch `[perf]` lines |
 | Navigation / screens | `Strand/App/RootView.swift`, `Strand/Screens/Hubs.swift` | app build + visual check |
 | Health page | `Strand/Screens/HealthPageView.swift`, analytics `FunctionalAge*.swift`, `HealthMonitor.swift`, `docs/HEALTH_MODELS.md` | `FunctionalAge*Tests`, `HealthMonitorTests` |
@@ -222,6 +221,7 @@ Format: `file` — purpose. Tests list `Suite(methods)`.
 - Sources: `Palette`, `Typography`, `Motion`, `Components` (+ `SectionTabBar`, `strandFocusRing`, `SegmentedPillControl`), `StrandCard`, `StatePill`, `Widgets`, `TrendChart`, `ChartHover`, `Sparkline`, `Hypnogram`, `RecoveryRing`, `YearHeatStrip`, `ChargingIllustration`, `ZoneSpectrum`, `StrandDesign`. Tests: `PlaceholderTests` (25), `ZoneSpectrumTests`, `TrendChartGapTests`, `WidgetSnapshotTests` (env). `Package.swift`.
 
 ### `Tools`
+- `release/make_dmg.sh` — packages a built `NOOP.app` into `NOOP-<version>.dmg` (app + Applications shortcut).
 - `ble_probe/` — `Sources/ble_probe/main.swift` read-only research probe (`--passive`, `--pack-rev1`, `--c08 --c08-approved`, `--k01 --k01-approved`; SET twins hard-blocked); `make_app.sh`; `bundle/Info.plist`; `Package.swift`.
 - `perf_probe/` — `main.swift` repository/scoring timing on a DB copy (`--score`, `--hash`, `--fa-replay`, `--sleepperf`); `Package.swift`, `Package.resolved`. `strain_replay/` — `main.swift` strain replay; `Package.swift`, `Package.resolved`.
 - `whoop_re/` (stdlib, read-only on copies) — `whoop5_decode.py` + `test_whoop5_decode.py` (needs untracked fixture) + `test_whoop5_realtime.py`; `step_walk_check.py` + `test_step_walk_check.py`; `rr_unit_audit.py` + `test_rr_unit_audit.py`; `live_rr_audit.py` + `test_live_rr_audit.py`; `research_archive_check.py` + `test_research_archive_check.py`; `strap_clock_offset.py`, `step_reset_scan.py`, `ppg_burst_check.py`, `event120_check.py` (+ `--holdout`) with `test_offline_checks.py`; `r18_field_inventory.py` + `test_r18_field_inventory.py`; `rewarm_check.py` + `test_rewarm_check.py` (re-warming after re-wear, nightly sensitivity); `ops_metrics.py` + `test_ops_metrics.py`.
@@ -265,6 +265,8 @@ What is established, and how (older per-change rows are in git history and the m
 
 - **2026-11-27 #49 real-input check:** running Debug app on a SQLite-backup copy of the live store, the real profile passed as launch arguments (`-profile.birthDate '<real>…</real>'` etc.; the shell's `defaults write` did not reach the app's domain), Health tab at 1180 pt light, window captured. Ready state: chronological 23.2 from birth date; VO₂max (measured) −11.3 y (limit), resting HR 57 bpm −0.3 y, sleep 7.3 h ±0.0 y → shows "<18" with "−5.2 y or more"; pace 0.8×. Arithmetic and labels consistent with §3. No tests needed (no code change). Not done: dark/narrow, VoiceOver (dropped by owner).
 
+- **2026-11-27 v1.0.0 (Mac-only):** from `57e9d7b` (before the phone work) on `release/1.0`; version 1.0.0 (3). Release build signed Apple Development; diagnostic strings absent; `make_dmg.sh` image verified (`hdiutil verify`), mounted: `NOOP.app` + `Applications` link, version 1.0.0, `codesign --verify --deep --strict` OK; Gatekeeper `spctl` rejects (not notarized, expected). Not done: the Release app launched (it shares the container with the running Debug app and would compete for the strap); tests not re-run (only version/docs/script changed since PR #91, whose tests passed).
+
 Index check (run after file changes; expects no output):
 
 ```sh
@@ -275,10 +277,11 @@ git ls-files --cached --others --exclude-standard | grep -v -e '^AGENTS.md$' -e 
 
 | Date | Change | Checks / remaining |
 | --- | --- | --- |
+| 2026-11-27 | v1.0.0 Mac-only release from the pre-phone commit: version 1.0.0 (3), drag-to-Applications DMG (`Tools/release/make_dmg.sh`), BUILD.md release steps. | DMG verified and mounted; app not launched (would compete with the running app). |
+| 2026-11-27 | #49: functional age checked in the running app with the owner's real birth date, measured VO₂max and history (ready state, "<18", pace 0.8×). | DB copy + launch-argument profile; light 1180 pt only. |
 | 2026-11-27 | #84 closed by owner decision: step counter accepted as accurate (W01–W03, S01; W04 not run); Steps tile caption/spoken text drop "experimental". Walking & running keeps it; steps Trends and #49 steps stay off. W04/reset checks dropped from every backlog; functional-age message no longer says "not validated". | Hosted 118 + FunctionalAgeSnapshotTests pass; running app not checked. |
 | 2026-11-27 | #86 closed: activity tiles checked in the running app in dark mode and at the 1000-pt window minimum (fixture `width`/`appearance` options added). | Running-app captures on a DB copy; VoiceOver by ear dropped. |
 | 2026-11-27 | v0.2.0 pre-release: sleep fragments v2 (night split into two near-miss blocks no longer lost); Release build compiles out test/diagnostic paths (`LaunchMode.diagnostics`); version 0.2.0 (2); BUILD.md release section. | Analytics 515 + hosted 118 pass; DB-copy re-score; Release app not run against the strap. |
 | 2026-11-26 | R86: "Bluetooth powered off" ~1/min was the Mac sleeping (dark wakes every ~36 s on battery, driven by the strap's repeated LE parameter request); power-offs across a sleep now count as `systemSleep`. | WhoopProtocol 196 + hosted 118 pass; wakes themselves not changed. |
 | 2026-11-26 | #85: `rewarm_check.py`; re-warming ~3–5 min awake / ~10–12 min asleep, nightly value insensitive (kept); charging gate still unobserved; ops counters show ~1/min Bluetooth power-off/reconnect since 11-22. | Copies only; tool tests pass; Bluetooth churn cause open. |
 | 2026-11-26 | #86 partial: activity/steps tile renders (3 states × 4 width/scheme), VoiceOver spoken text for both tiles, 30-min sync grace before "≥"; fixture options to open a detail page on a day and scroll to a section; tiles checked in the running app on a DB copy. | Hosted 118 pass; VoiceOver by ear dropped by owner. |
-| 2026-11-26 | #83: Walking & running tile in Strain detail with synced coverage and lower-bound labelling (`ActivityCoverage`); steps tile keeps only count caveats. | Package + hosted tests pass; not looked at in the app (#86). |
