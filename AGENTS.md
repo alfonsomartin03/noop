@@ -34,6 +34,7 @@ AppEntry (NOOP_TEST_HOST? bare host) -> StrandApp -> AppModel (one instance; win
 
 | Concern | Start in | Checks |
 | --- | --- | --- |
+| 2026-11-27 | #49: functional age checked in the running app with the owner's real birth date, measured VO₂max and history (ready state, "<18", pace 0.8×). | DB copy + launch-argument profile; light 1180 pt only. |
 | Lifecycle, scheduling, launch | `Strand/App/AppModel.swift`, `Strand/Data/Repository.swift` | hosted `StrandTests`; fixture launch `[perf]` lines |
 | Navigation / screens | `Strand/App/RootView.swift`, `Strand/Screens/Hubs.swift` | app build + visual check |
 | Health page | `Strand/Screens/HealthPageView.swift`, analytics `FunctionalAge*.swift`, `HealthMonitor.swift`, `docs/HEALTH_MODELS.md` | `FunctionalAge*Tests`, `HealthMonitorTests` |
@@ -262,6 +263,8 @@ What is established, and how (older per-change rows are in git history and the m
 
 - **2026-11-27 #84 (owner decision):** step counter accepted as accurate without W04; Steps tile caption and spoken text no longer say "experimental". PASS app build + hosted 118 (8 env skips, 0 failures). Not looked at in the running app (caption text only).
 
+- **2026-11-27 #49 real-input check:** running Debug app on a SQLite-backup copy of the live store, the real profile passed as launch arguments (`-profile.birthDate '<real>…</real>'` etc.; the shell's `defaults write` did not reach the app's domain), Health tab at 1180 pt light, window captured. Ready state: chronological 23.2 from birth date; VO₂max (measured) −11.3 y (limit), resting HR 57 bpm −0.3 y, sleep 7.3 h ±0.0 y → shows "<18" with "−5.2 y or more"; pace 0.8×. Arithmetic and labels consistent with §3. No tests needed (no code change). Not done: dark/narrow, VoiceOver (dropped by owner).
+
 Index check (run after file changes; expects no output):
 
 ```sh
@@ -279,4 +282,3 @@ git ls-files --cached --others --exclude-standard | grep -v -e '^AGENTS.md$' -e 
 | 2026-11-26 | #85: `rewarm_check.py`; re-warming ~3–5 min awake / ~10–12 min asleep, nightly value insensitive (kept); charging gate still unobserved; ops counters show ~1/min Bluetooth power-off/reconnect since 11-22. | Copies only; tool tests pass; Bluetooth churn cause open. |
 | 2026-11-26 | #86 partial: activity/steps tile renders (3 states × 4 width/scheme), VoiceOver spoken text for both tiles, 30-min sync grace before "≥"; fixture options to open a detail page on a day and scroll to a section; tiles checked in the running app on a DB copy. | Hosted 118 pass; VoiceOver by ear dropped by owner. |
 | 2026-11-26 | #83: Walking & running tile in Strain detail with synced coverage and lower-bound labelling (`ActivityCoverage`); steps tile keeps only count caveats. | Package + hosted tests pass; not looked at in the app (#86). |
-| 2026-11-26 | HO1: R18 hold-out passed (float@33 acceleration holds, @29 not a delayed HR copy, @105 ≈ log motion energy, exploratory); event-120 hold-out 3/3 SUPPORTED; EVIDENCE_MATRIX backlog 1–2 done. | Offline on copies; docs only. R18 scale still needs wearer scenarios. |
