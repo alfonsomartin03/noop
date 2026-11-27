@@ -174,7 +174,14 @@ public enum SleepStager {
     /// Versioned main-sleep acceptance: the motion (quiet-minute) statistic of a bridged span is the observed-minute
     /// weighted quiet fraction of its constituent fragments, excluding the wake/missing gaps between them. Part of the
     /// scoring algorithm key so stored days (including stored "no sleep" results) re-score without new raw data.
-    public static let fragmentQuietVersion = "sleep-core-fragments-v1"
+    /// v2: fragments are admitted on the lenient bars below and only the joined span is judged on the strict ones, so
+    /// a night split into two blocks that each miss a strict bar by a hair (2026-11-27: 0.840 quiet / 0.075 dip) is
+    /// not lost when the joined night passes.
+    public static let fragmentQuietVersion = "sleep-core-fragments-v2"
+    /// Lenient admission bars for one fragment of a night. A fragment that passes these but not the strict
+    /// `mainMinQuietFrac` / `mainMinHRDip` / nap bars counts only when the joined span it belongs to passes them.
+    public static let fragmentMinQuietFrac: Double = 0.80
+    public static let fragmentMinHRDip: Double = 0.05
     /// Final-wake extension: after the strict (quiet) core of a night, sleep continues through restless 5-min blocks
     /// while HR stays at sleeping level (+ `edgeHR` tolerance) and ≥ `extendMinQuietFrac` of minutes are quiet.
     /// Light morning sleep is physically restless (position changes, brief arousals), so motion alone ends nights too soon.
@@ -560,10 +567,12 @@ public enum SleepStager {
         // fraction, so a night with a 30–45 min active interruption lost the main sleep it had already shown
         // (`fragmentQuietVersion`). The gaps themselves stay in the span and are staged as wake / unknown below.
         var fragments: [Period] = []
+        var strictEnds = Set<Int>()   // ends of fragments that also clear the strict bars (the v1 fragments)
         for p in runs where p.stage == "sleep" && (p.end - p.start) >= candidateMinMin * 60 {
             let ev = evidence(p.start, p.end)
-            if (ev.quietFrac ?? 0) >= mainMinQuietFrac, (ev.hrDip ?? 1) >= min(mainMinHRDip, napMinHRDip) {
+            if (ev.quietFrac ?? 0) >= fragmentMinQuietFrac, (ev.hrDip ?? 1) >= fragmentMinHRDip {
                 fragments.append(p)
+                if (ev.quietFrac ?? 0) >= mainMinQuietFrac, (ev.hrDip ?? 1) >= min(mainMinHRDip, napMinHRDip) { strictEnds.insert(p.end) }
             }
         }
         var spans: [Period] = []
@@ -580,7 +589,14 @@ public enum SleepStager {
         let dataEnd = grav.last!.ts
         if spans.count > 0 {
             for i in spans.indices where spans[i].end - spans[i].start >= mainMinMin * 60 / 2 {
-                spans[i] = extendFinalWake(spans[i], hr: hrS, grid: grid, dataEnd: dataEnd)
+                // Extend from the span's end and from its last strict fragment's end, keeping the later: the 5-min
+                // blocks are aligned to the start point, so a lenient fragment appended after the strict core must
+                // not end the night earlier than the strict core's own extension reached (fragments v2).
+                let lastStrict = parts[i].map(\.end).filter { strictEnds.contains($0) }.max()
+                let ends = Set([spans[i].end] + (lastStrict.map { [$0] } ?? []))
+                let reach = ends.map { extendFinalWake(Period(stage: "sleep", start: spans[i].start, end: $0),
+                                                       hr: hrS, grid: grid, dataEnd: dataEnd).end }.max() ?? spans[i].end
+                spans[i] = Period(stage: "sleep", start: spans[i].start, end: max(spans[i].end, reach))
             }
             // Extension can reach the next span: merge any that now touch or overlap, keeping both spans' parts.
             var m: [Period] = [], mp: [[Period]] = []
