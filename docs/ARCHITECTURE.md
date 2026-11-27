@@ -26,7 +26,7 @@ AlarmController → AlarmPlanner / SmartWakeDecider → AlarmDeliveryTransaction
 | Package | Responsibility | Depends on |
 | --- | --- | --- |
 | `WhoopProtocol` | Frame verification/reassembly, 4.0/5.0 device families, packet/stream decoding, 5.0 messages, charging model, ops counters, bundled schema | — |
-| `WhoopStore` | Actor over GRDB: migrations (schema v21), source streams, sync receipts, phone outbox, derived rows, provenance, training logs, alarm history, check-ins | WhoopProtocol, GRDB |
+| `WhoopStore` | Actor over GRDB: migrations (schema v22), source streams, sync receipts, phone outbox, returned score summaries, derived rows, provenance, training logs, alarm history, check-ins | WhoopProtocol, GRDB |
 | `StrandAnalytics` | HRV, sleep staging/sessions, recovery, load/strain, workouts, causal baselines/replay, incremental scoring, alarms, health models | WhoopProtocol, WhoopStore |
 | `StrandImport` | WHOOP CSV export (ZIP or folder) parsing | ZIPFoundation |
 | `StrandDesign` | Palette, typography, motion, cards, charts, charging illustration, zone spectrum | — |

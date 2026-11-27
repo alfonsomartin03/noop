@@ -463,6 +463,23 @@ extension WhoopStore {
                 t.column("receiptedAt", .integer)
             }
         }
+        migrator.registerMigration("v22") { db in
+            // Scores sent back to the phone (#79). Mac: `summaryRevision` gives each day's summary a global, increasing
+            // revision whenever its content changes (or the day disappears), so the phone can ask "what changed since R".
+            // Phone: `scoreCache` keeps the newest summary per day for offline display (and #80's history).
+            try db.create(table: "summaryRevision") { t in
+                t.column("day", .text).primaryKey()
+                t.column("digest", .text).notNull()
+                t.column("revision", .integer).notNull().unique()
+                t.column("changedAt", .integer).notNull()
+            }
+            try db.create(table: "scoreCache") { t in
+                t.column("day", .text).primaryKey()
+                t.column("revision", .integer).notNull()
+                t.column("payloadJSON", .text).notNull()
+                t.column("receivedAt", .integer).notNull()
+            }
+        }
         return migrator
     }
 }
