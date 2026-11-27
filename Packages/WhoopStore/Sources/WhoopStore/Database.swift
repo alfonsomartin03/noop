@@ -419,6 +419,26 @@ extension WhoopStore {
                 t.primaryKey(["deviceId", "ts"])
             }
         }
+        migrator.registerMigration("v20") { db in
+            // Phone → Mac sync (#77). One row per batch the Mac archived, written in the same transaction as the batch's
+            // rows; the phone may delete a batch only after it holds this receipt. `syncArchive` is this database's
+            // archive identity: a restore bumps `generation`, so receipts from before the restore stop counting.
+            try db.create(table: "syncReceipt") { t in
+                t.column("batchId", .text).primaryKey()
+                t.column("sourceId", .text).notNull()
+                t.column("sequence", .integer).notNull()
+                t.column("digest", .text).notNull()
+                t.column("archiveId", .text).notNull()
+                t.column("generation", .integer).notNull()
+                t.column("committedAt", .integer).notNull()
+                t.uniqueKey(["sourceId", "sequence"])
+            }
+            try db.create(table: "syncArchive") { t in
+                t.column("id", .integer).primaryKey().check { $0 == 1 }
+                t.column("archiveId", .text).notNull()
+                t.column("generation", .integer).notNull()
+            }
+        }
         return migrator
     }
 }

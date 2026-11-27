@@ -39,7 +39,14 @@ extension WhoopStore {
     public func insert(_ streams: Streams, deviceId: String) async throws
         -> (hr: Int, rr: Int, events: Int, battery: Int,
             spo2: Int, skinTemp: Int, resp: Int, gravity: Int) {
-        return try syncWrite { db in
+        return try syncWrite { db in try Self.insertRows(streams, deviceId: deviceId, db: db) }
+    }
+
+    /// The row writes behind `insert`, inside the caller's transaction (also used by `ingestSyncBatch`).
+    static func insertRows(_ streams: Streams, deviceId: String, db: Database) throws
+        -> (hr: Int, rr: Int, events: Int, battery: Int,
+            spo2: Int, skinTemp: Int, resp: Int, gravity: Int) {
+        do {
             var hr = 0, rr = 0, ev = 0, bat = 0
             var spo2 = 0, skin = 0, resp = 0, grav = 0
             // Reuse one prepared statement per table instead of recompiling the same SQL on every

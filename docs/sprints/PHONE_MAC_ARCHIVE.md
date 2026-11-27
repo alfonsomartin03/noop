@@ -132,6 +132,8 @@ The shared packages (WhoopProtocol, WhoopStore, StrandAnalytics, StrandImport, S
 
 Acceptance: tests for lost replies, duplicates, out-of-order and late batches, interrupted transactions, disk full, incompatible versions and archive-generation changes. Phone deletion stays disabled.
 
+*2026-11-27, Mac side done:* the outbox holds decoded rows (owner choice). `StrandSync` defines the versioned, digested envelope and `MacArchiveIngestor`; `WhoopStore` v20 stores receipts with the archive identity and writes rows + receipt in one transaction. Covered by tests: lost reply, replay, digest mismatch, taken sequence, rollback before the receipt, raw-archive failure, out-of-order/late batches, version refusal, generation bump. Left: the phone outbox (batching collected rows, sequence persistence, holding batches until receipted) and disk-full on the phone.
+
 ### 3. iPhone collector and score display (#78)
 
 - Phone screens: connection and collection status, pending outbox (count and size), last sync, and the latest daily scores returned by the Mac.

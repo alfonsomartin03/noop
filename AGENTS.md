@@ -15,7 +15,7 @@ Single LLM-maintained entry point: rules, current state, routing and file index.
 - Refreshed **2026-11-20** (America/New_York), after the #25 close-out cleanup; v0.2.0 release 2026-11-27; **v1.0.0 Mac-only release 2026-11-27** (DMG, branch `release/1.0`). Planning links updated 2026-11-21; R18 + event-120 hold-outs recorded 2026-11-26.
 - **NOOP**: local-only macOS companion for WHOOP 4.0/5.0 straps. Internal target/scheme/package prefix **Strand**; bundle `com.noopapp.noop`, product `NOOP.app`, v1.0.0 (3) on `main` and `release/1.0`. `v1.0.0` = Mac-only GitHub release (drag-to-Applications DMG) built from `release/1.0`, which has no phone code; `main` carries the phone work toward a later phone + Mac version. v0.2.0 (2) was the first pre-release.
 - 397 first-party files (tracked + non-ignored untracked, excluding this file). Size hotspots: `BLEManager.swift` ~2.0k lines, `SleepStager.swift` ~1.3k, `OnboardingWizard.swift` ~1.1k, `TrendSections.swift` ~0.9k — search, don't read whole.
-- Test methods (counts in files; pass results are in §8): WhoopProtocol 196, WhoopStore 105, StrandAnalytics 515, StrandImport 14, StrandDesign 40 (2 snapshot tests need `STRAND_SNAPSHOT_DIR`), hosted StrandTests 118 (8 env-gated renders: `NOOP_RENDER_TRENDS/OVERVIEW/HEALTH/SETTINGS/ACTIVITY=1`), Python whoop_re + reverse_engineer.
+- Test methods (counts in files; pass results are in §8): WhoopProtocol 196, WhoopStore 112, StrandAnalytics 515, StrandImport 14, StrandSync 10, StrandDesign 40 (2 snapshot tests need `STRAND_SNAPSHOT_DIR`), hosted StrandTests 118 (8 env-gated renders: `NOOP_RENDER_TRENDS/OVERVIEW/HEALTH/SETTINGS/ACTIVITY=1`), Python whoop_re + reverse_engineer.
 - Strap research (#25 and #38–#48) is **closed**; outcomes + passive backlog in `docs/reverse-engineering/EVIDENCE_MATRIX.md` §8. Open: #49 functional-age follow-ups.
 
 ## 2 · Architecture and routing
@@ -48,7 +48,7 @@ AppEntry (NOOP_TEST_HOST? bare host) -> StrandApp -> AppModel (one instance; win
 | Alarms | `Strand/Alarm/AlarmController.swift`, `AlarmsView.swift`, `AlarmHistoryView.swift`; analytics `AlarmEngine/SmartWake/AlarmDelivery/AlarmHistory.swift` | `AlarmControllerTests` (fake link) + analytics alarm suites |
 | Shared UI | `Packages/StrandDesign/Sources/StrandDesign/` | StrandDesign tests / snapshots |
 
-Packages (Swift tools 5.9; declare macOS 13 / iOS 17; all five build for iOS (2026-11-27, #76); app targets: macOS `Strand` and an iOS shell `StrandPhone` (#76, no strap code)): `WhoopProtocol` (no deps; schema JSON) · `WhoopStore` → WhoopProtocol, GRDB (≥6.0.0, resolved 6.29.3) · `StrandAnalytics` → WhoopProtocol, WhoopStore · `StrandImport` → WhoopProtocol, WhoopStore, ZIPFoundation (≥0.9.0, resolved 0.9.20) · `StrandDesign` (SwiftUI). Tools: `ble_probe` → WhoopProtocol; `perf_probe`, `strain_replay` → analytics + store + protocol; Python is stdlib only.
+Packages (Swift tools 5.9; declare macOS 13 / iOS 17; all five build for iOS (2026-11-27, #76); app targets: macOS `Strand` and an iOS shell `StrandPhone` (#76, no strap code)): `WhoopProtocol` (no deps; schema JSON) · `WhoopStore` → WhoopProtocol, GRDB (≥6.0.0, resolved 6.29.3) · `StrandAnalytics` → WhoopProtocol, WhoopStore · `StrandImport` → WhoopProtocol, WhoopStore, ZIPFoundation (≥0.9.0, resolved 0.9.20) · `StrandDesign` (SwiftUI) · `StrandSync` → WhoopProtocol, WhoopStore (phone → Mac batches + receipts, #77). Tools: `ble_probe` → WhoopProtocol; `perf_probe`, `strain_replay` → analytics + store + protocol; Python is stdlib only.
 
 ## 3 · Current behavior (verified against source 2026-11-20)
 
@@ -88,8 +88,9 @@ Packages (Swift tools 5.9; declare macOS 13 / iOS 17; all five build for iOS (20
 ### Storage, imports and scoring
 
 - `StorePaths`: Application Support `OpenWhoop/whoop.sqlite` (sandbox container). `WhoopStore` is an actor over GRDB (`DatabaseQueue`, WAL, 5 s busy timeout); Repository and BLE hold separate handles.
-- Schema **v19** (`WhoopStoreInfo.schemaVersion` = 19, fixed 2026-11-20; was a stale 15). Add migrations, never edit applied ones. Key: v10 RR sequence, v11 provenance, v12 load, v13 training logs, v14 labels + incremental state, v15 sleep sessions + corrections, v16 alarm history, v17 check-ins, v18 `skinTempSample.unit`, v19 `stepCounterSample`.
+- Schema **v20** (`WhoopStoreInfo.schemaVersion` = 20). Add migrations, never edit applied ones. Key: v10 RR sequence, v11 provenance, v12 load, v13 training logs, v14 labels + incremental state, v15 sleep sessions + corrections, v16 alarm history, v17 check-ins, v18 `skinTempSample.unit`, v19 `stepCounterSample`, v20 `syncReceipt` + `syncArchive` (#77).
 - 5.0 history record v0x12: HR, RR, gravity, skin temperature (payload 65 u16 ÷ 100 °C, unit `centi_celsius`), step counter (49 u16) + activity code (55 u8: 2 = run CONFIRMED, 1 walk / 0 still SUPPORTED), stored in one transaction. Step counter resets 1 s after alarm rings (2 mornings) and once during a removal; never at midnight.
+- Phone → Mac sync (#77, not wired into either app yet): `StrandSync.SyncEnvelope` = versioned `SyncBatch` (source, sequence, batch id, decoded `Streams`, undecoded lines) + SHA-256 of its canonical JSON; `open` refuses another format version or a bad digest before any write. `MacArchiveIngestor`: replay of an archived batch → stored receipt, nothing written; else undecoded lines through a raw sink first, then `WhoopStore.ingestSyncBatch` writes rows (same insert path as BLE) + receipt in one transaction; same batch id with other digest or a taken (source, sequence) is refused. Receipts carry the archive id + generation (`bumpSyncArchiveGeneration` after a restore).
 - `WhoopImporter` → idempotent upserts of cycles (with declared sleep), sleeps, workouts, journal, metric series. `DataBackup` = DB export + restore by replacement (relaunch).
 - Scoring: `IntelligenceEngine.scoringVersion = 5`; `IncrementalScorer` reuses unchanged days and re-scores on algorithm/config/source change. Versions in `algorithmKey`: `nap-evidence-v2`, `sessions-v2`, `sleep-core-fragments-v2`, `wrist-events-v1`, `skin-temp-night-v2`. Confident sleep/naps excluded from load.
 - Sleep detection (`sleep-core-fragments-v2`): quiet runs are admitted as fragments on lenient bars (quiet ≥ 0.80, HR dip ≥ 0.05); joined spans are judged on the strict main/nap bars; the final-wake extension runs from the span end and from the last strict fragment's end (later wins).
@@ -124,7 +125,7 @@ Packages (Swift tools 5.9; declare macOS 13 / iOS 17; all five build for iOS (20
 
 ```sh
 xcodegen generate
-swift test --package-path Packages/<WhoopProtocol|WhoopStore|StrandAnalytics|StrandImport|StrandDesign>
+swift test --package-path Packages/<WhoopProtocol|WhoopStore|StrandAnalytics|StrandImport|StrandDesign|StrandSync>
 (cd Packages/<pkg> && xcodebuild -scheme <pkg> -destination 'generic/platform=iOS Simulator' -derivedDataPath /tmp/noop-ios-<pkg> build)   # iOS package build
 python3 -m unittest discover -s Tools/whoop_re -p 'test_*.py'
 python3 -m unittest discover -s Tools/reverse_engineer -p 'test_*.py'
@@ -207,8 +208,8 @@ Format: `file` — purpose. Tests list `Suite(methods)`.
 - Tests: BiometricStreamsParityTests, DeviceFamilyFramingTests, DeviceLogicTests, FramingTests, HistoricalMetaTests, HistoricalStreamsParityTests, HistoricalV24Tests, InterpreterEnvelopeTests, ParityTests, PostHooksTests, ReassemblerTests (+ Whoop5RealtimeTallyTests), SchemaTests, SmokeTests, StreamsParityTests, StreamsTests, ValuesTests, Whoop5ChargingTests + ChargingModelTests + PackInfoModelTests, Whoop5MessagesTests, Whoop5ConfigReadTests, OpsCountersTests. `Resources/`: `frames.json`, `golden.json`, `historical_frames.json`, `historical_golden.json`, `streams_golden.json`, `biometric_streams_golden.json`, `whoop5_frames.json`.
 
 ### `Packages/WhoopStore`
-- Sources: `WhoopStore` (actor, `WhoopStoreInfo`), `Database` (migrations v1–v19), `StreamStore`, `Reads`, `Cursors`, `RawOutbox` (append-only raw batches), `MetricsCache`, `MetricSeriesStore`, `DerivedStore`, `JournalWorkoutAppleCache` (journal + workouts; file name is historical), `TrainingLogStore`, `AlarmHistoryStore`, `CheckInStore`. `Package.swift`, `Package.resolved`.
-- Tests: AlarmHistoryStoreTests, CheckInStoreTests, BiometricStreamTests + SkinTempUnitTests, CursorTests, DerivedWriteTests, InsertTests, JournalWorkoutAppleCacheTests, LatestSampleTests, MetricSeriesStoreTests, MetricsCacheTests, MigrationTests, RRSequenceTests, RawOutboxTests, ReadTests, ScaffoldTests, SleepCorrectionTests, TrainingLogStoreTests.
+- Sources: `WhoopStore` (actor, `WhoopStoreInfo`), `Database` (migrations v1–v20), `StreamStore`, `Reads`, `Cursors`, `RawOutbox` (append-only raw batches), `MetricsCache`, `MetricSeriesStore`, `DerivedStore`, `JournalWorkoutAppleCache` (journal + workouts; file name is historical), `TrainingLogStore`, `AlarmHistoryStore`, `CheckInStore`, `SyncReceiptStore` (sync receipts, archive identity, one-transaction ingest). `Package.swift`, `Package.resolved`.
+- Tests: SyncReceiptTests, AlarmHistoryStoreTests, CheckInStoreTests, BiometricStreamTests + SkinTempUnitTests, CursorTests, DerivedWriteTests, InsertTests, JournalWorkoutAppleCacheTests, LatestSampleTests, MetricSeriesStoreTests, MetricsCacheTests, MigrationTests, RRSequenceTests, RawOutboxTests, ReadTests, ScaffoldTests, SleepCorrectionTests, TrainingLogStoreTests.
 
 ### `Packages/StrandAnalytics`
 - Orchestration: `AnalyticsEngine`, `IncrementalScorer`, `CausalReplay`, `CausalReference`, `Baselines`, `MetricProvenance`, `TrendPeriodComparison`.
@@ -221,6 +222,9 @@ Format: `file` — purpose. Tests list `Suite(methods)`.
 
 ### `Packages/StrandImport`
 - Sources: `ImportCoordinator` (WHOOP export entry), `WhoopExportImporter`, `CSVParsing`, `ImportModels`. Tests: ImportCoordinatorTests, WhoopExportImporterTests, `Helpers.swift`; `Resources/` synthetic `journal_entries.csv`, `physiological_cycles.csv`, `sleeps.csv`, `workouts.csv`. `Package.swift`, `Package.resolved`.
+
+### `Packages/StrandSync`
+- Sources: `SyncBatch` (`SyncBatch`, `SyncFormat`, `SyncEnvelope` seal/open, `SyncError`), `MacArchiveIngestor` (+ `SyncReceipt.confirms`). Tests: `SyncTests`. `Package.swift`, `Package.resolved`.
 
 ### `Packages/StrandDesign`
 - Sources: `Palette`, `Typography`, `Motion`, `Components` (+ `SectionTabBar`, `strandFocusRing`, `SegmentedPillControl`), `StrandCard`, `StatePill`, `Widgets`, `TrendChart`, `ChartHover`, `Sparkline`, `Hypnogram`, `RecoveryRing`, `YearHeatStrip`, `ChargingIllustration`, `ZoneSpectrum`, `StrandDesign`. Tests: `PlaceholderTests` (25), `ZoneSpectrumTests`, `TrendChartGapTests`, `WidgetSnapshotTests` (env). `Package.swift`.
@@ -282,6 +286,8 @@ What is established, and how (older per-change rows are in git history and the m
 
 - **2026-11-27 v1.0.0 (Mac-only):** tagged on `release/1.0` (from `57e9d7b`, before the phone work), version 1.0.0 (3). Release build signed Apple Development; diagnostic strings absent; `make_dmg.sh` image verified (`hdiutil verify`), mounted: `NOOP.app` + `Applications` link, version 1.0.0, `codesign --verify --deep --strict` OK; Gatekeeper `spctl` rejects (not notarized, expected). GitHub release `v1.0.0` (latest) with `NOOP-1.0.0.dmg`; downloaded asset SHA-256 matches. Not done: the Release app launched (shares the container with the running Debug app; would compete for the strap).
 
+- **2026-11-27 #77 (Mac receipts):** migration v20 + `ingestSyncBatch` (insert path shared with `insert`); new `StrandSync` package. PASS WhoopStore 112 (+7 `SyncReceiptTests`: commit + identity, replay, digest mismatch, taken sequence, rollback before receipt, overlap with Mac rows, generation bump), StrandSync 10 (round trip, deterministic digest, tamper, version refused before decoding, undecoded-first order, lost-reply replay, raw-sink failure + retry, out-of-order/late, receipt mismatch, generation), StrandAnalytics 515, StrandImport 14, StrandSync iOS Simulator build, StrandPhone build, Mac app build + hosted 118 (8 env skips). Not done: no transport, no phone outbox, nothing wired into either app; the v20 migration runs on the live DB at the next Debug launch from `main` (two empty tables).
+
 Index check (run after file changes; expects no output):
 
 ```sh
@@ -292,6 +298,7 @@ git ls-files --cached --others --exclude-standard | grep -v -e '^AGENTS.md$' -e 
 
 | Date | Change | Checks / remaining |
 | --- | --- | --- |
+| 2026-11-27 | #77 Mac side: schema v20 (`syncReceipt`, `syncArchive`), `WhoopStore.ingestSyncBatch` (rows + receipt in one transaction), new `StrandSync` package (versioned envelope + digest, `MacArchiveIngestor`). Outbox = decoded rows (owner choice). | All package + hosted tests pass; not wired into the apps. |
 | 2026-11-27 | v1.0.0 Mac-only release (tag on `release/1.0`, pre-phone code): version 1.0.0 (3), drag-to-Applications DMG via `Tools/release/make_dmg.sh`; `main` bumped to 1.0.0 too. | DMG verified, mounted, asset hash checked; app not launched. |
 | 2026-11-27 | #76 macOS-only code inventory: BLE + Collect compile for iOS except the alarm-link types and one fixture reference; Mac shell pieces listed with their phone replacement. | Temporary iOS build, reverted; docs only. |
 | 2026-11-27 | #76 outbox budget measured: ~19 MB/day as decoded rows (+0.9 undecoded), ~11.5 MB/day as raw frames; ~600 MB for 30 days away. Not a blocker. | DB copy, docs only. |
@@ -299,4 +306,3 @@ git ls-files --cached --others --exclude-standard | grep -v -e '^AGENTS.md$' -e 
 | 2026-11-27 | Phone plan aligned to the owner's vision: iPhone = temporary collector + display of Mac scores (data deleted after Mac receipt); Mac = archive + all scoring. Issues #76–#81 and milestones rewritten. | Docs/issues only. |
 | 2026-11-27 | #76 slice: all shared packages build for iOS; iOS floor 17; StrandDesign arrow-key handling macOS-only. Owner chose free Apple ID provisioning (7-day installs) for the device trial. | iOS builds + macOS tests pass; no iOS app yet. |
 | 2026-11-27 | #49: functional age checked in the running app with the owner's real birth date, measured VO₂max and history (ready state, "<18", pace 0.8×). | DB copy + launch-argument profile; light 1180 pt only. |
-| 2026-11-27 | #84 closed by owner decision: step counter accepted as accurate (W01–W03, S01; W04 not run); Steps tile caption/spoken text drop "experimental". Walking & running keeps it; steps Trends and #49 steps stay off. W04/reset checks dropped from every backlog; functional-age message no longer says "not validated". | Hosted 118 + FunctionalAgeSnapshotTests pass; running app not checked. |
