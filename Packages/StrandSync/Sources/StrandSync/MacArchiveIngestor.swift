@@ -51,7 +51,7 @@ public struct MacArchiveIngestor {
         if !b.undecoded.isEmpty { try rawSink(b.undecoded, b) }
         let result = try await store.ingestSyncBatch(batchId: b.batchId, sourceId: b.sourceId, sequence: b.sequence,
                                                      digest: env.digest, deviceId: b.deviceId, streams: b.streams,
-                                                     now: now)
+                                                     rrSeq: b.rrSeq.isEmpty ? nil : b.rrSeq, now: now)
         switch result {
         case .committed(let row, _): return SyncReceipt(row, newlyArchived: true)
         case .duplicate(let row): return SyncReceipt(row, newlyArchived: false)
