@@ -93,7 +93,7 @@ struct LiveView: View {
                         }
                     }
                 }
-                logSection
+                if LaunchMode.diagnostics { logSection }
             }
             .padding(.top, NoopMetrics.gap)
         } label: {

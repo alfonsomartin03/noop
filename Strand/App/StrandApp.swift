@@ -6,7 +6,7 @@ import SwiftUI
 enum AppEntry {
     static func main() {
         _ = LaunchMode.started
-        if ProcessInfo.processInfo.environment["NOOP_TEST_HOST"] != nil {
+        if LaunchMode.diagnostics, ProcessInfo.processInfo.environment["NOOP_TEST_HOST"] != nil {
             NSApplication.shared.run()
         } else {
             StrandApp.main()
