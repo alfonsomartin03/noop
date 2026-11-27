@@ -1,6 +1,7 @@
 import SwiftUI
 import StrandDesign
 import WhoopStore
+import StrandSync
 
 /// Settings ▸ General: a strap hero (status, battery, actions), then labelled groups of rows — connection, battery
 /// alerts, profile, data, check-ins and about — in one reading column.
@@ -22,6 +23,7 @@ struct SettingsView: View {
                 batteryAlertsSection
                 ProfileCard(profile: profile)
                 dataSection
+                IPhoneSyncSection(sync: model.sync)
                 checkInSection
                 aboutSection
             }
@@ -333,6 +335,81 @@ private struct SettingsValue: View {
 private struct SettingsDivider: View {
     var body: some View {
         Rectangle().fill(StrandPalette.hairline).frame(height: 1)
+    }
+}
+
+// MARK: - iPhone sync (#79)
+
+/// Receiver switch, pairing and paired phones. The pairing sheet shows the code the phone must also show.
+private struct IPhoneSyncSection: View {
+    @ObservedObject var sync: MacSyncService
+    @State private var addresses: [String] = []
+
+    var body: some View {
+        SettingsSection(icon: "iphone", title: "iPhone sync",
+                        subtitle: "A paired iPhone can collect from your strap and hand the data to this Mac, which keeps it and scores it. Works on your local network only.",
+                        footer: "Data from the iPhone travels encrypted and only to phones you paired here. While the receiver is on, this Mac still collects from the strap itself.") {
+            SettingsRow(title: "Receive from iPhone", detail: detail) {
+                Toggle("", isOn: Binding(get: { sync.receiving }, set: { on in Task { await sync.setReceiving(on) } }))
+                    .labelsHidden().toggleStyle(.switch)
+            }
+            if sync.receiving {
+                SettingsDivider()
+                SettingsRow(title: "Pair an iPhone", detail: pairingDetail) {
+                    Button(sync.pairingOpenUntil == nil ? "Pair iPhone" : "Waiting…") { sync.openPairing() }
+                        .buttonStyle(.strandSecondary)
+                        .disabled(sync.pairingOpenUntil != nil)
+                }
+            }
+            ForEach(sync.phones, id: \.publicKey) { phone in
+                SettingsDivider()
+                SettingsRow(title: phone.name,
+                            detail: "Paired \(Date(timeIntervalSince1970: TimeInterval(phone.pairedAt)).formatted(date: .abbreviated, time: .omitted)) · key \(DeviceIdentity.fingerprint(phone.publicKey))") {
+                    Button("Forget") { sync.forget(phone) }.buttonStyle(.strandSecondary)
+                }
+            }
+        }
+        .onAppear { addresses = MacSyncService.localAddresses() }
+        .sheet(isPresented: Binding(get: { sync.pairingCode != nil }, set: { if !$0 { sync.answerPairing(false) } })) {
+            PairingCodeSheet(code: sync.pairingCode ?? "", answer: sync.answerPairing)
+        }
+    }
+
+    private var detail: String {
+        guard sync.receiving, let port = sync.port else { return sync.status }
+        let where_ = addresses.isEmpty ? "this Mac" : addresses.joined(separator: " or ")
+        var s = "On the iPhone, enter \(where_), port \(port)."
+        if let last = sync.lastUpload { s += " Last upload \(last.formatted(date: .omitted, time: .shortened))." }
+        return s
+    }
+
+    private var pairingDetail: String {
+        if let until = sync.pairingOpenUntil, until > Date() {
+            return "Open on the iPhone now and tap Pair. Open until \(until.formatted(date: .omitted, time: .shortened))."
+        }
+        return "Opens for two minutes, for one iPhone."
+    }
+}
+
+private struct PairingCodeSheet: View {
+    let code: String
+    let answer: (Bool) -> Void
+
+    var body: some View {
+        VStack(spacing: 18) {
+            Text("Pair this iPhone?").font(.system(size: 17, weight: .semibold))
+            Text("Check that the iPhone shows the same code.")
+                .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+            Text(code.isEmpty ? "------" : "\(code.prefix(3)) \(code.suffix(3))")
+                .font(.system(size: 40, weight: .semibold, design: .rounded).monospacedDigit())
+                .accessibilityLabel(code.map(String.init).joined(separator: " "))
+            HStack(spacing: 12) {
+                Button("Codes don't match") { answer(false) }.buttonStyle(.strandSecondary)
+                Button("Codes match") { answer(true) }.keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(28)
+        .frame(width: 360)
     }
 }
 

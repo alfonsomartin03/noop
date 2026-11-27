@@ -22,6 +22,8 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>NOOP connects directly to your WHOOP strap over Bluetooth to download its data, which it keeps on this iPhone only until your Mac has it.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>NOOP sends your strap data to your own Mac on this network and gets your scores back. Nothing goes to the internet.</string>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>UILaunchScreen</key>

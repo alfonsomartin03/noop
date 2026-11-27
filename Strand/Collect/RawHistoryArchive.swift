@@ -84,6 +84,21 @@ final class RawHistoryArchive {
         return text.utf8.count
     }
 
+    /// Durably append ready-made JSONL lines (undecoded history forwarded by the phone, #77). Same flush guarantee.
+    func appendLines(_ lines: [String], now: Date = Date()) throws {
+        guard !lines.isEmpty else { return }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let url = directory.appendingPathComponent("\(Self.day.string(from: now)).jsonl")
+        if !FileManager.default.fileExists(atPath: url.path) {
+            guard FileManager.default.createFile(atPath: url.path, contents: nil) else { throw CocoaError(.fileWriteUnknown) }
+        }
+        let h = try FileHandle(forWritingTo: url)
+        defer { try? h.close() }
+        try h.seekToEnd()
+        try h.write(contentsOf: Data(lines.map { $0.hasSuffix("\n") ? $0 : $0 + "\n" }.joined().utf8))
+        try h.synchronize()
+    }
+
     private static func json(_ s: String) -> String {
         (try? String(data: JSONEncoder().encode(s), encoding: .utf8)) ?? "\"\""
     }

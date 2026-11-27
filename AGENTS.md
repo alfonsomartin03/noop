@@ -67,6 +67,7 @@ Packages (Swift tools 5.9; declare macOS 13 / iOS 17; all five build for iOS (20
 - **Health:** functional-age hero (#49, experimental, `noop-functional-age-v1-groups`: one contributor per group — measured VO₂max ≤ 2 y old else steps (still excluded: needs complete days, not just counter accuracy), resting HR, sleep duration; birth date required; pace = mean of 8 weekly 30-day impacts, display-only because the 6-month projection lost to "no change" in replay; < 18 shows "<18"). Lab biological age stays unavailable. VO₂max card (`vo2-hr-ratio-v1`, unvalidated). Health Monitor (RR, SpO₂, RHR, HRV, skin-temp change vs causal personal ranges: 30-day lookback, ≥ 14 prior nights, never all-clear with missing/stale). HRV position (`PersonalRangePosition`: within 1 robust SD of median = typical). Stress Monitor = HR activation timeline, "not a stress score".
 - **Recovery detail:** HRV and skin temperature resolved **per field** (`Repository.fieldReading`), value/baseline/sparkline from that field's own source; Nightly maximum HRV (max quality-gated 5-min RMSSD over the NOOP main sleep, ≥ 6 windows; never scored).
 - **Alarms tab:** next-alarm hero (countdown, smart window, delivery pill, "I'm awake — skip" within 12 h before the deadline), editor, per-occurrence History with genuine NOOP stage timeline.
+- **iPhone sync (#79):** Settings ▸ General ▸ iPhone sync (`MacSyncService`, owned by `AppModel`): "Receive from iPhone" switch (off by default, `noop.sync.receiving`, restored at launch; listens on TCP 47800 only while on) shows this Mac's IPv4 addresses + port; "Pair iPhone" opens a 120-s one-attempt window; the pairing sheet shows the code ("Codes match" / "Codes don't match"); paired phones listed with key fingerprint and "Forget". Uploads go through `MacArchiveIngestor` (undecoded lines → `RawHistoryArchive.appendLines`) into the live store and fire the same re-scoring path as Bluetooth (`ble.onStoredDataChanged`). The Mac keeps collecting from the strap meanwhile (companion mode is #78). iPhone app (StrandDesign, same look as the Mac Overview): greeting + date, a sync strip (paired Mac, last sync, pending batches, Sync / Pair), the Mac's week strip (recovery dots, glowing selected day), then Recovery (ring, state word, HRV / resting HR chips), Sleep (hours asleep, stage bar, efficiency / restorative chips) and Strain (ring of 21, load word, workouts chip) cards for the chosen day, "Scored on your Mac …" footer; pull to refresh syncs. A gear opens Settings (Mac address/port, Pair with Mac with code alert, paired Mac + Forget, pending, Bluetooth check, version). Scores cached offline; no strap collection yet.
 - **Settings General:** strap hero (status pill, `StrapBatteryPanel`, Reconnect/Disconnect), grouped rows: Connection, Battery alerts, Profile (`ProfileCard`: age derived from optional birth date, measured VO₂max), Data (research capture, recalculate), Check-ins, About. Data = WHOOP import, comparison, backup/restore. Advanced = recovery diagnostics, metric explorer (only metrics with stored WHOOP-import data), live strap.
 - **Battery** (`BatteryPresentation`): low < 20 %, medium < 35 %, stale when disconnected or > 20 min; three facts (strap battery / charging pack / charging), each with source; "Charge" capsule only for a fresh low reading off the charger. `ChargingIllustration` draws the pack only while charging/full; brief sweep then still; no motion under Reduce Motion.
 - Not present: Apple Health import (removed from the code 2026-11-20; the empty `appleDaily` table stays in the schema), mobile app, cloud, coaching, numerical stress or biological-age scores.
@@ -117,7 +118,7 @@ Packages (Swift tools 5.9; declare macOS 13 / iOS 17; all five build for iOS (20
 
 ## 5 · Build, configuration, runtime switches
 
-- Sync transport needs, when wired in (not yet): Mac `com.apple.security.network.server` entitlement, phone `NSLocalNetworkUsageDescription`; Keychain service `com.noopapp.noop.sync`.
+- Sync: Mac entitlement `com.apple.security.network.server` (listener only while the user turns it on); phone `NSLocalNetworkUsageDescription`; Keychain service `com.noopapp.noop.sync` (fixture launches use `…sync.fixture`).
 - `StrandPhone` (iOS 17, `com.noopapp.noop.phone`, Bluetooth usage text only, no entitlements, store `OpenWhoop/phone-outbox.sqlite`); install with a free personal team (BUILD.md). Otherwise the phone sprint adds no setting or permission yet; proposed configuration is gated in `docs/sprints/PHONE_MAC_ARCHIVE.md`; future API gateways remain opt-in and out of sprint scope.
 
 - `project.yml` (XcodeGen) is canonical and regenerates `Info.plist` (version from `MARKETING_VERSION`/`CURRENT_PROJECT_VERSION`); `Strand.xcodeproj` is generated and ignored. macOS 13+, Swift 5 mode, minimal strict concurrency. BLEManager's main-actor delegate warnings are expected.
@@ -143,7 +144,7 @@ StrandAnalytics tests take ~3.5 min. Tools that open `WhoopStore` can migrate th
 | `LaunchMode.diagnostics` / `NOOP_DIAGNOSTICS` | True in Debug; Release opts in only with `SWIFT_ACTIVE_COMPILATION_CONDITIONS=NOOP_DIAGNOSTICS` (fixture timing). Gates every row below that is test/diagnostic |
 | env `NOOP_TEST_HOST` | Isolated test host (set by scheme; diagnostic builds) |
 | env `NOOP_FIXTURE_STORE` | DB **copy** path; CoreBluetooth off; prints launch timings (diagnostic builds) |
-| `-noop.fixture.tab trends\|health\|alarms\|settings`, `-noop.fixture.live YES`, `-noop.fixture.battery cycle\|charging`, `-noop.fixture.alarmHistory YES`, `-noop.fixture.alarmDetail YES`, `-noop.fixture.detail strain\|sleep\|recovery`, `-noop.fixture.day yyyy-MM-dd`, `-noop.fixture.scrollTo <view id>` (e.g. `strain-tiles`), `-noop.fixture.width <pt>` (≥ 1000, the window minimum), `-noop.fixture.appearance dark\|light` | Fixture-only launch options |
+| `-noop.fixture.tab trends\|health\|alarms\|settings`, `-noop.fixture.live YES`, `-noop.fixture.battery cycle\|charging`, `-noop.fixture.alarmHistory YES`, `-noop.fixture.alarmDetail YES`, `-noop.fixture.detail strain\|sleep\|recovery`, `-noop.fixture.day yyyy-MM-dd`, `-noop.fixture.scrollTo <view id>` (e.g. `strain-tiles`), `-noop.fixture.width <pt>` (≥ 1000, the window minimum), `-noop.fixture.appearance dark\|light`, `-noop.fixture.syncPair YES` (receiver on, 1-h pairing window, codes auto-accepted and printed as `[sync]` lines) | Fixture-only launch options |
 | `noop.onboarded`, `scoringVersionApplied` (5) | First-run done; applied scoring migration |
 | `noop.bluetoothChoice` | `undecided`/`allowed`/`declined` |
 | `noop.clock.autoResync`, `noop.clock.lastResyncAt` | Daily 5.0 strap-clock re-sync (default on); last attempt |
@@ -155,6 +156,7 @@ StrandAnalytics tests take ~3.5 min. Tools that open `WhoopStore` can migrate th
 | `notify.batteryLow/batteryFull/batteryAlertState` | `BatteryMonitor` |
 | `noop.trends.segment`, `noop.settings.segment`, `noop.live.detailsOpen`, `noop.highlights.range`, `noop.highlights.source` | UI state |
 | `checkin.morning.enabled/prompts/reminder`, `checkin.evening.*`, `checkin.inviteDismissed` | Check-ins |
+| `noop.sync.receiving` (Mac); `noop.sync.macHost`, `noop.sync.macPort` (iPhone) | iPhone sync receiver switch; the phone's Mac address |
 
 ## 6 · Folder boundaries
 
@@ -196,7 +198,10 @@ Format: `file` — purpose. Tests list `Suite(methods)`.
 - `SettingsView.swift`, `AlarmsView.swift`, `AlarmHistoryView.swift`, `DataSourcesView.swift`, `LiveView.swift`, `LiveStatusView.swift`, `PairingResetNotice.swift`, `MetricExplorerView.swift`, `RecoveryDiagnosticsView.swift`, `RecentCyclesCard.swift`.
 
 ### `StrandPhone` (iOS shell, #76)
-- `PhoneApp.swift` — app entry, checks list (version, schema, store open, Bluetooth on tap; never scans). `Info.plist` — generated by XcodeGen.
+- `PhoneApp.swift` — app entry, `PhoneSyncModel` (Mac address, pairing, sync now, cached scores), `PhoneHomeView` (Overview-style score cards), `PhoneWeekStrip`, `PhoneSettingsView`; Bluetooth check on tap; never scans. `Info.plist` — generated by XcodeGen.
+
+### `Strand/Sync`
+- `MacSyncService.swift` — iPhone sync receiver switch, pairing window + code sheet state, paired phones, local IPv4 addresses (#79).
 
 ### `Strand/Resources`
 - `Info.plist`, `Strand.entitlements`, `Assets.xcassets/` (`Contents.json`, `AppIcon.appiconset/Contents.json` + icons).
@@ -295,6 +300,10 @@ What is established, and how (older per-change rows are in git history and the m
 
 - **2026-11-27 #79 (scores back):** migration v22 + `SummaryStore` + `.summaries` record. PASS WhoopStore 128 (+6 `SummaryStoreTests`: all days with missing values absent, only changed days re-revisioned, other sources not sent, newest revision wins on the phone, cache survives reopen, removed day sent once and hidden), StrandSync 33 (+4: scores after Mac scoring then only changes, cached scores kept when the Mac is gone, unpaired phone gets none, 450 days across pages), StrandImport 14, StrandAnalytics 515, StrandSync iOS build, StrandPhone build, Mac app + hosted 118 (8 env skips). Not done: phone display, app wiring, comparison against the Mac's own screens on real data.
 
+- **2026-11-27 #79 wired into the apps:** Mac Settings ▸ iPhone sync + `MacSyncService`; iPhone pairing/sync/scores screen. End to end on this Mac: Debug app on a SQLite-backup copy with `-noop.fixture.syncPair YES` listening on 47800; iPhone 18 Pro Simulator app at 127.0.0.1 paired (both showed 645525), "Sync now" pulled 40 days; 2026-11-26/27 shown as 94% / 75%, 8h 20m / 9h 0m = the copy's 94.4 / 74.9 and 501 / 540 min. First attempt failed because the 120-s window had closed before the simulator was ready (fixture window now 1 h). Copy and fixture Keychain items deleted afterwards. PASS StrandSync 33, Mac app + hosted 118 (8 env skips), StrandPhone build, Release build (no fixture/`[sync]` strings). Not done: the real Mac app's Settings section and sheet looked at by eye, a real iPhone over Wi-Fi, macOS firewall prompt behaviour, uploading real collected data (the phone does not collect yet).
+
+- **2026-11-27 phone score look:** iPhone home rebuilt with StrandDesign to mirror the Mac Overview; looked at in the iPhone 18 Pro Simulator with the 40 cached days: light and dark, 11-27 (75 % Primed, 9h 0m, 2.0 Light load) and 11-25 (18 % Depleted) via the week strip. StrandPhone build passes. Not done: VoiceOver, Dynamic Type, smaller phones.
+
 Index check (run after file changes; expects no output):
 
 ```sh
@@ -305,6 +314,7 @@ git ls-files --cached --others --exclude-standard | grep -v -e '^AGENTS.md$' -e 
 
 | Date | Change | Checks / remaining |
 | --- | --- | --- |
+| 2026-11-27 | #79 wired in: Mac Settings ▸ iPhone sync (receiver switch, pairing sheet with code, paired phones; network-server entitlement), iPhone pairing / Sync now / cached scores; uploads re-score like Bluetooth data. | Simulator ↔ Mac fixture pairing + 40 days of scores matched the DB copy; no real iPhone yet. |
 | 2026-11-27 | #79 scores back: schema v22; Mac serves revisioned daily summaries (NOOP scores + coverage, removed days flagged), phone caches newest per day for offline display; `PhoneSyncClient.refreshScores`. | Package + hosted tests pass; not shown in any UI yet. |
 | 2026-11-27 | #79 transport in `StrandSync`: commit-first X25519 handshake + ChaChaPoly session, numeric-comparison pairing (6-digit code confirmed on both devices), Keychain trust, Mac TCP listener + phone client. Not wired into the apps. | StrandSync 29 incl. loopback TCP; no two-device run. |
 | 2026-11-27 | #77 phone side: schema v21 outbox (row ranges, persisted sequence, undecoded lines), `PhoneOutbox` sync pass + `SyncTransport`; batches carry R–R within-second positions (fixes a merge of identical split beats). | Package + hosted tests pass; no real transport yet. |
@@ -312,4 +322,3 @@ git ls-files --cached --others --exclude-standard | grep -v -e '^AGENTS.md$' -e 
 | 2026-11-27 | v1.0.0 Mac-only release (tag on `release/1.0`, pre-phone code): version 1.0.0 (3), drag-to-Applications DMG via `Tools/release/make_dmg.sh`; `main` bumped to 1.0.0 too. | DMG verified, mounted, asset hash checked; app not launched. |
 | 2026-11-27 | #76 macOS-only code inventory: BLE + Collect compile for iOS except the alarm-link types and one fixture reference; Mac shell pieces listed with their phone replacement. | Temporary iOS build, reverted; docs only. |
 | 2026-11-27 | #76 outbox budget measured: ~19 MB/day as decoded rows (+0.9 undecoded), ~11.5 MB/day as raw frames; ~600 MB for 30 days away. Not a blocker. | DB copy, docs only. |
-| 2026-11-27 | #76: iOS shell target `StrandPhone` (links WhoopProtocol/WhoopStore/StrandDesign, opens an empty store, Bluetooth check on tap, no strap code); BUILD.md install steps for a free Apple ID. | Simulator run + device compile; not installed on the iPhone yet. |

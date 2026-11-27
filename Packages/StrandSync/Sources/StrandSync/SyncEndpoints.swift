@@ -18,6 +18,10 @@ public final class MacSyncEndpoint {
     /// Shows the code on the Mac and returns the user's answer.
     let confirmPairing: (String) async -> Bool
     private var window: PairingWindow?
+    /// Called after each newly archived batch (not replays), e.g. to re-score and redraw.
+    public var onUpload: ((SyncReceipt) -> Void)?
+    /// Called when a phone is pinned.
+    public var onPaired: ((TrustedPeer) -> Void)?
     private let lock = NSLock()
 
     public static let pageSize = 400
@@ -61,6 +65,7 @@ public final class MacSyncEndpoint {
                 do {
                     let receipt = try await ingestor.ingest(body)
                     try await session.send(.upload, try JSONEncoder().encode(receipt))
+                    if receipt.newlyArchived { onUpload?(receipt) }
                 } catch {
                     try? await session.send(.error, Data("upload refused: \(error)".utf8))
                 }
@@ -86,9 +91,11 @@ public final class MacSyncEndpoint {
         guard let (type, body) = try? await session.receive(), type == .pairConfirm else { return false }
         let name = String(decoding: body, as: UTF8.self)
         do {
-            try trust.pin(TrustedPeer(publicKey: session.peerKey, name: name.isEmpty ? "iPhone" : name,
-                                      pairedAt: Int(Date().timeIntervalSince1970)))
+            let peer = TrustedPeer(publicKey: session.peerKey, name: name.isEmpty ? "iPhone" : name,
+                                   pairedAt: Int(Date().timeIntervalSince1970))
+            try trust.pin(peer)
             try await session.send(.pairConfirm, Data(macName.utf8))
+            onPaired?(peer)
             return true
         } catch {
             try? trust.revoke(publicKey: session.peerKey)
