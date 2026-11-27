@@ -119,6 +119,7 @@ struct PhoneHomeView: View {
     @State private var selectedDay: String?
     @State private var showSettings = false
     @State private var confirmCollect = false
+    @State private var showHistory = false
 
     private var byDay: [String: DailySummary] { Dictionary(sync.scores.map { ($0.day, $0) }, uniquingKeysWith: { a, _ in a }) }
     private var activeDay: String { selectedDay ?? sync.scores.first?.day ?? PhoneWeekStrip.string(Date()) }
@@ -131,6 +132,13 @@ struct PhoneHomeView: View {
                 syncStrip
                 strapStrip
                 PhoneWeekStrip(activeDay: activeDay, byDay: byDay) { selectedDay = $0 }
+                if !sync.scores.isEmpty {
+                    Button { showHistory = true } label: {
+                        Label("History", systemImage: "calendar").font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(StrandPalette.accentInk)
+                            .frame(maxWidth: .infinity, alignment: .trailing)
+                    }
+                }
                 if sync.scores.isEmpty {
                     StrandNotice(symbol: "sparkles", title: "No scores yet",
                                  message: sync.macs.isEmpty ? "Pair with your Mac to see the scores it calculates."
@@ -152,13 +160,11 @@ struct PhoneHomeView: View {
         .refreshable { if !sync.macs.isEmpty { await sync.syncNow() } }
         .task { await sync.load() }
         .sheet(isPresented: $showSettings) { PhoneSettingsView().environmentObject(sync) }
-        .alert("Pair with this Mac?", isPresented: Binding(get: { sync.pairingCode != nil },
-                                                          set: { if !$0 { sync.answer(false) } })) {
-            Button("Codes match") { sync.answer(true) }
-            Button("Don't match", role: .cancel) { sync.answer(false) }
-        } message: {
-            Text("Check that your Mac shows \(sync.pairingCode ?? "").")
+        .sheet(isPresented: $showHistory) {
+            PhoneHistoryView(scores: sync.scores) { day in selectedDay = day; showHistory = false }
         }
+        // The pairing alert lives only in Settings, where pairing starts: two alerts on one binding closed the sheet
+        // and declined the pairing.
     }
 
     // MARK: header + sync
@@ -355,22 +361,16 @@ struct PhoneWeekStrip: View {
     let byDay: [String: DailySummary]
     let pick: (String) -> Void
 
+    // Day arithmetic is shared and DST-tested (`ScoreHistory`); days are the Mac's labels, never re-zoned.
     private static let cal: Calendar = { var c = Calendar(identifier: .gregorian); c.firstWeekday = 2; return c }()
-    private static let parser: DateFormatter = {
-        let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX"); f.dateFormat = "yyyy-MM-dd"; return f
-    }()
-    static func date(_ day: String) -> Date? { parser.date(from: day) }
-    static func string(_ d: Date) -> String { parser.string(from: d) }
+    static func date(_ day: String) -> Date? { ScoreHistory.noon(day, calendar: cal) }
+    static func string(_ d: Date) -> String { ScoreHistory.day(d, calendar: cal) }
 
-    private var week: [String] {
-        guard let d = Self.date(activeDay), let start = Self.cal.dateInterval(of: .weekOfYear, for: d)?.start else { return [] }
-        return (0..<7).compactMap { Self.cal.date(byAdding: .day, value: $0, to: start) }.map(Self.string)
-    }
+    private var week: [String] { ScoreHistory.week(containing: activeDay, calendar: Self.cal) }
     private var today: String { Self.string(Date()) }
 
     private func shift(_ delta: Int) {
-        guard let d = Self.date(activeDay), let moved = Self.cal.date(byAdding: .day, value: 7 * delta, to: d) else { return }
-        let t = Self.string(moved)
+        guard let t = ScoreHistory.shift(activeDay, by: 7 * delta, calendar: Self.cal) else { return }
         pick(t > today ? today : t)
     }
 
