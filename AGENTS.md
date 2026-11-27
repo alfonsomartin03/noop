@@ -34,6 +34,7 @@ AppEntry (NOOP_TEST_HOST? bare host) -> StrandApp -> AppModel (one instance; win
 
 | Concern | Start in | Checks |
 | --- | --- | --- |
+| 2026-11-27 | #76: iOS shell target `StrandPhone` (links WhoopProtocol/WhoopStore/StrandDesign, opens an empty store, Bluetooth check on tap, no strap code); BUILD.md install steps for a free Apple ID. | Simulator run + device compile; not installed on the iPhone yet. |
 | 2026-11-27 | Phone plan aligned to the owner's vision: iPhone = temporary collector + display of Mac scores (data deleted after Mac receipt); Mac = archive + all scoring. Issues #76–#81 and milestones rewritten. | Docs/issues only. |
 | 2026-11-27 | #76 slice: all shared packages build for iOS; iOS floor 17; StrandDesign arrow-key handling macOS-only. Owner chose free Apple ID provisioning (7-day installs) for the device trial. | iOS builds + macOS tests pass; no iOS app yet. |
 | 2026-11-27 | #49: functional age checked in the running app with the owner's real birth date, measured VO₂max and history (ready state, "<18", pace 0.8×). | DB copy + launch-argument profile; light 1180 pt only. |
@@ -51,7 +52,7 @@ AppEntry (NOOP_TEST_HOST? bare host) -> StrandApp -> AppModel (one instance; win
 | Alarms | `Strand/Alarm/AlarmController.swift`, `AlarmsView.swift`, `AlarmHistoryView.swift`; analytics `AlarmEngine/SmartWake/AlarmDelivery/AlarmHistory.swift` | `AlarmControllerTests` (fake link) + analytics alarm suites |
 | Shared UI | `Packages/StrandDesign/Sources/StrandDesign/` | StrandDesign tests / snapshots |
 
-Packages (Swift tools 5.9; declare macOS 13 / iOS 17; all five build for iOS (2026-11-27, #76); **only a macOS app target exists**): `WhoopProtocol` (no deps; schema JSON) · `WhoopStore` → WhoopProtocol, GRDB (≥6.0.0, resolved 6.29.3) · `StrandAnalytics` → WhoopProtocol, WhoopStore · `StrandImport` → WhoopProtocol, WhoopStore, ZIPFoundation (≥0.9.0, resolved 0.9.20) · `StrandDesign` (SwiftUI). Tools: `ble_probe` → WhoopProtocol; `perf_probe`, `strain_replay` → analytics + store + protocol; Python is stdlib only.
+Packages (Swift tools 5.9; declare macOS 13 / iOS 17; all five build for iOS (2026-11-27, #76); app targets: macOS `Strand` and an iOS shell `StrandPhone` (#76, no strap code)): `WhoopProtocol` (no deps; schema JSON) · `WhoopStore` → WhoopProtocol, GRDB (≥6.0.0, resolved 6.29.3) · `StrandAnalytics` → WhoopProtocol, WhoopStore · `StrandImport` → WhoopProtocol, WhoopStore, ZIPFoundation (≥0.9.0, resolved 0.9.20) · `StrandDesign` (SwiftUI). Tools: `ble_probe` → WhoopProtocol; `perf_probe`, `strain_replay` → analytics + store + protocol; Python is stdlib only.
 
 ## 3 · Current behavior (verified against source 2026-11-20)
 
@@ -119,7 +120,7 @@ Packages (Swift tools 5.9; declare macOS 13 / iOS 17; all five build for iOS (20
 
 ## 5 · Build, configuration, runtime switches
 
-- Phone/archive sprint adds no current target, setting or permission; proposed configuration is gated in `docs/sprints/PHONE_MAC_ARCHIVE.md`; future API gateways remain opt-in and out of sprint scope.
+- `StrandPhone` (iOS 17, `com.noopapp.noop.phone`, Bluetooth usage text only, no entitlements, store `OpenWhoop/phone-outbox.sqlite`); install with a free personal team (BUILD.md). Otherwise the phone sprint adds no setting or permission yet; proposed configuration is gated in `docs/sprints/PHONE_MAC_ARCHIVE.md`; future API gateways remain opt-in and out of sprint scope.
 
 - `project.yml` (XcodeGen) is canonical and regenerates `Info.plist` (version from `MARKETING_VERSION`/`CURRENT_PROJECT_VERSION`); `Strand.xcodeproj` is generated and ignored. macOS 13+, Swift 5 mode, minimal strict concurrency. BLEManager's main-actor delegate warnings are expected.
 - Entitlements: sandbox, Bluetooth, user-selected read/write. `Signing.xcconfig` optionally includes ignored `Local.xcconfig` (template `Local.xcconfig.example`).
@@ -132,6 +133,7 @@ swift test --package-path Packages/<WhoopProtocol|WhoopStore|StrandAnalytics|Str
 python3 -m unittest discover -s Tools/whoop_re -p 'test_*.py'
 python3 -m unittest discover -s Tools/reverse_engineer -p 'test_*.py'
 xcodebuild -project Strand.xcodeproj -scheme Strand -destination 'platform=macOS' -derivedDataPath /tmp/noop-derived CODE_SIGNING_ALLOWED=NO build
+xcodebuild -project Strand.xcodeproj -scheme StrandPhone -destination 'platform=iOS Simulator,name=iPhone 18 Pro' -derivedDataPath /tmp/noop-phone build   # iPhone shell
 xcodebuild -project Strand.xcodeproj -scheme Strand -destination 'platform=macOS' -derivedDataPath /tmp/noop-derived CODE_SIGN_IDENTITY=- CODE_SIGNING_REQUIRED=NO test
 NOOP_FIXTURE_STORE=<db copy> /tmp/noop-derived/Build/Products/Debug/NOOP.app/Contents/MacOS/NOOP   # prints [perf] store open / launch-to-content / refresh
 ```
@@ -194,6 +196,9 @@ Format: `file` — purpose. Tests list `Suite(methods)`.
 - `HealthPageView.swift` (Health tab), `ActivationViews.swift` (activation palette/load, `VO2MaxCard`), `HealthView.swift` (HR/vitals detail).
 - `CheckInViews.swift`, `ScreenScaffold.swift` (+ `ComingSoon` empty state), `SleepView.swift`, `SleepSessionsCard.swift` (+ `AdjustSleepSheet`), `SleepNeedCard.swift`, `WorkoutsView.swift`, `WorkoutDetailView.swift`.
 - `SettingsView.swift`, `AlarmsView.swift`, `AlarmHistoryView.swift`, `DataSourcesView.swift`, `LiveView.swift`, `LiveStatusView.swift`, `PairingResetNotice.swift`, `MetricExplorerView.swift`, `RecoveryDiagnosticsView.swift`, `RecentCyclesCard.swift`.
+
+### `StrandPhone` (iOS shell, #76)
+- `PhoneApp.swift` — app entry, checks list (version, schema, store open, Bluetooth on tap; never scans). `Info.plist` — generated by XcodeGen.
 
 ### `Strand/Resources`
 - `Info.plist`, `Strand.entitlements`, `Assets.xcassets/` (`Contents.json`, `AppIcon.appiconset/Contents.json` + icons).
@@ -272,6 +277,8 @@ What is established, and how (older per-change rows are in git history and the m
 
 - **2026-11-27 phone vision:** PHONE_MAC_ARCHIVE rewritten to the owner's vision (phone collects, holds until Mac receipt, displays returned scores; Mac archives and scores); SPRINT_3, PROJECT_PROGRESS, docs README aligned; issues #76–#81 and milestones 7/8 updated to match. Docs and GitHub only; no tests run.
 
+- **2026-11-27 #76 iPhone shell:** `StrandPhone` target builds for iPhone 18 Pro Simulator and generic iOS device (unsigned); ran in the simulator: version 0.2.0 (2), schema bundled, store "Open, schema v19", Bluetooth "Unsupported" (simulator has none). Mac app build + hosted 118 (8 env skips) pass. Not done: install on the owner's iPhone (no device connected), real Bluetooth state, 7-day expiry observed.
+
 Index check (run after file changes; expects no output):
 
 ```sh
@@ -285,5 +292,4 @@ git ls-files --cached --others --exclude-standard | grep -v -e '^AGENTS.md$' -e 
 | 2026-11-27 | #84 closed by owner decision: step counter accepted as accurate (W01–W03, S01; W04 not run); Steps tile caption/spoken text drop "experimental". Walking & running keeps it; steps Trends and #49 steps stay off. W04/reset checks dropped from every backlog; functional-age message no longer says "not validated". | Hosted 118 + FunctionalAgeSnapshotTests pass; running app not checked. |
 | 2026-11-27 | #86 closed: activity tiles checked in the running app in dark mode and at the 1000-pt window minimum (fixture `width`/`appearance` options added). | Running-app captures on a DB copy; VoiceOver by ear dropped. |
 | 2026-11-27 | v0.2.0 pre-release: sleep fragments v2 (night split into two near-miss blocks no longer lost); Release build compiles out test/diagnostic paths (`LaunchMode.diagnostics`); version 0.2.0 (2); BUILD.md release section. | Analytics 515 + hosted 118 pass; DB-copy re-score; Release app not run against the strap. |
-| 2026-11-26 | #86 partial: activity/steps tile renders (3 states × 4 width/scheme), VoiceOver spoken text for both tiles, 30-min sync grace before "≥"; fixture options to open a detail page on a day and scroll to a section; tiles checked in the running app on a DB copy. | Hosted 118 pass; VoiceOver by ear dropped by owner. |
 | 2026-11-26 | #83: Walking & running tile in Strain detail with synced coverage and lower-bound labelling (`ActivityCoverage`); steps tile keeps only count caveats. | Package + hosted tests pass; not looked at in the app (#86). |

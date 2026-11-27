@@ -62,7 +62,7 @@ Rules:
 ### 1. Feasibility, install and outbox budget (#76)
 
 - ~~Build the shared packages for iOS~~ (done 2026-11-27).
-- Add a minimal iOS target and install it on the owner's iPhone with a free personal team; record the 7-day re-signing and any capability limits (Bluetooth, local network).
+- Add a minimal iOS target (*done 2026-11-27: `StrandPhone`, runs in the simulator*) and install it on the owner's iPhone with a free personal team; record the 7-day re-signing and any capability limits (Bluetooth, local network).
 - Measure outbox growth per day by data class on a SQLite-backup copy, including mandatory undecoded history, so we know how long the phone can hold data while the Mac is away.
 - Inventory the macOS-only code (AppKit, menu bar, file panels, notifications, CoreBluetooth lifecycle) the phone must replace.
 - Test foreground pairing and history download on hardware, plus lock and relaunch. Switching the strap to the phone is an explicit, owner-coordinated step.
