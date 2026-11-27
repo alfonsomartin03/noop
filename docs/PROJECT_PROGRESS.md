@@ -56,7 +56,7 @@ The strap-research program ([issue #25](https://github.com/alfonsomartin03/noop/
 
 ## Planned sprint
 
-[The iPhone collection and local Mac archive sprint](sprints/PHONE_MAC_ARCHIVE.md) outlines phone-only strap pairing, direct local sync, compact phone history, safe archival and on-demand detail. It is planning only; no iOS target, sync or pruning has been implemented. Installation feasibility and measured storage/scoring requirements are the first gates.
+[The iPhone collection and local Mac archive sprint](sprints/PHONE_MAC_ARCHIVE.md) makes the iPhone a temporary collector and display: it downloads from the strap, holds data until the Mac confirms receipt, then deletes it, and shows the scores the Mac sends back. The Mac keeps everything and does all scoring. Planning only: the shared packages build for iOS, but there is no iOS app, sync or phone cleanup yet. Installation and the outbox storage budget are the first gates.
 
 ## How to read project claims
 

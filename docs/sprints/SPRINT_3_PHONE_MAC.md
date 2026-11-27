@@ -19,6 +19,6 @@ The upload receipt means the Mac has saved the data. Analysis can finish later o
 
 ## Scope and release decision
 
-Sprint 3 narrows the November 21 archive proposal and issue #78 by assigning all scoring to the Mac. Phone scoring, background guarantees, phone alarms, multi-year compact browsing, pruning (#80–81), discovery convenience and third-party access (#82) are outside this first release. The existing plan remains the reference for retention, backup, recovery and later history browsing. [Archive work packages and GitHub links](PHONE_MAC_ARCHIVE.md)
+All scoring stays on the Mac; the phone is a temporary collector and a display (owner vision, 2026-11-27). Background guarantees, phone alarms, phone score history (#80), deleting phone data after receipt (#81), discovery convenience and third-party access (#82) come after this first release. The plan below is the reference for the outbox, receipts, deletion and recovery. [Archive work packages and GitHub links](PHONE_MAC_ARCHIVE.md)
 
 Exit on one demonstrated hardware cycle: collect offline on iPhone, deliver locally after reconnection, analyze on Mac, display the result on iPhone, then disconnect and reopen the cached result. Record transfer counts, retry behavior, ownership handoff and installation constraints without private readings. A simulator round trip establishes protocol behavior only. If personal installation or foreground BLE collection fails, retain the Mac collector and document the exact blocker before switching the owner's strap.
