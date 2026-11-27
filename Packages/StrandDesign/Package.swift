@@ -3,7 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "StrandDesign",
-    platforms: [.macOS(.v13), .iOS(.v16)],
+    platforms: [.macOS(.v13), .iOS(.v17)],
     products: [.library(name: "StrandDesign", targets: ["StrandDesign"])],
     dependencies: [],
     targets: [

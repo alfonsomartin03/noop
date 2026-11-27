@@ -68,7 +68,7 @@ Proposed paths above do not exist yet. Package platform declarations alone do no
 
 ### 1. Feasibility and storage budget
 
-- Build existing shared packages for iOS; inventory AppKit, notification, Bluetooth, file-access and lifecycle coupling before extraction.
+- Build existing shared packages for iOS; inventory AppKit, notification, Bluetooth, file-access and lifecycle coupling before extraction. *2026-11-27: all five packages build for iOS (floor iOS 17); coupling inventory not yet written. Installation: free Apple ID personal team (7-day re-signing), owner choice.*
 - Validate personal device installation under the no-extra-cost requirement. Document actual maintenance needed, not a promise of permanent free installation.
 - Measure bytes per day by data class using synthetic fixtures and, only when available, a SQLite-backup copy of representative data. Estimate 30 days of detail, one year of compact history, transfer peak space and archive growth; record measurements without private health content.
 - Audit analytics lookbacks, late-arriving records, cross-midnight sleep, corrections and version rescoring. Decide the minimum safe retention window and baseline state.
