@@ -15,10 +15,19 @@ enum StorePaths {
 
 /// Developer launch options, read once from the environment. See docs/BUILD.md ("Fixture launch").
 enum LaunchMode {
+    /// Testing and diagnostic paths (test host, fixture launches, connection log, unified-log lines, ops counters,
+    /// live R–R evidence, raw and research capture) exist only in Debug builds; a Release build compiles them out unless
+    /// built with `SWIFT_ACTIVE_COMPILATION_CONDITIONS=NOOP_DIAGNOSTICS` (Release-speed fixture timings, docs/BUILD.md).
+    #if DEBUG || NOOP_DIAGNOSTICS
+    static let diagnostics = true
+    #else
+    static let diagnostics = false
+    #endif
     /// `NOOP_FIXTURE_STORE=<path to a database COPY>` opens that file instead of the live store and keeps Bluetooth off,
     /// so screens can be inspected and timed without touching the strap. Opening a store can migrate it: never point
-    /// this at the live database.
-    static let fixtureStore: String? = ProcessInfo.processInfo.environment["NOOP_FIXTURE_STORE"].flatMap { $0.isEmpty ? nil : $0 }
+    /// this at the live database. Diagnostic builds only.
+    static let fixtureStore: String? = diagnostics
+        ? ProcessInfo.processInfo.environment["NOOP_FIXTURE_STORE"].flatMap { $0.isEmpty ? nil : $0 } : nil
     /// False in a fixture launch: no CoreBluetooth manager is created, so nothing scans, connects or sends commands.
     static var bluetoothEnabled: Bool { fixtureStore == nil }
     /// Process start, for the launch-to-content timing a fixture launch prints.
