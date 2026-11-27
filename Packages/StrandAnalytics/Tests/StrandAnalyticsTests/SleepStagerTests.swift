@@ -480,6 +480,58 @@ final class SleepStagerTests: XCTestCase {
         XCTAssertTrue(SleepStager.detectSleep(hr: short.hr, gravity: short.grav).isEmpty)
     }
 
+    // MARK: near-miss fragments (sleep-core-fragments-v2)
+
+    /// Shape of the 2026-11-27 night: a lighter first block (quiet, HR only slightly below waking) and a longer, deeper
+    /// but more restless second block, 20 min apart. Each block misses ONE strict bar; the joined night passes both.
+    private func nearMissNight(firstHR: Int = 79, secondHR: Int = 66, secondMovingEvery: Int = 6)
+        -> (hr: [HRSample], grav: [GravitySample], a: (Int, Int), b: (Int, Int)) {
+        let bed = Int(Calendar.current.date(from: DateComponents(year: 2021, month: 7, day: 1, hour: 23))!.timeIntervalSince1970)
+        func still(_ start: Int, _ min: Int, movingEvery: Int) -> [GravitySample] {
+            (0..<(min * 60)).map { GravitySample(ts: start + $0, x: ($0 % (movingEvery * 60) == 30) ? 0.05 : 0, y: 0, z: 1.0) }
+        }
+        let evening = bed - 4 * 3600
+        var grav = activeGravity(start: evening, durationS: 4 * 3600), hr = hrStream(start: evening, durationS: 4 * 3600, bpm: 85)
+        let aEnd = bed + 120 * 60
+        grav += still(bed, 120, movingEvery: 20); hr += hrStream(start: bed, durationS: 120 * 60, bpm: firstHR)
+        grav += activeGravity(start: aEnd, durationS: 20 * 60); hr += hrStream(start: aEnd, durationS: 20 * 60, bpm: 85)
+        let bStart = aEnd + 20 * 60, bEnd = bStart + 300 * 60
+        grav += still(bStart, 300, movingEvery: secondMovingEvery); hr += hrStream(start: bStart, durationS: 300 * 60, bpm: secondHR)
+        grav += activeGravity(start: bEnd, durationS: 2 * 3600); hr += hrStream(start: bEnd, durationS: 2 * 3600, bpm: 85)
+        return (hr, grav, (bed, aEnd), (bStart, bEnd))
+    }
+
+    func testNearMissFragmentsEachFailOneStrictBar() {
+        // Fixture guard: block A fails only the HR dip, block B only the quiet fraction, both clear the lenient bars.
+        let n = nearMissNight()
+        let grav = n.grav.sorted { $0.ts < $1.ts }
+        let grid = SleepStager.buildMinuteGrid(grav, SleepStager.gravityDeltas(grav))
+        let qa = grid.quietFraction(n.a.0, n.a.1)!, qb = grid.quietFraction(n.b.0, n.b.1)!
+        XCTAssertGreaterThanOrEqual(qa, SleepStager.mainMinQuietFrac)
+        XCTAssertLessThan(qb, SleepStager.mainMinQuietFrac)
+        XCTAssertGreaterThanOrEqual(qb, SleepStager.fragmentMinQuietFrac)
+        let dipA = 1 - 79.0 / 85.0
+        XCTAssertLessThan(dipA, SleepStager.mainMinHRDip)
+        XCTAssertGreaterThanOrEqual(dipA, SleepStager.fragmentMinHRDip)
+    }
+
+    func testNearMissFragmentsJoinIntoMainSleep() throws {
+        // Reported 2026-11-27: neither block cleared the strict bars alone, so the night (and recovery) was lost.
+        let n = nearMissNight()
+        let main = try XCTUnwrap(SleepStager.detectSleep(hr: n.hr, gravity: n.grav).first { $0.kind == .main })
+        XCTAssertLessThanOrEqual(main.start, n.a.0 + 15 * 60)
+        XCTAssertGreaterThanOrEqual(main.end, n.b.1 - 15 * 60)
+    }
+
+    func testLenientFragmentsAloneAreNotSleep() {
+        // Lenient bars only admit fragments: a night made only of blocks below the strict quiet bar stays rejected.
+        let n = nearMissNight(firstHR: 66, secondHR: 66, secondMovingEvery: 6)
+        let restless = n.grav.map { g -> GravitySample in
+            (g.ts >= n.a.0 && g.ts < n.a.1 && (g.ts - n.a.0) % 360 == 30) ? GravitySample(ts: g.ts, x: 0.05, y: 0, z: 1.0) : g
+        }
+        XCTAssertTrue(SleepStager.detectSleep(hr: n.hr, gravity: restless).filter { $0.kind == .main }.isEmpty)
+    }
+
     func testFragmentAcceptanceIsPartOfTheAlgorithmKey() {
         XCTAssertTrue(IncrementalScorer.algorithmKey(scoringVersion: 5, generation: 0).contains(SleepStager.fragmentQuietVersion))
     }
