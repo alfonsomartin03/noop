@@ -34,6 +34,7 @@ AppEntry (NOOP_TEST_HOST? bare host) -> StrandApp -> AppModel (one instance; win
 
 | Concern | Start in | Checks |
 | --- | --- | --- |
+| 2026-11-27 | Phone plan aligned to the owner's vision: iPhone = temporary collector + display of Mac scores (data deleted after Mac receipt); Mac = archive + all scoring. Issues #76–#81 and milestones rewritten. | Docs/issues only. |
 | 2026-11-27 | #76 slice: all shared packages build for iOS; iOS floor 17; StrandDesign arrow-key handling macOS-only. Owner chose free Apple ID provisioning (7-day installs) for the device trial. | iOS builds + macOS tests pass; no iOS app yet. |
 | 2026-11-27 | #49: functional age checked in the running app with the owner's real birth date, measured VO₂max and history (ready state, "<18", pace 0.8×). | DB copy + launch-argument profile; light 1180 pt only. |
 | Lifecycle, scheduling, launch | `Strand/App/AppModel.swift`, `Strand/Data/Repository.swift` | hosted `StrandTests`; fixture launch `[perf]` lines |
@@ -56,8 +57,8 @@ Packages (Swift tools 5.9; declare macOS 13 / iOS 17; all five build for iOS (20
 
 ### App and UI
 
-- Sprint 2 plans coverage-aware activity detail. Sprint 3 assigns collection/display to iPhone and storage/scoring to Mac, superseding phone scoring for the initial release.
-- Planned only: `docs/sprints/PHONE_MAC_ARCHIVE.md` outlines an iPhone collector, local Mac archive, compact phone history and safe pruning, with future read-only API gateway boundaries; milestones 7/8 and issues #76–#81 track delivery, #82 is future backlog. None is implemented.
+- Sprint 2 plans coverage-aware activity detail. Phone vision (owner, 2026-11-27): iPhone = temporary collector + display of Mac-returned scores; Mac = archive + all scoring. No phone scoring or long-term phone raw history.
+- Planned only: `docs/sprints/PHONE_MAC_ARCHIVE.md` outlines the iPhone outbox (deleted after Mac receipt), Mac archive/scoring, returned-score display and history cache, with future read-only API gateway boundaries; milestones 7/8 and issues #76–#81 track delivery, #82 is future backlog. None is implemented.
 
 - `AppEntry` checks `NOOP_TEST_HOST` (tests get no BLE/store). **Release builds** compile out testing/diagnostic paths via `LaunchMode.diagnostics` (Debug or `NOOP_DIAGNOSTICS` only): test host, fixture launch + `[perf]`, connection log + unified-log lines, ops-counter files, live R–R archive, raw and research capture (Settings row hidden). Undecoded-history archive stays. Single strap identity `my-whoop`; derived rows `my-whoop-noop`.
 - **Launch:** `AppModel.init` calls `Repository.prewarm()`, which opens the store once and reads the dashboard rows on a detached task while the first window is built; all `ensureStore()` callers share that open (before: 4 concurrent opens, each running the migrator, and the first read waited ~250 ms for the main actor). Then: refresh, wait ~6 s, apply version rescoring, analyze every 15 min. New chunks: UI refresh throttled ~2 s; scoring after ~8 s quiet; scoring always on a detached utility task.
@@ -231,7 +232,7 @@ Format: `file` — purpose. Tests list `Suite(methods)`.
 
 ### `docs`
 - `sprints/DATA_FUNCTIONALITY.md` — issue review and Sprint 2. `sprints/SPRINT_3_PHONE_MAC.md` — foreground LAN sync and Mac analysis.
-- `sprints/PHONE_MAC_ARCHIVE.md` — planned iPhone collector/local archive sprint, ordered work packages, acceptance gates, GitHub tracking and future API gateway boundaries.
+- `sprints/PHONE_MAC_ARCHIVE.md` — planned iPhone collector (temporary outbox, score display) + Mac archive/scoring sprint, work packages, acceptance gates, GitHub tracking, future API gateway boundaries.
 - Current: `README.md` (index), `ARCHITECTURE.md`, `BUILD.md`, `CONTRIBUTING.md`, `PRIVACY_SECURITY.md`, `PROJECT_PROGRESS.md`, `PROTOCOL.md` (wire format), `MEASUREMENT_VALIDITY.md`, `SLEEP_SESSIONS.md`, `NAP_DETECTION.md`, `HEALTH_MODELS.md`. `assets/` — `banner.svg`, `logo.svg`.
 - `archive/` (historical): `SLEEP_STRAIN_AUDIT.md`, `SLEEP_RECOVERY_RESEARCH_2026-10-27.md`, `WORKOUT_STRAIN_RESEARCH_2026-10-30.md`, `WORKOUT_STRAIN_REPORT.md`, `WHOOP_REVERSE_ENGINEERING.md`, `HR_BROADCAST_RESEARCH.md`, `BLE_REVERSE_ENGINEERING.md`, `AUDIT.md`, `TEST_RESULTS.md`, `UNKNOWN_CAPABILITIES.md`.
 - `reverse-engineering/` — `README.md`, `EVIDENCE_MATRIX.md` (evidence levels, firmware review, **#25 closure + backlog §8**), `CAPABILITY_MATRIX.md`, `RESEARCH_CAPTURE.md`, `SAFETY_MATRIX.md`, `COMMAND_REGISTRY.md` + `whoop5_commands.json`, `GATT_MAP.md`, `PROTOCOL_SPEC.md`, `PACKET_TYPES.md`, `SENSOR_STREAMS.md`, `STATE_MACHINE.md`, `ALARM_CAPABILITIES.md`, `EXPERIMENT_LOG.md`.
@@ -269,6 +270,8 @@ What is established, and how (older per-change rows are in git history and the m
 
 - **2026-11-27 #76 (iOS package builds):** package iOS floor 16 → 17 (owner choice); StrandDesign fixed for iOS (`onMoveCommand` macOS-only, `SegmentedPillControl.ink` splits a slow type-check). PASS all 5 packages `xcodebuild` for generic iOS Simulator, StrandDesign for generic iOS device; macOS WhoopProtocol 196, WhoopStore 105, StrandImport 14, StrandDesign 40 (2 skips), app build + hosted 118 (8 env skips). StrandAnalytics macOS tests not re-run (manifest platform only). Not done: no iOS target, no device install, no iOS test runs.
 
+- **2026-11-27 phone vision:** PHONE_MAC_ARCHIVE rewritten to the owner's vision (phone collects, holds until Mac receipt, displays returned scores; Mac archives and scores); SPRINT_3, PROJECT_PROGRESS, docs README aligned; issues #76–#81 and milestones 7/8 updated to match. Docs and GitHub only; no tests run.
+
 Index check (run after file changes; expects no output):
 
 ```sh
@@ -282,6 +285,5 @@ git ls-files --cached --others --exclude-standard | grep -v -e '^AGENTS.md$' -e 
 | 2026-11-27 | #84 closed by owner decision: step counter accepted as accurate (W01–W03, S01; W04 not run); Steps tile caption/spoken text drop "experimental". Walking & running keeps it; steps Trends and #49 steps stay off. W04/reset checks dropped from every backlog; functional-age message no longer says "not validated". | Hosted 118 + FunctionalAgeSnapshotTests pass; running app not checked. |
 | 2026-11-27 | #86 closed: activity tiles checked in the running app in dark mode and at the 1000-pt window minimum (fixture `width`/`appearance` options added). | Running-app captures on a DB copy; VoiceOver by ear dropped. |
 | 2026-11-27 | v0.2.0 pre-release: sleep fragments v2 (night split into two near-miss blocks no longer lost); Release build compiles out test/diagnostic paths (`LaunchMode.diagnostics`); version 0.2.0 (2); BUILD.md release section. | Analytics 515 + hosted 118 pass; DB-copy re-score; Release app not run against the strap. |
-| 2026-11-26 | #85: `rewarm_check.py`; re-warming ~3–5 min awake / ~10–12 min asleep, nightly value insensitive (kept); charging gate still unobserved; ops counters show ~1/min Bluetooth power-off/reconnect since 11-22. | Copies only; tool tests pass; Bluetooth churn cause open. |
 | 2026-11-26 | #86 partial: activity/steps tile renders (3 states × 4 width/scheme), VoiceOver spoken text for both tiles, 30-min sync grace before "≥"; fixture options to open a detail page on a day and scroll to a section; tiles checked in the running app on a DB copy. | Hosted 118 pass; VoiceOver by ear dropped by owner. |
 | 2026-11-26 | #83: Walking & running tile in Strain detail with synced coverage and lower-bound labelling (`ActivityCoverage`); steps tile keeps only count caveats. | Package + hosted tests pass; not looked at in the app (#86). |

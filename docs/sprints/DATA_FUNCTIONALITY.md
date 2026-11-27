@@ -14,7 +14,7 @@ The repository tracker returned 34 issues across both states. The numbers below 
 | Closed #44–47 | Motion inventory, optical feasibility, operational counters and firmware decision | Passive follow-ups below. Firmware work remains closed |
 | Open #49 | Functional age ships experimentally. Its pace projection lost to a no-change baseline | In-app real-input check done 2026-11-27 (ready state, values consistent); VoiceOver dropped, NOOP-source replay at 180 days; steps not used |
 | Open #76–79 | Feasibility, durable transfer, phone collection and trusted local sync are planned | Deliver the smaller Mac-scored path in Sprint 3 |
-| Open #80–82 | Compact history, safe pruning and an optional read API | Schedule after two-device transfer works. #82 remains future backlog |
+| Open #80–82 | Phone score history, deleting phone data after Mac receipt, and an optional read API | Schedule after two-device transfer works. #82 remains future backlog |
 
 ## From strap to screen today
 

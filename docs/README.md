@@ -22,7 +22,7 @@ Start with the [reverse-engineering index](reverse-engineering/README.md), then 
 
 ## Planned work
 
-- [Sprint: iPhone collection and local Mac archive](sprints/PHONE_MAC_ARCHIVE.md) — proposed implementation, storage policy, delivery order and acceptance gates; not current app behavior.
+- [Sprint: iPhone collector and Mac analysis](sprints/PHONE_MAC_ARCHIVE.md) — phone as temporary collector + score display, Mac archive and scoring; delivery order and acceptance gates; not current app behavior.
 
 ## Archive
 
