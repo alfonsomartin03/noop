@@ -29,6 +29,8 @@ final class AppModel: ObservableObject {
     let alarms: AlarmController
     /// Morning / evening check-in preferences (entries live in the store).
     let checkIns = CheckInSettings()
+    /// iPhone sync receiver and pairing (#79). Off unless the user turns it on.
+    private(set) var sync: MacSyncService!
 
     /// Import status surfaced to Settings → Data.
     @Published var importing = false
@@ -55,6 +57,9 @@ final class AppModel: ObservableObject {
         self.intelligence = IntelligenceEngine(repo: repo, profile: profile, deviceId: "my-whoop")
         let repoRef = repo
         self.alarms = AlarmController(history: { await repoRef.storeHandle() })
+        // Uploads from a paired iPhone land in the same store and take the same re-scoring path as Bluetooth data.
+        self.sync = MacSyncService(store: { await repoRef.storeHandle() },
+                                   onDataReceived: { [weak self] in self?.ble.onStoredDataChanged?() })
         // New strap data (offload / stored-data pull) → recompute scores, refresh caches, redraw screens.
         // When new strap data lands: show raw rows immediately, recompute scores, then refresh the UI again.
         ble.onStoredDataChanged = { [weak self] in
@@ -119,6 +124,7 @@ final class AppModel: ObservableObject {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.alarms.syncDeviceAlarm() }.store(in: &hrCancellables)
 
+        sync.restore()
         if let mode = LaunchMode.fixtureBattery, ["cycle", "charging"].contains(mode) { playFixtureBattery(mode) }
         if LaunchMode.fixtureAlarmHistory { seedFixtureAlarmHistory() }
 

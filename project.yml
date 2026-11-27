@@ -55,6 +55,8 @@ targets:
         com.apple.security.app-sandbox: true
         com.apple.security.device.bluetooth: true
         com.apple.security.files.user-selected.read-write: true
+        # iPhone sync receiver (#79): listens only while the user turns it on in Settings.
+        com.apple.security.network.server: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.noopapp.noop
@@ -90,6 +92,7 @@ targets:
         UIApplicationSupportsIndirectInputEvents: true
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         NSBluetoothAlwaysUsageDescription: "NOOP connects directly to your WHOOP strap over Bluetooth to download its data, which it keeps on this iPhone only until your Mac has it."
+        NSLocalNetworkUsageDescription: "NOOP sends your strap data to your own Mac on this network and gets your scores back. Nothing goes to the internet."
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.noopapp.noop.phone

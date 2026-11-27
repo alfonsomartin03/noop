@@ -28,6 +28,8 @@ enum LaunchMode {
     /// this at the live database. Diagnostic builds only.
     static let fixtureStore: String? = diagnostics
         ? ProcessInfo.processInfo.environment["NOOP_FIXTURE_STORE"].flatMap { $0.isEmpty ? nil : $0 } : nil
+    /// Fixture only: start the iPhone-sync receiver with pairing open and codes auto-accepted (#79 checks).
+    static var fixtureSyncPair: Bool { fixtureStore != nil && UserDefaults.standard.bool(forKey: "noop.fixture.syncPair") }
     /// False in a fixture launch: no CoreBluetooth manager is created, so nothing scans, connects or sends commands.
     static var bluetoothEnabled: Bool { fixtureStore == nil }
     /// Process start, for the launch-to-content timing a fixture launch prints.
