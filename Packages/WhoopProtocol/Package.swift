@@ -3,7 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "WhoopProtocol",
-    platforms: [.iOS(.v16), .macOS(.v13)],
+    platforms: [.iOS(.v17), .macOS(.v13)],
     products: [.library(name: "WhoopProtocol", targets: ["WhoopProtocol"])],
     targets: [
         .target(

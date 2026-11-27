@@ -34,6 +34,7 @@ AppEntry (NOOP_TEST_HOST? bare host) -> StrandApp -> AppModel (one instance; win
 
 | Concern | Start in | Checks |
 | --- | --- | --- |
+| 2026-11-27 | #76 slice: all shared packages build for iOS; iOS floor 17; StrandDesign arrow-key handling macOS-only. Owner chose free Apple ID provisioning (7-day installs) for the device trial. | iOS builds + macOS tests pass; no iOS app yet. |
 | 2026-11-27 | #49: functional age checked in the running app with the owner's real birth date, measured VO₂max and history (ready state, "<18", pace 0.8×). | DB copy + launch-argument profile; light 1180 pt only. |
 | Lifecycle, scheduling, launch | `Strand/App/AppModel.swift`, `Strand/Data/Repository.swift` | hosted `StrandTests`; fixture launch `[perf]` lines |
 | Navigation / screens | `Strand/App/RootView.swift`, `Strand/Screens/Hubs.swift` | app build + visual check |
@@ -49,7 +50,7 @@ AppEntry (NOOP_TEST_HOST? bare host) -> StrandApp -> AppModel (one instance; win
 | Alarms | `Strand/Alarm/AlarmController.swift`, `AlarmsView.swift`, `AlarmHistoryView.swift`; analytics `AlarmEngine/SmartWake/AlarmDelivery/AlarmHistory.swift` | `AlarmControllerTests` (fake link) + analytics alarm suites |
 | Shared UI | `Packages/StrandDesign/Sources/StrandDesign/` | StrandDesign tests / snapshots |
 
-Packages (Swift tools 5.9; declare macOS 13 / iOS 16; **only a macOS app target exists**): `WhoopProtocol` (no deps; schema JSON) · `WhoopStore` → WhoopProtocol, GRDB (≥6.0.0, resolved 6.29.3) · `StrandAnalytics` → WhoopProtocol, WhoopStore · `StrandImport` → WhoopProtocol, WhoopStore, ZIPFoundation (≥0.9.0, resolved 0.9.20) · `StrandDesign` (SwiftUI). Tools: `ble_probe` → WhoopProtocol; `perf_probe`, `strain_replay` → analytics + store + protocol; Python is stdlib only.
+Packages (Swift tools 5.9; declare macOS 13 / iOS 17; all five build for iOS (2026-11-27, #76); **only a macOS app target exists**): `WhoopProtocol` (no deps; schema JSON) · `WhoopStore` → WhoopProtocol, GRDB (≥6.0.0, resolved 6.29.3) · `StrandAnalytics` → WhoopProtocol, WhoopStore · `StrandImport` → WhoopProtocol, WhoopStore, ZIPFoundation (≥0.9.0, resolved 0.9.20) · `StrandDesign` (SwiftUI). Tools: `ble_probe` → WhoopProtocol; `perf_probe`, `strain_replay` → analytics + store + protocol; Python is stdlib only.
 
 ## 3 · Current behavior (verified against source 2026-11-20)
 
@@ -126,6 +127,7 @@ Packages (Swift tools 5.9; declare macOS 13 / iOS 16; **only a macOS app target 
 ```sh
 xcodegen generate
 swift test --package-path Packages/<WhoopProtocol|WhoopStore|StrandAnalytics|StrandImport|StrandDesign>
+(cd Packages/<pkg> && xcodebuild -scheme <pkg> -destination 'generic/platform=iOS Simulator' -derivedDataPath /tmp/noop-ios-<pkg> build)   # iOS package build
 python3 -m unittest discover -s Tools/whoop_re -p 'test_*.py'
 python3 -m unittest discover -s Tools/reverse_engineer -p 'test_*.py'
 xcodebuild -project Strand.xcodeproj -scheme Strand -destination 'platform=macOS' -derivedDataPath /tmp/noop-derived CODE_SIGNING_ALLOWED=NO build
@@ -265,6 +267,8 @@ What is established, and how (older per-change rows are in git history and the m
 
 - **2026-11-27 #49 real-input check:** running Debug app on a SQLite-backup copy of the live store, the real profile passed as launch arguments (`-profile.birthDate '<real>…</real>'` etc.; the shell's `defaults write` did not reach the app's domain), Health tab at 1180 pt light, window captured. Ready state: chronological 23.2 from birth date; VO₂max (measured) −11.3 y (limit), resting HR 57 bpm −0.3 y, sleep 7.3 h ±0.0 y → shows "<18" with "−5.2 y or more"; pace 0.8×. Arithmetic and labels consistent with §3. No tests needed (no code change). Not done: dark/narrow, VoiceOver (dropped by owner).
 
+- **2026-11-27 #76 (iOS package builds):** package iOS floor 16 → 17 (owner choice); StrandDesign fixed for iOS (`onMoveCommand` macOS-only, `SegmentedPillControl.ink` splits a slow type-check). PASS all 5 packages `xcodebuild` for generic iOS Simulator, StrandDesign for generic iOS device; macOS WhoopProtocol 196, WhoopStore 105, StrandImport 14, StrandDesign 40 (2 skips), app build + hosted 118 (8 env skips). StrandAnalytics macOS tests not re-run (manifest platform only). Not done: no iOS target, no device install, no iOS test runs.
+
 Index check (run after file changes; expects no output):
 
 ```sh
@@ -278,7 +282,6 @@ git ls-files --cached --others --exclude-standard | grep -v -e '^AGENTS.md$' -e 
 | 2026-11-27 | #84 closed by owner decision: step counter accepted as accurate (W01–W03, S01; W04 not run); Steps tile caption/spoken text drop "experimental". Walking & running keeps it; steps Trends and #49 steps stay off. W04/reset checks dropped from every backlog; functional-age message no longer says "not validated". | Hosted 118 + FunctionalAgeSnapshotTests pass; running app not checked. |
 | 2026-11-27 | #86 closed: activity tiles checked in the running app in dark mode and at the 1000-pt window minimum (fixture `width`/`appearance` options added). | Running-app captures on a DB copy; VoiceOver by ear dropped. |
 | 2026-11-27 | v0.2.0 pre-release: sleep fragments v2 (night split into two near-miss blocks no longer lost); Release build compiles out test/diagnostic paths (`LaunchMode.diagnostics`); version 0.2.0 (2); BUILD.md release section. | Analytics 515 + hosted 118 pass; DB-copy re-score; Release app not run against the strap. |
-| 2026-11-26 | R86: "Bluetooth powered off" ~1/min was the Mac sleeping (dark wakes every ~36 s on battery, driven by the strap's repeated LE parameter request); power-offs across a sleep now count as `systemSleep`. | WhoopProtocol 196 + hosted 118 pass; wakes themselves not changed. |
 | 2026-11-26 | #85: `rewarm_check.py`; re-warming ~3–5 min awake / ~10–12 min asleep, nightly value insensitive (kept); charging gate still unobserved; ops counters show ~1/min Bluetooth power-off/reconnect since 11-22. | Copies only; tool tests pass; Bluetooth churn cause open. |
 | 2026-11-26 | #86 partial: activity/steps tile renders (3 states × 4 width/scheme), VoiceOver spoken text for both tiles, 30-min sync grace before "≥"; fixture options to open a detail page on a day and scroll to a section; tiles checked in the running app on a DB copy. | Hosted 118 pass; VoiceOver by ear dropped by owner. |
 | 2026-11-26 | #83: Walking & running tile in Strain detail with synced coverage and lower-bound labelling (`ActivityCoverage`); steps tile keeps only count caveats. | Package + hosted tests pass; not looked at in the app (#86). |

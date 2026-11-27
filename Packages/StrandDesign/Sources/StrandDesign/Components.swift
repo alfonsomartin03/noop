@@ -239,8 +239,7 @@ public struct SegmentedPillControl<T: Hashable>: View {
                     Text(label(item))
                         .font(quiet ? .system(size: 12, weight: sel ? .bold : .semibold, design: .rounded).monospacedDigit()
                               : large ? StrandFont.captionNumber : .system(size: 12, weight: .semibold, design: .rounded))
-                        .foregroundStyle(quiet ? (sel ? StrandPalette.accentInk : hover ? StrandPalette.textPrimary : StrandPalette.textSecondary)
-                                         : sel ? StrandPalette.textPrimary : hover ? StrandPalette.textPrimary.opacity(0.85) : StrandPalette.textSecondary)
+                        .foregroundStyle(Self.ink(quiet: quiet, selected: sel, hover: hover))
                         .frame(minWidth: quiet ? 28 : 32)
                         .padding(.vertical, quiet ? 4 : large ? 5 : 4).padding(.horizontal, quiet ? 9 : large ? 11 : 12)
                         .background {
@@ -275,6 +274,7 @@ public struct SegmentedPillControl<T: Hashable>: View {
         .focusable()
         .focused($focused)
         .strandFocusRing(focused, shape: Capsule(style: .continuous))
+        #if os(macOS)
         .onMoveCommand { dir in
             switch dir {
             case .left: if let n = Self.moved(items, from: selection, by: -1) { select(n) }
@@ -282,9 +282,16 @@ public struct SegmentedPillControl<T: Hashable>: View {
             default: break
             }
         }
+        #endif
         .animation(StrandMotion.respecting(StrandMotion.interactive), value: hovered)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(title ?? "")
+    }
+
+    /// Label colour for one option (split out so the type checker stays fast on iOS).
+    static func ink(quiet: Bool, selected: Bool, hover: Bool) -> Color {
+        if quiet { return selected ? StrandPalette.accentInk : hover ? StrandPalette.textPrimary : StrandPalette.textSecondary }
+        return selected ? StrandPalette.textPrimary : hover ? StrandPalette.textPrimary.opacity(0.85) : StrandPalette.textSecondary
     }
 }
 
@@ -347,6 +354,7 @@ public struct SectionTabBar<T: Hashable>: View {
         .focusable()
         .focused($focused)
         .strandFocusRing(focused, shape: Capsule(style: .continuous))
+        #if os(macOS)
         .onMoveCommand { dir in
             switch dir {
             case .left: if let n = SegmentedPillControl<T>.moved(items, from: selection, by: -1) { select(n) }
@@ -354,6 +362,7 @@ public struct SectionTabBar<T: Hashable>: View {
             default: break
             }
         }
+        #endif
         .animation(StrandMotion.respecting(StrandMotion.interactive), value: hovered)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(title)
