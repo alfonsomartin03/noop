@@ -52,6 +52,7 @@ enum RecordType: UInt8 {
     case finished = 0x00
     case upload = 0x01
     case pairConfirm = 0x02
+    case summaries = 0x03
     case error = 0xFF
 }
 

@@ -1,4 +1,8 @@
 import Foundation
+import WhoopStore
+
+/// "Send me the daily summaries that changed after revision `since`." Replies are pages of at most `pageSize`.
+struct SummaryRequest: Codable { let since: Int64 }
 
 // SyncEndpoints.swift — the two ends of a phone ↔ Mac session (#79), over any `ByteStream`.
 
@@ -9,14 +13,19 @@ public final class MacSyncEndpoint {
     let trust: TrustStore
     let ingestor: MacArchiveIngestor
     let macName: String
+    /// NOOP's derived identity whose daily scores are sent back (`<strap>-noop`).
+    let summaryDeviceId: String
     /// Shows the code on the Mac and returns the user's answer.
     let confirmPairing: (String) async -> Bool
     private var window: PairingWindow?
     private let lock = NSLock()
 
+    public static let pageSize = 400
+
     public init(identity: DeviceIdentity, trust: TrustStore, ingestor: MacArchiveIngestor, macName: String,
-                confirmPairing: @escaping (String) async -> Bool) {
+                summaryDeviceId: String = "my-whoop-noop", confirmPairing: @escaping (String) async -> Bool) {
         self.identity = identity; self.trust = trust; self.ingestor = ingestor; self.macName = macName
+        self.summaryDeviceId = summaryDeviceId
         self.confirmPairing = confirmPairing
     }
 
@@ -54,6 +63,15 @@ public final class MacSyncEndpoint {
                     try await session.send(.upload, try JSONEncoder().encode(receipt))
                 } catch {
                     try? await session.send(.error, Data("upload refused: \(error)".utf8))
+                }
+            case .summaries:
+                do {
+                    let req = try JSONDecoder().decode(SummaryRequest.self, from: body)
+                    let page = try await ingestor.store.dailySummaries(deviceId: summaryDeviceId, since: req.since,
+                                                                       limit: Self.pageSize)
+                    try await session.send(.summaries, try JSONEncoder().encode(page))
+                } catch {
+                    try? await session.send(.error, Data("summaries unavailable: \(error)".utf8))
                 }
             default:
                 try? await session.send(.error, Data("unexpected message".utf8)); return
@@ -105,13 +123,29 @@ public final class PhoneSyncClient: SyncTransport {
         return mac
     }
 
-    public func send(_ envelope: Data) async throws -> Data {
+    public func send(_ envelope: Data) async throws -> Data { try await request(.upload, envelope) }
+
+    /// Asks the Mac for every daily summary newer than what `store` has cached and caches it. Returns days changed.
+    /// The Mac scores on its own schedule; a day uploaded just now may appear on a later call.
+    @discardableResult
+    public func refreshScores(into store: WhoopStore) async throws -> Int {
+        var changed = 0
+        while true {
+            let since = try await store.cachedSummaryRevision()
+            let page = try await request(.summaries, try JSONEncoder().encode(SummaryRequest(since: since)))
+            let summaries = try JSONDecoder().decode([DailySummary].self, from: page)
+            changed += try await store.cacheSummaries(summaries)
+            if summaries.count < MacSyncEndpoint.pageSize { return changed }
+        }
+    }
+
+    private func request(_ type: RecordType, _ body: Data) async throws -> Data {
         do {
             let s = try await currentSession()
-            try await s.send(.upload, envelope)
-            let (type, body) = try await s.receive()
-            guard type == .upload else { throw ChannelError.authenticationFailed }
-            return body
+            try await s.send(type, body)
+            let (reply, data) = try await s.receive()
+            guard reply == type else { throw ChannelError.authenticationFailed }
+            return data
         } catch {
             session?.close(); session = nil
             throw error

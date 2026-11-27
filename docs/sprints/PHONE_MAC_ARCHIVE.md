@@ -150,7 +150,9 @@ Acceptance: collect with the Mac offline; reopen both apps; scores appear after 
 
 Acceptance: pairing, wrong/revoked peer, denied local-network permission, interrupted upload and retry; new data appears once on the Mac; returned scores match the Mac's own screens.
 
-*2026-11-27, transport done in `StrandSync` (not wired into the apps):* commit-first X25519 handshake and ChaChaPoly session; pairing by numeric comparison (both screens show a 6-digit code, both users confirm), single-attempt 120-s window on the Mac; Keychain trust; Mac TCP listener (port 47800, started explicitly) and phone client. Tested over an in-memory pipe and loopback TCP: refusals, revocation, tampering, one-copy upload. Left: app wiring and UI (Mac receiver toggle + pairing sheet, phone address entry), entitlements and local-network permission text, returned daily summaries, the handoff, and a two-device run on Wi-Fi.
+*2026-11-27, transport done in `StrandSync` (not wired into the apps):* commit-first X25519 handshake and ChaChaPoly session; pairing by numeric comparison (both screens show a 6-digit code, both users confirm), single-attempt 120-s window on the Mac; Keychain trust; Mac TCP listener (port 47800, started explicitly) and phone client. Tested over an in-memory pipe and loopback TCP: refusals, revocation, tampering, one-copy upload. Left: app wiring and UI (Mac receiver toggle + pairing sheet, phone address entry), entitlements and local-network permission text, the handoff, and a two-device run on Wi-Fi.
+
+*2026-11-27, scores back done in the packages:* the Mac gives each day's NOOP summary (values present that day, coverage, removed flag) a global revision when its content changes and serves "changes since R" in pages; the phone caches the newest revision per day and keeps showing it offline. Scoring stays on the Mac's schedule; the phone picks up results on its next refresh. This cache is also #80's history store.
 
 ### 5. Score history on the phone (#80)
 

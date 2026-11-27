@@ -247,4 +247,65 @@ final class TransportTests: XCTestCase {
         try store.revoke(publicKey: peer.publicKey)
         XCTAssertFalse(store.isTrusted(peer.publicKey))
     }
+
+    // MARK: scores sent back (#79)
+
+    private func score(_ days: [String], recovery: Double) async throws {
+        _ = try await macStore.upsertDailyMetrics(days.map {
+            DailyMetric(day: $0, totalSleepMin: 430, efficiency: nil, deepMin: nil, remMin: nil, lightMin: nil,
+                        disturbances: nil, restingHr: 54, avgHrv: nil, recovery: recovery, strain: 11.2, exerciseCount: nil)
+        }, deviceId: "my-whoop-noop")
+    }
+
+    func testPhoneGetsTheMacsScoresAndThenOnlyChanges() async throws {
+        let mac = makeMac(), phone = makePhone(mac)
+        try await pairBoth(mac, phone)
+        try await collect(5)
+        _ = try await PhoneOutbox(store: phoneStore).sync(over: phone)
+        var changed = try await phone.refreshScores(into: phoneStore)
+        XCTAssertEqual(changed, 0, "nothing scored yet: the phone shows no score, not zero")
+        try await score(["2026-11-25", "2026-11-26"], recovery: 66)          // the Mac's scheduled scoring ran
+        changed = try await phone.refreshScores(into: phoneStore)
+        XCTAssertEqual(changed, 2)
+        changed = try await phone.refreshScores(into: phoneStore)
+        XCTAssertEqual(changed, 0)
+        try await score(["2026-11-26"], recovery: 71)                         // a late batch re-scored one day
+        changed = try await phone.refreshScores(into: phoneStore)
+        XCTAssertEqual(changed, 1)
+        let shown = try await phoneStore.cachedSummaries()
+        XCTAssertEqual(shown.map(\.day), ["2026-11-25", "2026-11-26"])
+        XCTAssertEqual(shown.last?.values["recovery"], 71)
+        XCTAssertEqual(shown.last?.values["strain"], 11.2)
+    }
+
+    func testScoresStayOnThePhoneWhenTheMacIsGone() async throws {
+        let mac = makeMac(), phone = makePhone(mac)
+        try await pairBoth(mac, phone)
+        try await score(["2026-11-25"], recovery: 66)
+        try await phone.refreshScores(into: phoneStore)
+        try macTrust.revoke(publicKey: phoneID.publicKey)      // the Mac is unreachable / no longer answers
+        phone.disconnect()
+        do { try await phone.refreshScores(into: phoneStore); XCTFail("expected failure") } catch {}
+        let shown = try await phoneStore.cachedSummaries()
+        XCTAssertEqual(shown.first?.values["recovery"], 66, "the cached score is still shown")
+    }
+
+    func testUnpairedPhoneGetsNoScores() async throws {
+        let mac = makeMac()
+        try phoneTrust.pin(TrustedPeer(publicKey: macID.publicKey, name: "Mac", pairedAt: 0))
+        try await score(["2026-11-25"], recovery: 66)
+        do { try await makePhone(mac).refreshScores(into: phoneStore); XCTFail("expected refusal") } catch {}
+        let shown = try await phoneStore.cachedSummaries()
+        XCTAssertTrue(shown.isEmpty)
+    }
+
+    func testManyDaysArriveAcrossPages() async throws {
+        let mac = makeMac(), phone = makePhone(mac)
+        try await pairBoth(mac, phone)
+        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"; f.timeZone = TimeZone(identifier: "UTC")
+        let days = (0..<450).map { f.string(from: Date(timeIntervalSince1970: 1_700_000_000 + Double($0) * 86_400)) }
+        try await score(days, recovery: 50)
+        let changed = try await phone.refreshScores(into: phoneStore)
+        XCTAssertEqual(changed, 450)
+    }
 }
