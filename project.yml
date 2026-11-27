@@ -27,6 +27,8 @@ packages:
     path: Packages/StrandImport
   StrandDesign:
     path: Packages/StrandDesign
+  StrandSync:
+    path: Packages/StrandSync
 targets:
   Strand:
     type: application
@@ -67,6 +69,7 @@ targets:
       - package: StrandAnalytics
       - package: StrandImport
       - package: StrandDesign
+      - package: StrandSync
   StrandPhone:
     # iPhone collector shell (#76). Collects nothing yet; see docs/sprints/PHONE_MAC_ARCHIVE.md.
     type: application
@@ -97,6 +100,7 @@ targets:
       - package: WhoopProtocol
       - package: WhoopStore
       - package: StrandDesign
+      - package: StrandSync
   StrandTests:
     type: bundle.unit-test
     platform: macOS
