@@ -34,6 +34,7 @@ AppEntry (NOOP_TEST_HOST? bare host) -> StrandApp -> AppModel (one instance; win
 
 | Concern | Start in | Checks |
 | --- | --- | --- |
+| 2026-11-27 | #76 outbox budget measured: ~19 MB/day as decoded rows (+0.9 undecoded), ~11.5 MB/day as raw frames; ~600 MB for 30 days away. Not a blocker. | DB copy, docs only. |
 | 2026-11-27 | #76: iOS shell target `StrandPhone` (links WhoopProtocol/WhoopStore/StrandDesign, opens an empty store, Bluetooth check on tap, no strap code); BUILD.md install steps for a free Apple ID. | Simulator run + device compile; not installed on the iPhone yet. |
 | 2026-11-27 | Phone plan aligned to the owner's vision: iPhone = temporary collector + display of Mac scores (data deleted after Mac receipt); Mac = archive + all scoring. Issues #76–#81 and milestones rewritten. | Docs/issues only. |
 | 2026-11-27 | #76 slice: all shared packages build for iOS; iOS floor 17; StrandDesign arrow-key handling macOS-only. Owner chose free Apple ID provisioning (7-day installs) for the device trial. | iOS builds + macOS tests pass; no iOS app yet. |
@@ -279,6 +280,8 @@ What is established, and how (older per-change rows are in git history and the m
 
 - **2026-11-27 #76 iPhone shell:** `StrandPhone` target builds for iPhone 18 Pro Simulator and generic iOS device (unsigned); ran in the simulator: version 0.2.0 (2), schema bundled, store "Open, schema v19", Bluetooth "Unsupported" (simulator has none). Mac app build + hosted 118 (8 env skips) pass. Not done: install on the owner's iPhone (no device connected), real Bluetooth state, 7-day expiry observed.
 
+- **2026-11-27 #76 outbox budget:** SQLite-backup copy + archive folder sizes, 7 days (11-20 → 11-26): decoded strap rows 18.9 MB/day incl. indexes (gravity 6.3, skin temp 5.5, HR 4.2, R–R 2.4), undecoded history 0.9 MB/day; raw frames 10.6 MB/day (3.5 compressed). 30 days away ≈ 600 MB as rows / 350 MB as frames. Table in PHONE_MAC_ARCHIVE package 1. Copy deleted; docs only.
+
 Index check (run after file changes; expects no output):
 
 ```sh
@@ -292,4 +295,3 @@ git ls-files --cached --others --exclude-standard | grep -v -e '^AGENTS.md$' -e 
 | 2026-11-27 | #84 closed by owner decision: step counter accepted as accurate (W01–W03, S01; W04 not run); Steps tile caption/spoken text drop "experimental". Walking & running keeps it; steps Trends and #49 steps stay off. W04/reset checks dropped from every backlog; functional-age message no longer says "not validated". | Hosted 118 + FunctionalAgeSnapshotTests pass; running app not checked. |
 | 2026-11-27 | #86 closed: activity tiles checked in the running app in dark mode and at the 1000-pt window minimum (fixture `width`/`appearance` options added). | Running-app captures on a DB copy; VoiceOver by ear dropped. |
 | 2026-11-27 | v0.2.0 pre-release: sleep fragments v2 (night split into two near-miss blocks no longer lost); Release build compiles out test/diagnostic paths (`LaunchMode.diagnostics`); version 0.2.0 (2); BUILD.md release section. | Analytics 515 + hosted 118 pass; DB-copy re-score; Release app not run against the strap. |
-| 2026-11-26 | #83: Walking & running tile in Strain detail with synced coverage and lower-bound labelling (`ActivityCoverage`); steps tile keeps only count caveats. | Package + hosted tests pass; not looked at in the app (#86). |
