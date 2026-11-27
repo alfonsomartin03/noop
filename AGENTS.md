@@ -12,8 +12,8 @@ Single LLM-maintained entry point: rules, current state, routing and file index.
 
 ## 1 · Snapshot
 
-- Refreshed **2026-11-20** (America/New_York), after the #25 close-out cleanup; v0.2.0 release 2026-11-27. Planning links updated 2026-11-21; R18 + event-120 hold-outs recorded 2026-11-26.
-- **NOOP**: local-only macOS companion for WHOOP 4.0/5.0 straps. Internal target/scheme/package prefix **Strand**; bundle `com.noopapp.noop`, product `NOOP.app`, v0.2.0 (2) — first tagged pre-release (`v0.2.0`, GitHub release with zipped app); 1.0 is reserved for the phone + Mac release.
+- Refreshed **2026-11-20** (America/New_York), after the #25 close-out cleanup; v0.2.0 release 2026-11-27; **v1.0.0 Mac-only release 2026-11-27** (DMG, branch `release/1.0`). Planning links updated 2026-11-21; R18 + event-120 hold-outs recorded 2026-11-26.
+- **NOOP**: local-only macOS companion for WHOOP 4.0/5.0 straps. Internal target/scheme/package prefix **Strand**; bundle `com.noopapp.noop`, product `NOOP.app`, v1.0.0 (3) on `main` and `release/1.0`. `v1.0.0` = Mac-only GitHub release (drag-to-Applications DMG) built from `release/1.0`, which has no phone code; `main` carries the phone work toward a later phone + Mac version. v0.2.0 (2) was the first pre-release.
 - 397 first-party files (tracked + non-ignored untracked, excluding this file). Size hotspots: `BLEManager.swift` ~2.0k lines, `SleepStager.swift` ~1.3k, `OnboardingWizard.swift` ~1.1k, `TrendSections.swift` ~0.9k — search, don't read whole.
 - Test methods (counts in files; pass results are in §8): WhoopProtocol 196, WhoopStore 105, StrandAnalytics 515, StrandImport 14, StrandDesign 40 (2 snapshot tests need `STRAND_SNAPSHOT_DIR`), hosted StrandTests 118 (8 env-gated renders: `NOOP_RENDER_TRENDS/OVERVIEW/HEALTH/SETTINGS/ACTIVITY=1`), Python whoop_re + reverse_engineer.
 - Strap research (#25 and #38–#48) is **closed**; outcomes + passive backlog in `docs/reverse-engineering/EVIDENCE_MATRIX.md` §8. Open: #49 functional-age follow-ups.
@@ -34,11 +34,6 @@ AppEntry (NOOP_TEST_HOST? bare host) -> StrandApp -> AppModel (one instance; win
 
 | Concern | Start in | Checks |
 | --- | --- | --- |
-| 2026-11-27 | #76 outbox budget measured: ~19 MB/day as decoded rows (+0.9 undecoded), ~11.5 MB/day as raw frames; ~600 MB for 30 days away. Not a blocker. | DB copy, docs only. |
-| 2026-11-27 | #76: iOS shell target `StrandPhone` (links WhoopProtocol/WhoopStore/StrandDesign, opens an empty store, Bluetooth check on tap, no strap code); BUILD.md install steps for a free Apple ID. | Simulator run + device compile; not installed on the iPhone yet. |
-| 2026-11-27 | Phone plan aligned to the owner's vision: iPhone = temporary collector + display of Mac scores (data deleted after Mac receipt); Mac = archive + all scoring. Issues #76–#81 and milestones rewritten. | Docs/issues only. |
-| 2026-11-27 | #76 slice: all shared packages build for iOS; iOS floor 17; StrandDesign arrow-key handling macOS-only. Owner chose free Apple ID provisioning (7-day installs) for the device trial. | iOS builds + macOS tests pass; no iOS app yet. |
-| 2026-11-27 | #49: functional age checked in the running app with the owner's real birth date, measured VO₂max and history (ready state, "<18", pace 0.8×). | DB copy + launch-argument profile; light 1180 pt only. |
 | Lifecycle, scheduling, launch | `Strand/App/AppModel.swift`, `Strand/Data/Repository.swift` | hosted `StrandTests`; fixture launch `[perf]` lines |
 | Navigation / screens | `Strand/App/RootView.swift`, `Strand/Screens/Hubs.swift` | app build + visual check |
 | Health page | `Strand/Screens/HealthPageView.swift`, analytics `FunctionalAge*.swift`, `HealthMonitor.swift`, `docs/HEALTH_MODELS.md` | `FunctionalAge*Tests`, `HealthMonitorTests` |
@@ -231,6 +226,7 @@ Format: `file` — purpose. Tests list `Suite(methods)`.
 - Sources: `Palette`, `Typography`, `Motion`, `Components` (+ `SectionTabBar`, `strandFocusRing`, `SegmentedPillControl`), `StrandCard`, `StatePill`, `Widgets`, `TrendChart`, `ChartHover`, `Sparkline`, `Hypnogram`, `RecoveryRing`, `YearHeatStrip`, `ChargingIllustration`, `ZoneSpectrum`, `StrandDesign`. Tests: `PlaceholderTests` (25), `ZoneSpectrumTests`, `TrendChartGapTests`, `WidgetSnapshotTests` (env). `Package.swift`.
 
 ### `Tools`
+- `release/make_dmg.sh` — packages a built `NOOP.app` into `NOOP-<version>.dmg` (app + Applications shortcut).
 - `ble_probe/` — `Sources/ble_probe/main.swift` read-only research probe (`--passive`, `--pack-rev1`, `--c08 --c08-approved`, `--k01 --k01-approved`; SET twins hard-blocked); `make_app.sh`; `bundle/Info.plist`; `Package.swift`.
 - `perf_probe/` — `main.swift` repository/scoring timing on a DB copy (`--score`, `--hash`, `--fa-replay`, `--sleepperf`); `Package.swift`, `Package.resolved`. `strain_replay/` — `main.swift` strain replay; `Package.swift`, `Package.resolved`.
 - `whoop_re/` (stdlib, read-only on copies) — `whoop5_decode.py` + `test_whoop5_decode.py` (needs untracked fixture) + `test_whoop5_realtime.py`; `step_walk_check.py` + `test_step_walk_check.py`; `rr_unit_audit.py` + `test_rr_unit_audit.py`; `live_rr_audit.py` + `test_live_rr_audit.py`; `research_archive_check.py` + `test_research_archive_check.py`; `strap_clock_offset.py`, `step_reset_scan.py`, `ppg_burst_check.py`, `event120_check.py` (+ `--holdout`) with `test_offline_checks.py`; `r18_field_inventory.py` + `test_r18_field_inventory.py`; `rewarm_check.py` + `test_rewarm_check.py` (re-warming after re-wear, nightly sensitivity); `ops_metrics.py` + `test_ops_metrics.py`.
@@ -282,6 +278,10 @@ What is established, and how (older per-change rows are in git history and the m
 
 - **2026-11-27 #76 outbox budget:** SQLite-backup copy + archive folder sizes, 7 days (11-20 → 11-26): decoded strap rows 18.9 MB/day incl. indexes (gravity 6.3, skin temp 5.5, HR 4.2, R–R 2.4), undecoded history 0.9 MB/day; raw frames 10.6 MB/day (3.5 compressed). 30 days away ≈ 600 MB as rows / 350 MB as frames. Table in PHONE_MAC_ARCHIVE package 1. Copy deleted; docs only.
 
+- **2026-11-27 #76 macOS coupling:** API search of `Strand/` + a temporary iOS Simulator build of `Strand/BLE` + `Strand/Collect` inside `StrandPhone` (project.yml reverted): only blockers are `AlarmStrapLink`/`AlarmStrapCommand` (in `AlarmController.swift`) and the fixture `TodayDetail` reference in `StorePaths`. Shell/AppKit inventory in PHONE_MAC_ARCHIVE package 1. Docs only; lifecycle behaviour on iOS untested.
+
+- **2026-11-27 v1.0.0 (Mac-only):** tagged on `release/1.0` (from `57e9d7b`, before the phone work), version 1.0.0 (3). Release build signed Apple Development; diagnostic strings absent; `make_dmg.sh` image verified (`hdiutil verify`), mounted: `NOOP.app` + `Applications` link, version 1.0.0, `codesign --verify --deep --strict` OK; Gatekeeper `spctl` rejects (not notarized, expected). GitHub release `v1.0.0` (latest) with `NOOP-1.0.0.dmg`; downloaded asset SHA-256 matches. Not done: the Release app launched (shares the container with the running Debug app; would compete for the strap).
+
 Index check (run after file changes; expects no output):
 
 ```sh
@@ -292,6 +292,11 @@ git ls-files --cached --others --exclude-standard | grep -v -e '^AGENTS.md$' -e 
 
 | Date | Change | Checks / remaining |
 | --- | --- | --- |
+| 2026-11-27 | v1.0.0 Mac-only release (tag on `release/1.0`, pre-phone code): version 1.0.0 (3), drag-to-Applications DMG via `Tools/release/make_dmg.sh`; `main` bumped to 1.0.0 too. | DMG verified, mounted, asset hash checked; app not launched. |
+| 2026-11-27 | #76 macOS-only code inventory: BLE + Collect compile for iOS except the alarm-link types and one fixture reference; Mac shell pieces listed with their phone replacement. | Temporary iOS build, reverted; docs only. |
+| 2026-11-27 | #76 outbox budget measured: ~19 MB/day as decoded rows (+0.9 undecoded), ~11.5 MB/day as raw frames; ~600 MB for 30 days away. Not a blocker. | DB copy, docs only. |
+| 2026-11-27 | #76: iOS shell target `StrandPhone` (links WhoopProtocol/WhoopStore/StrandDesign, opens an empty store, Bluetooth check on tap, no strap code); BUILD.md install steps for a free Apple ID. | Simulator run + device compile; not installed on the iPhone yet. |
+| 2026-11-27 | Phone plan aligned to the owner's vision: iPhone = temporary collector + display of Mac scores (data deleted after Mac receipt); Mac = archive + all scoring. Issues #76–#81 and milestones rewritten. | Docs/issues only. |
+| 2026-11-27 | #76 slice: all shared packages build for iOS; iOS floor 17; StrandDesign arrow-key handling macOS-only. Owner chose free Apple ID provisioning (7-day installs) for the device trial. | iOS builds + macOS tests pass; no iOS app yet. |
+| 2026-11-27 | #49: functional age checked in the running app with the owner's real birth date, measured VO₂max and history (ready state, "<18", pace 0.8×). | DB copy + launch-argument profile; light 1180 pt only. |
 | 2026-11-27 | #84 closed by owner decision: step counter accepted as accurate (W01–W03, S01; W04 not run); Steps tile caption/spoken text drop "experimental". Walking & running keeps it; steps Trends and #49 steps stay off. W04/reset checks dropped from every backlog; functional-age message no longer says "not validated". | Hosted 118 + FunctionalAgeSnapshotTests pass; running app not checked. |
-| 2026-11-27 | #86 closed: activity tiles checked in the running app in dark mode and at the 1000-pt window minimum (fixture `width`/`appearance` options added). | Running-app captures on a DB copy; VoiceOver by ear dropped. |
-| 2026-11-27 | v0.2.0 pre-release: sleep fragments v2 (night split into two near-miss blocks no longer lost); Release build compiles out test/diagnostic paths (`LaunchMode.diagnostics`); version 0.2.0 (2); BUILD.md release section. | Analytics 515 + hosted 118 pass; DB-copy re-score; Release app not run against the strap. |

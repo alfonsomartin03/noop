@@ -89,12 +89,15 @@ Settings row is hidden). Undecodable history is still archived (`OpenWhoop/undec
 xcodegen generate
 xcodebuild -project Strand.xcodeproj -scheme Strand -configuration Release -destination 'platform=macOS' \
   -derivedDataPath /tmp/noop-release build
-ditto -c -k --keepParent /tmp/noop-release/Build/Products/Release/NOOP.app NOOP-<version>.zip
+Tools/release/make_dmg.sh /tmp/noop-release/Build/Products/Release/NOOP.app <version>   # NOOP-<version>.dmg
 ```
 
+The disk image holds `NOOP.app` and an Applications shortcut: users open it and drag NOOP onto Applications.
+
 The build is signed with the team in `Local.xcconfig` (Apple Development); it is not Developer ID signed or notarized,
-so another Mac's Gatekeeper blocks it until the user allows it in System Settings ▸ Privacy & Security. Versions stay
-0.x until 1.0, the phone + Mac release.
+so another Mac's Gatekeeper blocks it until the user allows it in System Settings ▸ Privacy & Security. 1.0.0 is the
+Mac-only release (owner decision 2026-11-27), cut from `release/1.0` before any phone work; the phone + Mac release
+will take a later version. Mac-only fixes to 1.0 go on `release/1.0`.
 
 ## Diagnostic tools
 
